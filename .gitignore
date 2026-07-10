@@ -1,0 +1,21 @@
+.DS_Store
+*.pyc
+__pycache__/
+
+# Local build outputs
+QPixel
+*.app/
+build/
+dist/
+
+# Logs and local runtime data
+*.log
+*.tmp
+qpixel-projects.json
+qpixel-settings.json
+backups/
+
+# Editor state
+.vscode/
+.idea/
+

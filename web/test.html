@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>Q像素测试</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; padding: 24px; }
+    #result { font-size: 18px; font-weight: 700; }
+    .pass { color: #14804a; }
+    .fail { color: #c03737; }
+  </style>
+</head>
+<body>
+  <p id="result">RUNNING</p>
+  <pre id="pngData" hidden></pre>
+  <pre id="beadPngData" hidden></pre>
+  <div hidden>
+    <canvas id="materialPreviewCanvas" width="900" height="640"></canvas>
+    <select id="materialModeSelect"><option value="normal">普通</option><option value="grid">微格纹</option></select>
+    <select id="materialBaseSelect"><option value="none">无边框</option></select>
+    <select id="materialBackgroundSelect"><option value="plain">纯色</option></select>
+    <select id="materialLightSelect"><option value="soft">柔光</option></select>
+    <select id="materialDecorSelect"><option value="none">无装饰</option></select>
+    <select id="styleRatioSelect"><option value="1:1">1:1</option></select>
+    <input id="styleBackgroundColorInput" type="color" value="#123456">
+    <input id="styleBackgroundAlphaRange" type="range" min="0" max="100" value="100">
+    <input id="styleBorderSizeRange" type="range" min="0" max="90" value="0">
+    <input id="styleBorderColorInput" type="color" value="#d8c7aa">
+    <input id="styleShadowColorInput" type="color" value="#172033">
+    <input id="styleShadowBlurRange" type="range" min="0" max="90" value="0">
+    <input id="styleShadowAlphaRange" type="range" min="0" max="80" value="0">
+    <input id="styleShadowOffsetXRange" type="range" min="-80" max="80" value="0">
+    <input id="styleShadowOffsetYRange" type="range" min="-80" max="80" value="0">
+    <input id="styleThicknessRange" type="range" min="0" max="28" value="0">
+    <input id="materialIntensityRange" type="range" min="0" max="100" value="0">
+    <strong id="styleBackgroundAlphaLabel"></strong>
+    <strong id="styleBorderSizeLabel"></strong>
+    <strong id="styleShadowBlurLabel"></strong>
+    <strong id="styleShadowAlphaLabel"></strong>
+    <strong id="styleShadowOffsetXLabel"></strong>
+    <strong id="styleShadowOffsetYLabel"></strong>
+    <strong id="styleThicknessLabel"></strong>
+    <strong id="materialIntensityLabel"></strong>
+    <section id="importChoiceModal" class="hidden">
+      <span id="importChoiceFileName"></span>
+      <button id="importChoiceCancelButton" type="button">取消</button>
+      <button id="importCalibrateButton" type="button"><strong>像素校准后导入</strong></button>
+      <button id="importDirectButton" type="button"><strong>直接导入</strong></button>
+    </section>
+    <section id="calibrationModal" class="hidden">
+      <button id="calibrationBackButton" type="button">返回</button>
+      <button id="calibrationDoneButton" type="button">完成</button>
+      <canvas id="calibrationCanvas" width="900" height="900"></canvas>
+      <button id="calibrationNudgeLeftButton" type="button">左</button>
+      <button id="calibrationNudgeUpButton" type="button">上</button>
+      <button id="calibrationNudgeDownButton" type="button">下</button>
+      <button id="calibrationNudgeRightButton" type="button">右</button>
+      <input id="calibrationColumnsInput" type="number" value="12">
+      <input id="calibrationCellSizeInput" type="number" value="10">
+      <input id="calibrationAiToggle" type="checkbox">
+    </section>
+    <input id="colorOptimizeLimitInput" type="number" value="20">
+    <button id="colorOptimizeButton" type="button">优化色号</button>
+    <button id="colorOptimizeUndoButton" type="button">撤销优化</button>
+  </div>
+  <script src="./app.js"></script>
+  <script>
+    async function blobToDataUrl(blob) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    function getMaskBounds(mask) {
+      let minRow = Infinity;
+      let maxRow = -Infinity;
+      let minCol = Infinity;
+      let maxCol = -Infinity;
+      mask.forEach((row, rowIndex) => {
+        row.forEach((filled, colIndex) => {
+          if (!filled) return;
+          minRow = Math.min(minRow, rowIndex);
+          maxRow = Math.max(maxRow, rowIndex);
+          minCol = Math.min(minCol, colIndex);
+          maxCol = Math.max(maxCol, colIndex);
+        });
+      });
+      if (minRow === Infinity) throw new Error("empty shape mask");
+      return {
+        minRow,
+        maxRow,
+        minCol,
+        maxCol,
+        width: maxCol - minCol + 1,
+        height: maxRow - minRow + 1
+      };
+    }
+
+    function assertMaskHorizontalSymmetry(mask, label) {
+      const width = mask[0].length;
+      mask.forEach((row, rowIndex) => {
+        row.forEach((filled, colIndex) => {
+          const mirrorCol = width - 1 - colIndex;
+          if (filled !== row[mirrorCol]) {
+            throw new Error(`${label} mask symmetry failed at ${rowIndex},${colIndex}`);
+          }
+        });
+      });
+    }
+
+    async function run() {
+      const result = document.getElementById("result");
+      try {
+        const clamped = window.QPixelTest.clampParams({
+          precision: 999,
+          gap: -20,
+          radius: 80,
+          background: "bad"
+        });
+        if (clamped.precision !== 500 || clamped.gap !== 0 || clamped.radius !== 50 || clamped.background !== "checker") {
+          throw new Error("pixel clamp failed");
+        }
+
+        const beadClamped = window.QPixelTest.clampBeadParams({
+          width: 999,
+          height: -20,
+          lockRatio: true,
+          showCodes: false,
+          showGrid: true
+        });
+        if (beadClamped.width !== 500 || beadClamped.height !== 16 || beadClamped.showCodes !== false) {
+          throw new Error("bead clamp failed");
+        }
+
+        let exportDataUrl = "";
+        for (const precision of [0, 80, 500]) {
+          const rendered = await window.QPixelTest.renderSynthetic({
+            precision,
+            gap: 2,
+            radius: 6,
+            background: "checker"
+          });
+          if (rendered.visiblePixels <= 0) throw new Error("empty render at " + precision);
+          if (rendered.renderInfo.cols <= 0 || rendered.renderInfo.rows <= 0) throw new Error("bad grid at " + precision);
+          const blob = await window.QPixelTest.exportBlob(rendered.canvas);
+          if (!blob || blob.size <= 1000) throw new Error("small pixel blob at " + precision);
+          if (precision === 500) exportDataUrl = await blobToDataUrl(blob);
+        }
+
+        const generated = await window.QPixelTest.generateSyntheticBeadPattern(32, 24);
+        if (window.QPixelTest.paletteSize !== 221) throw new Error("Mard palette size mismatch");
+        if (!generated.pattern || generated.pattern.width !== 32 || generated.pattern.height !== 24) {
+          throw new Error("bead pattern size failed");
+        }
+        if (!generated.usage.length) throw new Error("empty bead usage");
+        const total = generated.usage.reduce((sum, item) => sum + item.count, 0);
+        if (total !== 32 * 24) throw new Error("usage total mismatch");
+
+        const firstCode = generated.pattern.cells[0][0];
+        const targetCode = firstCode === "A1" ? "A2" : "A1";
+        if (!window.QPixelTest.setPatternCell(0, 0, targetCode, generated.pattern)) {
+          throw new Error("set cell failed");
+        }
+        if (generated.pattern.cells[0][0] !== targetCode) throw new Error("cell did not change");
+
+        const replaced = window.QPixelTest.replacePatternColor(generated.pattern, targetCode, "A3");
+        if (replaced <= 0) throw new Error("replace failed");
+
+        const active = await window.QPixelTest.activateSyntheticBeadPattern(30, 28);
+        const stylePattern = await window.QPixelTest.activateSyntheticBeadPattern(16, 16);
+        window.QPixelTest.setPatternCell(0, 0, "H1", stylePattern.pattern);
+        window.QPixelTest.setPatternCell(0, 1, "H2", stylePattern.pattern);
+        if (!window.QPixelTest.drawMaterialPreview()) throw new Error("style preview draw failed");
+        const styleCanvas = document.getElementById("materialPreviewCanvas");
+        const sample = styleCanvas.getContext("2d").getImageData(68, 68, 1, 1).data;
+        if (Math.abs(sample[0] - 18) > 8 || Math.abs(sample[1] - 52) > 8 || Math.abs(sample[2] - 86) > 8) {
+          throw new Error(`style preview H1 not transparent: ${sample[0]},${sample[1]},${sample[2]}`);
+        }
+        await window.QPixelTest.activateSyntheticBeadPattern(30, 28);
+        const rectChanged = window.QPixelTest.applyRectEdit({ row: 1, col: 1 }, { row: 3, col: 4 }, "A1");
+        if (rectChanged <= 0) throw new Error("rect edit failed");
+        const layerReplaced = window.QPixelTest.replaceColorEverywhere("A1", "A2");
+        if (layerReplaced < rectChanged) throw new Error("layer color replace failed");
+        const singleReplaced = window.QPixelTest.replaceSingleVisibleCell({ row: 2, col: 2 }, "A3");
+        if (singleReplaced !== 1 || window.QPixelTest.getActivePattern().cells[2][2] !== "A3") {
+          throw new Error("single cell replace failed");
+        }
+        window.QPixelTest.setSelectedCode("B1");
+        window.QPixelTest.setShapeSettings({ type: "polygon", width: 7, height: 7, sides: 5 });
+        const shapeChanged = window.QPixelTest.drawShapeAtCell({ row: 8, col: 8 });
+        if (shapeChanged <= 0) throw new Error("shape draw failed");
+        window.QPixelTest.setShapeSettings({ type: "star", width: 2, height: 2 });
+        if (!window.QPixelTest.getShapeSizeError("star", 2, 2)) throw new Error("shape minimum failed");
+        if (window.QPixelTest.drawShapeAtCell({ row: 8, col: 8 }) !== 0) throw new Error("tiny star should not draw");
+        [
+          { type: "star", width: 11, height: 11 },
+          { type: "heart", width: 12, height: 11 },
+          { type: "diamond", width: 7, height: 7 },
+          { type: "text", width: 22, height: 14, text: "Q", font: "mono" }
+        ].forEach((shape, index) => {
+          window.QPixelTest.setSelectedCode(index % 2 ? "B1" : "C1");
+          window.QPixelTest.setShapeSettings({ ...shape, style: "filled" });
+          const changed = window.QPixelTest.drawShapeAtCell({ row: 9 + index, col: 9 + index });
+          if (changed <= 0) throw new Error(`${shape.type} shape failed`);
+        });
+        ["circle", "triangle", "polygon", "star", "heart", "diamond"].forEach((type) => {
+          const mask = window.QPixelTest.getShapeMask({ type, width: 17, height: 11, sides: 5 });
+          assertMaskHorizontalSymmetry(mask, type);
+        });
+        const wideStarBounds = getMaskBounds(window.QPixelTest.getShapeMask({ type: "star", width: 21, height: 11 }));
+        if (wideStarBounds.width > 13 || wideStarBounds.height > 11) {
+          throw new Error("wide star should stay proportional");
+        }
+        if (Math.abs((wideStarBounds.minCol + wideStarBounds.maxCol) - 20) > 1) {
+          throw new Error("wide star should stay centered");
+        }
+        const activePattern = window.QPixelTest.getActivePattern();
+        if (window.QPixelTest.addGuideLineAtCell({ row: 3, col: 4 }) <= 0 || window.QPixelTest.getGuideLines().length !== 1) {
+          throw new Error("guide line add failed");
+        }
+        window.QPixelTest.addGuideLineAtCell({ row: 3, col: 5 });
+        const guidesBeforeDelete = window.QPixelTest.getGuideLines().slice();
+        window.QPixelTest.selectGuideLine(guidesBeforeDelete[0].id);
+        if (window.QPixelTest.deleteSelectedGuideLine() !== 1 || window.QPixelTest.getGuideLines().length !== guidesBeforeDelete.length - 1) {
+          throw new Error("single guide line delete failed");
+        }
+        window.QPixelTest.paintBrushCell({ row: 0, col: 0 }, "M5", 1);
+        window.QPixelTest.paintBrushCell({ row: 0, col: 1 }, "M5", 1);
+        window.QPixelTest.paintBrushCell({ row: 1, col: 0 }, "M5", 1);
+        window.QPixelTest.paintBrushCell({ row: 1, col: 1 }, "A1", 1);
+        const flooded = window.QPixelTest.floodFillFromCell({ row: 0, col: 0 }, "M3");
+        if (flooded !== 3 || activePattern.cells[1][1] !== "A1") throw new Error("flood fill failed");
+        const erased = window.QPixelTest.paintBrushCell({ row: 5, col: 5 }, null, 3);
+        if (erased <= 1) throw new Error("eraser size failed");
+        if (window.QPixelTest.setBrushSize(4) !== 4) throw new Error("brush size setting failed");
+        const bigBrush = window.QPixelTest.paintBrushCell({ row: 8, col: 8 }, "C9", 4);
+        if (bigBrush < 9) throw new Error("brush size paint failed");
+        window.QPixelTest.paintBrushCell({ row: 12, col: 12 }, "A1", 1);
+        const outlined = window.QPixelTest.applyOutlineEdit("add", 1, "H5");
+        if (outlined < 4) throw new Error("outline add failed");
+        const deletedColor = window.QPixelTest.deleteColorEverywhere("H5");
+        if (deletedColor < outlined) throw new Error("delete color failed");
+        window.QPixelTest.setSelectedCells([{ row: 2, col: 2 }, { row: 2, col: 3 }, { row: 3, col: 2 }, { row: 3, col: 3 }]);
+        const selectedChanged = window.QPixelTest.applySelectionEdit("H5");
+        if (selectedChanged !== 4) throw new Error("selection fill failed");
+        if (!window.QPixelTest.copySelection()) throw new Error("selection copy failed");
+        const pasted = window.QPixelTest.pasteClipboard();
+        if (pasted <= 0) throw new Error("selection paste failed");
+        window.QPixelTest.paintBrushCell({ row: 18, col: 18 }, "A1", 1);
+        window.QPixelTest.paintBrushCell({ row: 18, col: 19 }, "A2", 1);
+        window.QPixelTest.setSelectedCells([{ row: 18, col: 18 }, { row: 18, col: 19 }]);
+        const template = window.QPixelTest.saveSelectionAsShapeTemplate("测试小花", false);
+        if (!template || template.width !== 2 || template.height !== 1) throw new Error("shape template save failed");
+        if (!window.QPixelTest.getShapeTemplates().some((item) => item.id === template.id && item.filled === 2)) {
+          throw new Error("shape template library failed");
+        }
+        if (!window.QPixelTest.selectShapeTemplate(template.id)) throw new Error("shape template select failed");
+        const templatePlaced = window.QPixelTest.drawShapeAtCell({ row: 20, col: 20 });
+        if (templatePlaced <= 0 || activePattern.cells[20][20] !== "A1" || activePattern.cells[20][21] !== "A2") {
+          throw new Error("shape template draw failed");
+        }
+        window.QPixelTest.paintBrushCell({ row: 10, col: 10 }, "A1", 1);
+        window.QPixelTest.paintBrushCell({ row: 10, col: 11 }, "A2", 1);
+        window.QPixelTest.setSelectedCells([{ row: 10, col: 10 }, { row: 10, col: 11 }]);
+        if (!window.QPixelTest.beginFloatingSelectionMove()) throw new Error("selection move begin failed");
+        if (!window.QPixelTest.moveFloatingSelectionTo(14, 14)) throw new Error("selection move target failed");
+        const movedSelection = window.QPixelTest.commitFloatingSelection();
+        const movedPattern = window.QPixelTest.getActivePattern();
+        if (movedSelection <= 0 || movedPattern.cells[10][10] !== null || movedPattern.cells[14][14] !== "A1") {
+          throw new Error("selection move should move original pixels");
+        }
+        window.QPixelTest.setSelectedCells([{ row: 14, col: 14 }, { row: 14, col: 15 }]);
+        if (!window.QPixelTest.copySelection()) throw new Error("selection copy before move failed");
+        if (!window.QPixelTest.beginFloatingSelectionMove()) throw new Error("copied selection move begin failed");
+        if (!window.QPixelTest.moveFloatingSelectionTo(16, 16)) throw new Error("copied selection move target failed");
+        const copiedMove = window.QPixelTest.commitFloatingSelection();
+        if (copiedMove <= 0 || movedPattern.cells[14][14] !== "A1" || movedPattern.cells[16][16] !== "A1") {
+          throw new Error("selection copy move should preserve original pixels");
+        }
+        const mirrored = window.QPixelTest.mirrorSelection();
+        if (mirrored < 0) throw new Error("selection mirror failed");
+        const rotated = window.QPixelTest.rotateSelection();
+        if (rotated < 0) throw new Error("selection rotate failed");
+        const lassoCells = window.QPixelTest.cellsFromLasso([
+          { row: 0, col: 0 },
+          { row: 0, col: 4 },
+          { row: 4, col: 4 },
+          { row: 4, col: 0 }
+        ]);
+        if (lassoCells.length < 9) throw new Error("lasso closed selection failed");
+        const beforeLayers = window.QPixelTest.getLayers().length;
+        window.QPixelTest.addLayer("测试空图层");
+        if (window.QPixelTest.getLayers().length !== beforeLayers + 1) throw new Error("layer add failed");
+        window.QPixelTest.duplicateActiveLayer();
+        if (window.QPixelTest.getLayers().length !== beforeLayers + 2) throw new Error("layer duplicate failed");
+        const layerMirror = window.QPixelTest.mirrorActiveLayer();
+        if (layerMirror < 0) throw new Error("layer mirror failed");
+        if (!window.QPixelTest.groupLayers()) throw new Error("layer group failed");
+        if (!window.QPixelTest.mergeVisibleLayers() || window.QPixelTest.getLayers().length !== 1) throw new Error("layer merge failed");
+        const widthBeforeExpand = window.QPixelTest.getActivePattern().width;
+        if (!window.QPixelTest.expandCanvas("right", 3) || window.QPixelTest.getActivePattern().width !== widthBeforeExpand + 3) {
+          throw new Error("canvas expand failed");
+        }
+        if (window.QPixelTest.mirrorFullCanvas() < 0) throw new Error("full canvas mirror failed");
+        const clearedLayerCells = window.QPixelTest.clearActiveLayerCells();
+        if (clearedLayerCells <= 0) throw new Error("clear active layer failed");
+        window.QPixelTest.paintBrushCell({ row: 2, col: 2 }, "A1", 1);
+        const widthBeforeScale = window.QPixelTest.getActivePattern().width;
+        if (!window.QPixelTest.scaleCanvasByFactor(1.25) || window.QPixelTest.getActivePattern().width <= widthBeforeScale) {
+          throw new Error("canvas scale failed");
+        }
+        const editedPattern = window.QPixelTest.getActivePattern();
+        const payload = window.QPixelTest.makeProjectPayload();
+        if (!payload || payload.pattern.width !== editedPattern.width || payload.pattern.height !== editedPattern.height || payload.title !== "测试源文件" || !payload.editorSettings || !payload.layers) {
+          throw new Error("project payload failed");
+        }
+        window.QPixelTest.setProjects([{ id: payload.id, title: payload.title, savedAt: payload.savedAt, width: payload.pattern.width, height: payload.pattern.height, payload }]);
+        if (window.QPixelTest.getProjects().length !== 1) throw new Error("local project save failed");
+        const applied = window.QPixelTest.applyProjectPayload(payload, false);
+        if (!applied) throw new Error("project apply failed");
+
+        const transfer = await window.QPixelTest.transferSyntheticPixelToBeads();
+        if (!transfer.pattern || transfer.pattern.width !== 32 || !transfer.usage.length) {
+          throw new Error("pixel transfer failed");
+        }
+
+        const squareTransfer = await window.QPixelTest.transferSyntheticSquarePixelToBeads(119);
+        if (
+          !squareTransfer.pattern ||
+          squareTransfer.pattern.width !== 119 ||
+          squareTransfer.pattern.height !== 119 ||
+          squareTransfer.gridSize.cols !== 119 ||
+          squareTransfer.gridSize.rows !== 119
+        ) {
+          throw new Error("119 precision transfer size failed");
+        }
+
+        const pixelEditable = await window.QPixelTest.activateSyntheticPixelEditablePattern(24, 24);
+        if (!pixelEditable.pattern || pixelEditable.pattern.width !== 24 || pixelEditable.pattern.height !== 24) {
+          throw new Error("pixel editable activation failed");
+        }
+        window.QPixelTest.applyRectEdit({ row: 0, col: 0 }, { row: 1, col: 23 }, null);
+        window.QPixelTest.applyRectEdit({ row: 0, col: 0 }, { row: 23, col: 1 }, null);
+        const croppedPixelArea = window.QPixelTest.autoCropCanvas();
+        window.QPixelTest.ensurePatternForCanvasEdit();
+        const croppedPixelPattern = window.QPixelTest.getActivePattern();
+        if (croppedPixelArea !== 22 * 22 || croppedPixelPattern.width !== 22 || croppedPixelPattern.height !== 22) {
+          throw new Error("pixel auto crop regenerated original");
+        }
+        const expandedPixel = window.QPixelTest.expandCanvas("right", 3);
+        window.QPixelTest.ensurePatternForCanvasEdit();
+        if (expandedPixel !== 3 || window.QPixelTest.getActivePattern().width !== 25) {
+          throw new Error("pixel expand failed after crop");
+        }
+        if (window.QPixelTest.mirrorFullCanvas() < 0) throw new Error("pixel mirror failed");
+        const pixelWidthBeforeScale = window.QPixelTest.getActivePattern().width;
+        if (!window.QPixelTest.scaleCanvasByFactor(1.25) || window.QPixelTest.getActivePattern().width <= pixelWidthBeforeScale) {
+          throw new Error("pixel scale failed");
+        }
+
+        await window.QPixelTest.activateSyntheticBeadPattern(32, 24);
+        const standardCanvas = window.QPixelTest.makeBeadExportCanvas(generated.pattern, { exportScale: 1 });
+        const beadCanvas = window.QPixelTest.makeBeadExportCanvas(generated.pattern);
+        const beadBlob = await window.QPixelTest.exportBlob(beadCanvas);
+        if (!beadBlob || beadBlob.size <= 3000) throw new Error("small bead blob");
+        const beadDataUrl = await blobToDataUrl(beadBlob);
+        const hiResCanvas = window.QPixelTest.makeBeadExportCanvas(generated.pattern, { exportScale: 8 });
+        if (!hiResCanvas || hiResCanvas.width < standardCanvas.width * 7.8 || hiResCanvas.height < standardCanvas.height * 6.4) {
+          throw new Error(`hi-res export scale failed ${standardCanvas.width}x${standardCanvas.height} -> ${hiResCanvas && hiResCanvas.width}x${hiResCanvas && hiResCanvas.height}`);
+        }
+        const widePaper = window.QPixelTest.makeBeadExportCanvas(generated.pattern, {
+          paperPreset: "square",
+          paperOrientation: "landscape",
+          exportRatio: "16:9",
+          exportScale: 1,
+          showUsage: false,
+          showInfo: false
+        });
+        if (!widePaper || widePaper.width <= widePaper.height || Math.abs(widePaper.width / widePaper.height - 16 / 9) > 0.1) {
+          throw new Error("export paper ratio failed");
+        }
+        window.QPixelTest.setGuideLines([
+          { id: "gv1", orientation: "vertical", index: 10, style: "dashed", color: "#ff9d38", opacity: 80 },
+          { id: "gv2", orientation: "vertical", index: 20, style: "dashed", color: "#ff9d38", opacity: 80 }
+        ]);
+        const guideRegionCount = window.QPixelTest.generateExportRegionsFromGuides();
+        const guideRegions = window.QPixelTest.getExportRegions();
+        if (guideRegionCount !== 3 || guideRegions[0].width !== 10 || guideRegions[1].startCol !== 10 || guideRegions[2].width !== 12) {
+          throw new Error("guide region split into three failed");
+        }
+        const guideGridRegions = window.QPixelTest.makeExportRegionsFromGuides([
+          { id: "gv1", orientation: "vertical", index: 10, style: "dashed", color: "#ff9d38", opacity: 80 },
+          { id: "gv2", orientation: "vertical", index: 20, style: "dashed", color: "#ff9d38", opacity: 80 },
+          { id: "gh1", orientation: "horizontal", index: 12, style: "solid", color: "#ff9d38", opacity: 80 }
+        ]);
+        if (guideGridRegions.length !== 6 || guideGridRegions[3].startRow !== 12 || guideGridRegions[3].height !== 12) {
+          throw new Error("guide grid region split failed");
+        }
+        const regionCount = window.QPixelTest.setExportRegions([
+          { id: "r1", name: "左上区域", startRow: 0, startCol: 0, height: 12, width: 16 },
+          { id: "r2", name: "右下区域", startRow: 12, startCol: 16, height: 12, width: 16 }
+        ]);
+        if (regionCount !== 2 || window.QPixelTest.getExportRegions().length !== 2) throw new Error("export region setup failed");
+        const regionPreview = window.QPixelTest.makeRegionPreviewCanvas(window.QPixelTest.getActivePattern(), { exportScale: 2 });
+        if (!regionPreview || regionPreview.width <= 1000 || regionPreview.height <= 1000) throw new Error("region preview failed");
+        const singleRegion = window.QPixelTest.makeRegionCanvas(window.QPixelTest.getActivePattern(), window.QPixelTest.getExportRegions()[0], 0, { exportScale: 2 });
+        if (!singleRegion || singleRegion.width <= 300 || singleRegion.height <= 300) throw new Error("single region export failed");
+        const multiRegion = window.QPixelTest.makeRegionsExportCanvasByIds(["r1", "r2"]);
+        if (!multiRegion || multiRegion.width <= singleRegion.width || multiRegion.height <= singleRegion.height) throw new Error("multi region export failed");
+        const regionPages = window.QPixelTest.makeRegionExportCanvasesByIds(["r1", "r2"]);
+        if (regionPages.length !== 2 || !regionPages[0].canvas || regionPages[0].region.id !== "r1" || regionPages[1].region.id !== "r2") {
+          throw new Error("separate region page export failed");
+        }
+        const compactCanvas = window.QPixelTest.makeBeadExportCanvas(generated.pattern, {
+          showGrid: false,
+          showCenterLines: false,
+          showCodes: false,
+          showUsage: false,
+          showInfo: false
+        });
+        const compactBlob = await window.QPixelTest.exportBlob(compactCanvas);
+        if (!compactBlob || compactBlob.size <= 1000) throw new Error("compact export failed");
+        const beadPixelCanvas = window.QPixelTest.makeBeadPixelCanvas(generated.pattern);
+        const beadPixelBlob = await window.QPixelTest.exportBlob(beadPixelCanvas);
+        if (!beadPixelBlob || beadPixelBlob.size <= 1000) throw new Error("bead pixel export failed");
+        const stickerCanvas = document.createElement("canvas");
+        stickerCanvas.width = 12;
+        stickerCanvas.height = 12;
+        const stickerCtx = stickerCanvas.getContext("2d");
+        stickerCtx.fillStyle = "#ff6699";
+        stickerCtx.fillRect(0, 0, 12, 12);
+        stickerCtx.clearRect(2, 2, 4, 4);
+        const stickerBlob = await window.QPixelTest.exportBlob(stickerCanvas);
+        const stickerFile = new File([stickerBlob], "测试贴纸.png", { type: "image/png" });
+        const stickerItem = await window.QPixelTest.makeStickerItemFromFile(stickerFile);
+        if (!stickerItem || !stickerItem.dataUrl || !stickerItem.name.includes("测试贴纸")) {
+          throw new Error("style sticker upload item failed");
+        }
+
+        const calibration = window.QPixelTest.makeDefaultCalibration(120, 90);
+        if (!calibration || calibration.columns <= 0 || calibration.cellSize <= 0) {
+          throw new Error("default calibration failed");
+        }
+        const calibratedPattern = await window.QPixelTest.generateSyntheticCalibratedPattern({
+          width: 120,
+          height: 90,
+          columns: 12,
+          cellSize: 10,
+          offsetX: 0,
+          offsetY: 0
+        });
+        if (!calibratedPattern || calibratedPattern.width !== 12 || calibratedPattern.height !== 9) {
+          throw new Error("calibrated pattern size failed");
+        }
+        if (!window.QPixelTest.getImportChoiceLabels().includes("像素校准后导入")) {
+          throw new Error("import calibration choice missing");
+        }
+
+        const noisy = await window.QPixelTest.activateSyntheticBeadPattern(48, 36);
+        const colorCodes = Array.from({ length: 26 }, (_, index) => `A${index + 1}`);
+        for (let row = 0; row < noisy.pattern.height; row += 1) {
+          for (let col = 0; col < noisy.pattern.width; col += 1) {
+            window.QPixelTest.paintBrushCell({ row, col }, colorCodes[(row * noisy.pattern.width + col) % colorCodes.length], 1);
+          }
+        }
+        const beforeColorCount = window.QPixelTest.countPatternColors(noisy.pattern);
+        const optimizedCount = window.QPixelTest.optimizePatternColors(20);
+        const afterColorCount = window.QPixelTest.countPatternColors(window.QPixelTest.getActivePattern());
+        if (beforeColorCount <= 20) throw new Error("synthetic pattern should start above color limit");
+        if (optimizedCount <= 0 || afterColorCount > 20) {
+          throw new Error(`color optimization failed ${beforeColorCount} -> ${afterColorCount}`);
+        }
+        window.QPixelTest.undoEdit();
+        if (window.QPixelTest.countPatternColors(window.QPixelTest.getActivePattern()) !== beforeColorCount) {
+          throw new Error("color optimization undo failed");
+        }
+
+        const emptyCells = Array.from({ length: 16 }, () => Array.from({ length: 16 }, () => null));
+        const mergedProjects = window.QPixelTest.mergeProjectsForTest(
+          [{ id: "same", title: "old", updatedAt: "2026-01-01T00:00:00.000Z", savedAt: "2026-01-01T00:00:00.000Z", payload: { pattern: { width: 16, height: 16, cells: emptyCells } } }],
+          [{ id: "same", title: "new", updatedAt: "2026-01-02T00:00:00.000Z", savedAt: "2026-01-02T00:00:00.000Z", payload: { pattern: { width: 16, height: 16, cells: emptyCells } } }]
+        );
+        if (mergedProjects.length !== 1 || mergedProjects[0].title !== "new") {
+          throw new Error("sync merge should keep newest project");
+        }
+
+        document.getElementById("pngData").textContent = exportDataUrl;
+        document.getElementById("beadPngData").textContent = beadDataUrl;
+        result.textContent = "PASS";
+        result.className = "pass";
+      } catch (error) {
+        result.textContent = "FAIL: " + error.message;
+        result.className = "fail";
+        console.error(error);
+      }
+    }
+    window.addEventListener("load", run);
+  </script>
+</body>
+</html>

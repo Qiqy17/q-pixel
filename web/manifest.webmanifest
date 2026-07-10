@@ -1,0 +1,19 @@
+{
+  "name": "Q像素",
+  "short_name": "Q像素",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6f8",
+  "theme_color": "#3f83f8",
+  "orientation": "any",
+  "description": "像素画、拼豆图纸、样式预览与本地创作空间",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

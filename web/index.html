@@ -1,0 +1,1159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Q像素">
+  <meta name="theme-color" content="#f4f6f8">
+  <title>Q像素</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./icon.svg">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app-shell is-home">
+    <section class="home-view" id="homeView" aria-label="Q像素首页">
+      <header class="home-header">
+        <div class="brand home-brand">
+          <div class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span>
+            <span></span><span></span><span></span><span></span><span></span>
+          </div>
+          <div>
+            <h1>Q像素</h1>
+            <p>像素画、拼豆图纸与本地创作空间</p>
+          </div>
+        </div>
+        <div class="home-header-actions">
+          <button class="text-button secondary" id="homeSyncButton" type="button">同步电脑文件</button>
+          <button class="text-button secondary" id="homeTrashButton" type="button">回收站</button>
+          <button class="text-button" id="homeNewTopButton" type="button">新建设计</button>
+        </div>
+      </header>
+
+      <section class="home-grid">
+        <section class="home-card creation-space">
+          <div class="home-card-head">
+            <div>
+              <h2>创作空间</h2>
+              <p>保存在本机的 Q像素源文件都会出现在这里。</p>
+            </div>
+            <button class="icon-button" id="homeNewDesignButton" type="button" title="新建设计">+</button>
+          </div>
+          <div class="home-project-grid" id="homeProjectGrid"></div>
+        </section>
+
+        <aside class="home-card profile-space">
+          <h2>我的</h2>
+          <div class="profile-head">
+            <div class="profile-avatar"><span>Q</span><button type="button" title="编辑头像">✎</button></div>
+            <div>
+              <strong id="homeProfileName">Qigy</strong>
+              <p id="homeSignature">个性签名..........</p>
+            </div>
+          </div>
+          <section class="design-record">
+            <h3>设计记录</h3>
+            <div class="record-month">
+              <button class="mini-button" id="homeRecordPrevButton" type="button" title="上个月">‹</button>
+              <strong id="homeRecordYear">2026 年</strong><em id="homeRecordMonth">6 月</em>
+              <button class="mini-button" id="homeRecordNextButton" type="button" title="下个月">›</button>
+            </div>
+            <div class="record-calendar" id="homeRecordCalendar" aria-label="设计日历"></div>
+            <p>设计天数累积 <strong id="homeDesignDays">0</strong> 天，平均每天设计时长 <strong id="homeAvgDayTime">0</strong> 小时</p>
+            <p>共计产出作品 <strong id="homeProjectCount">0</strong> 个，平均每个作品耗时 <strong id="homeAvgWorkTime">0</strong> 小时</p>
+            <p>累计拼豆 <strong id="homeBeadCount">0</strong> 颗</p>
+          </section>
+          <section class="recent-records">
+            <h3>最近记录</h3>
+            <div class="home-record-list" id="homeRecordList"></div>
+          </section>
+          <div class="profile-actions">
+            <button class="text-button secondary" id="homeOpenProjectButton" type="button">打开源文件</button>
+            <button class="text-button secondary" id="homeImportImageButton" type="button">导入图片</button>
+          </div>
+        </aside>
+      </section>
+    </section>
+
+    <header class="topbar" id="editorTopbar">
+      <div class="brand">
+        <button class="back-button" id="backHomeButton" type="button" title="返回首页">‹</button>
+        <div class="brand-mark" aria-hidden="true">
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <div>
+          <h1>Q像素</h1>
+          <p id="imageStatus">选择一张图片开始创作</p>
+        </div>
+      </div>
+
+      <nav class="mode-tabs" aria-label="工作模式">
+        <button id="modePixelButton" class="active" type="button" data-mode="pixel">像素画</button>
+        <button id="modeBeadsButton" type="button" data-mode="beads">拼豆图纸</button>
+      </nav>
+
+      <div class="top-actions">
+        <button class="text-button secondary" id="chooseTopButton" type="button">导入</button>
+        <button class="text-button secondary" id="saveTopButton" type="button">保存</button>
+        <button class="text-button secondary" id="materialPreviewButton" type="button">样式预览</button>
+        <button class="text-button" id="exportTopButton" type="button">导出 PNG</button>
+      </div>
+      <button class="chrome-toggle topbar-collapse-button" id="topbarCollapseButton" type="button" title="收起顶部栏" aria-label="收起顶部栏">⌃</button>
+    </header>
+
+    <button class="floating-chrome-toggle topbar-restore-button hidden-control" id="topbarExpandButton" type="button">⌄ 顶部</button>
+
+    <section class="workspace" id="editorWorkspace">
+      <section class="preview-column">
+        <div class="preview-toolbar">
+          <div class="meta">
+            <span id="canvasSize">未载入图片</span>
+            <span id="renderHint">像素精度 0~500</span>
+          </div>
+          <div class="toolbar-actions">
+            <div class="zoom-tools" role="group" aria-label="画布缩放">
+              <button id="undoTopButton" type="button" title="撤销">↶</button>
+              <button id="redoTopButton" type="button" title="重做">↷</button>
+              <button id="zoomOutButton" type="button" title="缩小">-</button>
+              <button id="fitViewButton" type="button" title="适应画布">适应</button>
+              <button id="zoomInButton" type="button" title="放大">+</button>
+            </div>
+            <div class="segmented pixel-only" role="group" aria-label="背景">
+              <button type="button" data-bg="light">浅色</button>
+              <button type="button" data-bg="dark">深色</button>
+              <button type="button" data-bg="checker" class="active">棋盘格</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="preview-frame checker" id="dropZone">
+          <div class="canvas-tool-rail bead-only" role="group" aria-label="画布工具">
+            <button class="rail-grip" id="toolRailGrip" type="button" title="拖动工具栏">⋮⋮</button>
+            <button class="rail-collapse" id="toolRailCollapseButton" type="button" title="收起工具栏">‹</button>
+            <button class="tool-button with-badge" id="toolBrushButton" type="button" data-tool="brush" title="画笔" data-icon="✎">画笔<span class="tool-badge" id="brushBadge">1</span></button>
+            <button class="tool-button" id="toolPickerButton" type="button" data-tool="picker" title="取色" data-icon="⌕">取色</button>
+            <div class="recent-color-stack" id="recentColorStack" title="近期色号"></div>
+            <button class="tool-button with-badge" id="toolEraserButton" type="button" data-tool="eraser" title="橡皮擦" data-icon="⌫">橡皮<span class="tool-badge" id="eraserBadge">1</span></button>
+            <button class="tool-button" id="toolRectClearButton" type="button" data-tool="rect-clear" title="连通区域删除" data-icon="▨">区删</button>
+            <button class="tool-button" id="toolRecolorButton" type="button" data-tool="recolor" title="一键替换配色" data-icon="⇄">配色</button>
+            <button class="tool-button" id="toolGuideButton" type="button" data-tool="guide" title="添加辅助线" data-icon="╋">辅助线</button>
+          </div>
+          <div class="canvas-tool-rail rail-b bead-only" role="group" aria-label="画布辅助工具">
+            <button class="rail-grip" id="toolRailBGrip" type="button" title="拖动辅助工具栏">⋮⋮</button>
+            <button class="rail-collapse" id="toolRailBCollapseButton" type="button" title="收起辅助工具栏">›</button>
+            <button class="tool-button active" id="toolPanButton" type="button" data-tool="pan" title="移动画布" data-icon="↕">移动</button>
+            <button class="tool-button" id="toolBucketButton" type="button" data-tool="bucket" title="连通区域填充" data-icon="◩">填充</button>
+            <button class="tool-button" id="toolOutlineButton" type="button" data-tool="outline" title="像素描边" data-icon="▣">描边</button>
+            <button class="tool-button" id="toolRectFillButton" type="button" data-tool="rect-fill" title="矩形区域填充" data-icon="▧">矩填</button>
+            <button class="tool-button" id="toolSelectButton" type="button" data-tool="select" title="区域选择" data-icon="□">选区</button>
+            <button class="tool-button" id="toolShapeButton" type="button" data-tool="shape" title="像素图形" data-icon="◇">图形</button>
+            <button class="tool-button" id="toolPaletteButton" type="button" data-tool="palette" title="色号板" data-icon="◉">色板</button>
+            <button class="tool-button" id="toolClearLayerButton" type="button" data-tool="clear-layer" title="清空当前图层" data-icon="×">清空</button>
+          </div>
+          <div class="canvas-tool-options bead-only" id="toolOptionsPanel">
+            <div class="option-block tool-option" data-option="brush">
+              <label for="brushSizeRange">画笔范围 <strong id="brushSizeLabel">1</strong></label>
+              <input id="brushSizeRange" type="range" min="1" max="10" value="1">
+              <button class="option-primary" id="brushDoneButton" type="button">确定</button>
+            </div>
+            <div class="option-block tool-option" data-option="eraser">
+              <label for="eraserSizeRange">橡皮范围 <strong id="eraserSizeLabel">1</strong></label>
+              <input id="eraserSizeRange" type="range" min="1" max="10" value="1">
+              <button class="option-primary" id="eraserDoneButton" type="button">确定</button>
+            </div>
+            <div class="option-block tool-option" data-option="outline">
+              <label>描边工具</label>
+              <div class="mini-segmented">
+                <button id="outlineAddButton" type="button" data-outline-mode="add" class="active">增加</button>
+                <button id="outlineRemoveButton" type="button" data-outline-mode="remove">减少</button>
+              </div>
+              <label for="outlineWidthRange">描边宽度 <strong id="outlineWidthLabel">1</strong></label>
+              <input id="outlineWidthRange" type="range" min="1" max="10" value="1">
+              <label class="mini-field">描边颜色
+                <select id="outlineColorSelect" class="full-select"></select>
+              </label>
+              <button class="option-primary" id="outlineApplyButton" type="button">应用描边</button>
+            </div>
+            <div class="option-block tool-option" data-option="recolor">
+              <label>一键替换配色</label>
+              <div class="mini-grid">
+                <label class="mini-field">原色系
+                  <select id="recolorFromSelect" class="full-select">
+                    <option value="red">红色系</option>
+                    <option value="orange">橙色系</option>
+                    <option value="yellow">黄色系</option>
+                    <option value="green">绿色系</option>
+                    <option value="cyan">青色系</option>
+                    <option value="blue">蓝色系</option>
+                    <option value="purple">紫色系</option>
+                    <option value="gray">黑白灰</option>
+                  </select>
+                </label>
+                <label class="mini-field">目标色系
+                  <select id="recolorToSelect" class="full-select">
+                    <option value="purple">紫色系</option>
+                    <option value="red">红色系</option>
+                    <option value="orange">橙色系</option>
+                    <option value="yellow">黄色系</option>
+                    <option value="green">绿色系</option>
+                    <option value="cyan">青色系</option>
+                    <option value="blue">蓝色系</option>
+                    <option value="gray">黑白灰</option>
+                  </select>
+                </label>
+              </div>
+              <button class="option-primary" id="recolorApplyButton" type="button">按明暗替换</button>
+            </div>
+            <div class="option-block tool-option" data-option="guide">
+              <label>辅助线</label>
+              <div class="mini-segmented">
+                <button id="guideVerticalButton" type="button" data-guide-orientation="vertical" class="active">纵向</button>
+                <button id="guideHorizontalButton" type="button" data-guide-orientation="horizontal">横向</button>
+              </div>
+              <div class="mini-segmented">
+                <button id="guideSolidButton" type="button" data-guide-style="solid" class="active">实线</button>
+                <button id="guideDashedButton" type="button" data-guide-style="dashed">虚线</button>
+              </div>
+              <label class="mini-field">颜色
+                <input id="guideColorInput" type="color" value="#ff9d38">
+              </label>
+              <label for="guideOpacityRange">透明度 <strong id="guideOpacityLabel">80%</strong></label>
+              <input id="guideOpacityRange" type="range" min="10" max="100" value="80">
+              <label class="mini-field">当前辅助线
+                <select id="guideLineSelect" class="full-select"></select>
+              </label>
+              <button class="option-primary" id="guideDoneButton" type="button">确定样式</button>
+              <button class="option-primary" id="guideDeleteButton" type="button">删除当前辅助线</button>
+              <button class="option-primary ghost" id="guideClearButton" type="button">清除全部辅助线</button>
+            </div>
+            <div class="option-block tool-option" data-option="select">
+              <label>选区模式</label>
+              <div class="mini-segmented">
+                <button id="selectRectButton" type="button" data-select-mode="rect" class="active">矩形</button>
+                <button id="selectLassoButton" type="button" data-select-mode="lasso">套索</button>
+              </div>
+              <div class="mini-segmented lasso-ops">
+                <button id="selectionReplaceButton" type="button" data-selection-op="replace" class="active">新选区</button>
+                <button id="selectionAddButton" type="button" data-selection-op="add">区域+</button>
+                <button id="selectionSubtractButton" type="button" data-selection-op="subtract">区域-</button>
+              </div>
+            </div>
+            <div class="option-block tool-option" data-option="selection-actions">
+              <label>选区操作</label>
+              <div class="mini-grid">
+                <button id="selectionFillButton" type="button">填色</button>
+                <button id="selectionClearButton" type="button">删除</button>
+                <button id="selectionCopyButton" type="button">复制</button>
+                <button id="selectionPasteButton" type="button">粘贴</button>
+                <button id="selectionMoveButton" type="button">移动</button>
+                <button id="selectionMirrorButton" type="button">镜像</button>
+                <button id="selectionColorsButton" type="button">色号</button>
+                <button id="selectionOutlineButton" type="button">描边</button>
+              </div>
+            </div>
+            <div class="option-block tool-option" data-option="selection-colors" id="selectionColorPanel">
+              <label>选区色号</label>
+              <div class="selection-color-list" id="selectionColorList"></div>
+              <label class="mini-field">目标色号
+                <select id="selectionColorTargetSelect" class="full-select"></select>
+              </label>
+              <div id="selectionColorTargetPaletteGrid" class="target-palette-grid" aria-label="选区目标色号色板"></div>
+              <div class="mini-grid">
+                <label class="mini-field">小于
+                  <input id="selectionSmallColorLimitInput" type="number" min="1" max="9999" value="6">
+                </label>
+                <button id="selectionColorMergeSmallButton" type="button">合并小色</button>
+              </div>
+            </div>
+            <div class="option-block tool-option" data-option="shape">
+              <label>像素图形</label>
+              <div class="mini-segmented shape-style-grid">
+                <button id="shapeFilledButton" type="button" data-shape-style="filled" class="active">填充</button>
+                <button id="shapeOutlineButton" type="button" data-shape-style="outline">线框</button>
+              </div>
+              <div class="mini-segmented shape-preset-grid">
+                <button id="shapeSquareButton" type="button" data-shape-type="square" class="active">方形</button>
+                <button id="shapeCircleButton" type="button" data-shape-type="circle">圆形</button>
+                <button id="shapeTriangleButton" type="button" data-shape-type="triangle">三角形</button>
+                <button id="shapePolygonButton" type="button" data-shape-type="polygon">多边形</button>
+                <button id="shapeStarButton" type="button" data-shape-type="star">五角星</button>
+                <button id="shapeHeartButton" type="button" data-shape-type="heart">心形</button>
+                <button id="shapeDiamondButton" type="button" data-shape-type="diamond">菱形</button>
+                <button id="shapeTextButton" type="button" data-shape-type="text">文字</button>
+              </div>
+              <div class="mini-grid">
+                <label class="mini-field">宽
+                  <input id="shapeWidthInput" type="number" min="1" max="500" value="12">
+                </label>
+                <label class="mini-field">高
+                  <input id="shapeHeightInput" type="number" min="1" max="500" value="12">
+                </label>
+                <label class="mini-field">边数
+                  <input id="shapeSidesInput" type="number" min="3" max="16" value="5">
+                </label>
+              </div>
+              <div class="inline-setting">
+                <label>文字字体</label>
+                <select id="shapeFontSelect" class="full-input">
+                  <option value="system">系统黑体</option>
+                  <option value="rounded">圆润黑体</option>
+                  <option value="serif">宋体/衬线</option>
+                  <option value="mono">像素等宽</option>
+                  <option value="bold">粗黑标题</option>
+                </select>
+              </div>
+              <label class="mini-field">文字内容
+                <input id="shapeTextInput" type="text" maxlength="12" value="Q像素">
+              </label>
+              <p class="shape-min-hint" id="shapeMinHint">当前图形最小 1 x 1 格</p>
+              <div class="material-section shape-template-box">
+                <strong>自定义图形模板</strong>
+                <label class="mini-field">已保存模板
+                  <select id="shapeTemplateSelect" class="full-select"></select>
+                </label>
+                <label class="mini-field">模板名称
+                  <input id="shapeTemplateNameInput" type="text" maxlength="24" value="我的图形">
+                </label>
+                <label class="switch-row compact"><span><strong>保存时转黑色</strong><em>把选区内非空像素统一为黑色色号</em></span><input id="shapeTemplateMonoToggle" type="checkbox"></label>
+                <div class="mini-grid">
+                  <button id="shapeTemplateSaveButton" type="button">保存选区为模板</button>
+                  <button id="shapeTemplateDeleteButton" type="button">删除模板</button>
+                </div>
+              </div>
+              <button class="option-primary" id="shapeApplyButton" type="button">确定图形</button>
+            </div>
+            <div class="option-block tool-option palette-option" data-option="palette">
+              <label>色号板</label>
+              <input id="paletteSearchInput" class="tool-search" type="search" placeholder="搜索色号">
+              <div id="floatingPaletteGrid" class="floating-palette-grid" aria-label="Mard 221 色号板"></div>
+            </div>
+          </div>
+          <div class="cell-info-popover bead-only hidden" id="cellInfoPanel">
+            <button class="mini-close" id="cellInfoCloseButton" type="button" title="关闭">×</button>
+            <div class="cell-info-head">
+              <span id="cellInfoSwatch"></span>
+              <strong id="cellInfoCode">--</strong>
+              <em id="cellInfoName">--</em>
+            </div>
+            <p id="cellInfoMeta">--</p>
+            <label class="mini-field">目标色号
+              <select id="cellTargetSelect" class="full-select"></select>
+            </label>
+            <div id="cellTargetPaletteGrid" class="target-palette-grid" aria-label="目标色号色板"></div>
+            <div class="mini-grid">
+              <button id="cellMergeToSelectedButton" type="button">整色替换</button>
+              <button id="cellReplaceToSelectedButton" type="button">单格替换</button>
+              <button id="cellDeleteColorButton" type="button">删除色号</button>
+            </div>
+            <div class="inline-control">
+              <label for="smallColorLimitInput">合并小于</label>
+              <input id="smallColorLimitInput" type="number" min="1" max="9999" value="10">
+              <button id="mergeSmallColorsButton" type="button">执行</button>
+            </div>
+          </div>
+          <div class="color-strip bead-only" id="colorStrip">
+            <button class="strip-grip" id="colorStripGrip" type="button" title="拖动色号栏">⋮⋮</button>
+            <button class="strip-toggle" id="colorStripToggle" type="button">色号栏</button>
+            <div class="strip-content" id="colorStripContent"></div>
+          </div>
+          <canvas id="previewCanvas" width="900" height="620" aria-label="预览画布"></canvas>
+          <div class="empty-state" id="emptyState">
+            <div class="empty-mark">Q</div>
+            <h2 id="emptyTitle">拖入图片或选择图片</h2>
+            <p id="emptyDescription">支持 PNG、JPG、WebP 等常见图片格式</p>
+            <button class="text-button" id="chooseEmptyButton" type="button">选择图片</button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="control-panel" id="controlPanel">
+        <button class="chrome-toggle side-collapse-button" id="sidePanelCollapseButton" type="button" title="收起右侧栏" aria-label="收起右侧栏">›</button>
+        <section id="pixelPanel" class="mode-panel active">
+          <div class="panel-section">
+            <h2>像素参数</h2>
+            <p class="panel-caption">生成像素画后，可直接转为拼豆图纸。</p>
+          </div>
+
+          <div class="control-row">
+            <label for="precisionRange">像素精度</label>
+            <div class="control-inputs">
+              <input id="precisionRange" type="range" min="0" max="500" value="80">
+              <input id="precisionNumber" type="number" min="0" max="500" value="80" inputmode="numeric">
+            </div>
+          </div>
+
+          <div class="control-row">
+            <label for="gapRange">像素间隔</label>
+            <div class="control-inputs">
+              <input id="gapRange" type="range" min="0" max="40" value="0">
+              <input id="gapNumber" type="number" min="0" max="40" value="0" inputmode="numeric">
+            </div>
+          </div>
+
+          <div class="control-row">
+            <label for="radiusRange">圆角半径</label>
+            <div class="control-inputs">
+              <input id="radiusRange" type="range" min="0" max="50" value="8">
+              <input id="radiusNumber" type="number" min="0" max="50" value="8" inputmode="numeric">
+            </div>
+          </div>
+
+          <label class="check-line">
+            <input id="pixelCodesToggle" type="checkbox">
+            <span>显示近似 Mard 色号</span>
+          </label>
+
+          <div class="panel-actions stacked">
+            <button class="text-button secondary" id="replaceButton" type="button">替换图片</button>
+            <button class="text-button secondary" id="pixelToBeadsButton" type="button">转为拼豆图纸</button>
+            <button class="text-button secondary" id="pixelExportPreviewButton" type="button">导出预览</button>
+            <button class="text-button" id="exportButton" type="button">导出 PNG</button>
+          </div>
+        </section>
+
+        <section id="beadPanel" class="mode-panel">
+          <div class="panel-card">
+            <div class="panel-section">
+              <h2>显示拼豆图纸</h2>
+              <p id="usageSummary" class="panel-caption">底部色号栏可查看用量，点击色号可批量替换。</p>
+            </div>
+            <div class="toggle-grid">
+              <label class="check-line">
+                <input id="showCodesToggle" type="checkbox" checked>
+                <span>显示色号</span>
+              </label>
+              <label class="check-line">
+                <input id="showGridToggle" type="checkbox" checked>
+                <span>显示网格</span>
+              </label>
+            </div>
+            <div class="control-row compact-row">
+              <label for="codeFontScaleRange">色号字号</label>
+              <div class="control-inputs">
+                <input id="codeFontScaleRange" type="range" min="80" max="180" value="125">
+                <input id="codeFontScaleNumber" type="number" min="80" max="180" value="125" inputmode="numeric">
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-card color-optimize-card">
+            <div class="panel-section compact">
+              <h2>色号优化</h2>
+              <p class="panel-caption">控制整幅图纸的色号数量，减少杂色并保留轮廓。</p>
+            </div>
+            <div class="edit-row">
+              <span>最多色号</span>
+              <input id="colorOptimizeLimitInput" type="number" min="2" max="221" value="20" inputmode="numeric">
+            </div>
+            <div class="split-actions compact-actions">
+              <button class="text-button" id="colorOptimizeButton" type="button">优化色号</button>
+              <button class="text-button secondary" id="colorOptimizeUndoButton" type="button">撤销优化</button>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-section compact">
+              <h2>图纸尺寸</h2>
+            </div>
+            <div class="size-grid">
+              <div>
+                <span>宽</span>
+                <input id="beadWidthNumber" type="number" min="16" max="500" value="48" inputmode="numeric">
+              </div>
+              <div>
+                <span>高</span>
+                <input id="beadHeightNumber" type="number" min="16" max="500" value="48" inputmode="numeric">
+              </div>
+            </div>
+            <label class="check-line">
+              <input id="beadLockRatio" type="checkbox" checked>
+              <span>保持原图比例</span>
+            </label>
+            <div class="split-actions">
+              <button class="text-button" id="generateBeadsButton" type="button">生成图纸</button>
+              <button class="text-button secondary" id="usePixelButton" type="button">使用像素画结果</button>
+            </div>
+          </div>
+
+          <div class="panel-card layer-card">
+            <div class="panel-section panel-headline">
+              <h2>图层</h2>
+              <button class="icon-plus" id="layerPanelToggle" type="button" title="新建图层">+</button>
+            </div>
+            <div class="right-layer-panel" id="rightLayerPanel">
+              <div class="layer-actions">
+                <button id="layerMergeButton" type="button">合并</button>
+                <button id="layerGroupButton" type="button">分组</button>
+                <button id="layerImportButton" type="button">导入图层</button>
+              </div>
+              <button id="layerNewButton" type="button" class="hidden-control">新建</button>
+              <button id="layerDuplicateButton" type="button" class="hidden-control">复制</button>
+              <button id="layerMirrorButton" type="button" class="hidden-control">镜像</button>
+              <div id="layerList" class="layer-list"></div>
+              <input id="layerImportInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,.qpx,application/json" hidden>
+            </div>
+          </div>
+
+          <div class="panel-card canvas-edit-card">
+            <div class="panel-section compact">
+              <h2>画布编辑</h2>
+            </div>
+            <div class="edit-row">
+              <span>全图镜像</span>
+              <button class="mini-button" id="canvasMirrorButton" type="button">立即镜像</button>
+            </div>
+            <div class="edit-row">
+              <span>扩容</span>
+              <input id="expandAmountInput" type="number" min="1" max="200" value="5" inputmode="numeric">
+            </div>
+            <div class="direction-grid">
+              <button id="expandUpButton" type="button">向上</button>
+              <button id="expandDownButton" type="button">向下</button>
+              <button id="expandLeftButton" type="button">向左</button>
+              <button id="expandRightButton" type="button">向右</button>
+            </div>
+            <div class="split-actions compact-actions">
+              <button class="text-button secondary" id="cropAutoButton" type="button">自动裁剪</button>
+              <button class="text-button secondary" id="cropSelectionButton" type="button">选区裁剪</button>
+            </div>
+            <div class="edit-row">
+              <span>放大/缩小</span>
+              <input id="scaleFactorInput" type="number" min="0.25" max="6" step="0.25" value="2" inputmode="decimal">
+            </div>
+            <div class="split-actions compact-actions">
+              <button class="text-button secondary" id="scaleUpButton" type="button">放大</button>
+              <button class="text-button secondary" id="scaleDownButton" type="button">缩小</button>
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-section compact">
+              <h2>底板设置</h2>
+            </div>
+            <div class="baseboard-grid">
+              <select id="baseboardModeSelect">
+                <option value="white">白底</option>
+                <option value="black">黑底</option>
+                <option value="transparent">透明底</option>
+                <option value="custom">自定义</option>
+              </select>
+              <input id="baseboardColorInput" type="color" value="#ffffff" aria-label="底板颜色">
+            </div>
+          </div>
+
+          <div class="panel-card">
+            <div class="panel-section compact">
+              <h2>画布空间</h2>
+              <p class="panel-caption">保存为本地小源文件，下次继续编辑。</p>
+            </div>
+            <input id="projectTitleInput" class="full-input" type="text" value="未命名" aria-label="作品名">
+            <div class="split-actions compact-actions">
+              <button class="text-button" id="saveProjectButton" type="button">保存当前</button>
+              <button class="text-button secondary" id="importProjectButton" type="button">打开 .qpx</button>
+            </div>
+            <div class="split-actions compact-actions">
+              <button class="text-button secondary" id="exportProjectButton" type="button">导出源文件</button>
+              <button class="text-button secondary" id="exportBeadPixelButton" type="button">导出像素画</button>
+            </div>
+            <div id="projectList" class="project-list"></div>
+          </div>
+
+          <select id="paletteSelect" class="full-select hidden-control" aria-label="当前颜色"></select>
+          <div id="paletteGrid" class="palette-grid hidden-control" aria-label="色板"></div>
+          <select id="replaceFromSelect" class="full-select hidden-control"></select>
+          <select id="replaceToSelect" class="full-select hidden-control"></select>
+          <button class="hidden-control" id="replaceAllButton" type="button">替换全部</button>
+          <button class="hidden-control" id="exportPreviewOpenButton" type="button">打开导出预览</button>
+          <button class="hidden-control" id="exportChartButton" type="button">导出图纸 PNG</button>
+          <button class="hidden-control" id="exportAlbumButton" type="button">导出图册 PNG</button>
+        </section>
+
+        <div class="message" id="message" role="status"></div>
+      </aside>
+      <button class="floating-chrome-toggle side-restore-button hidden-control" id="sidePanelExpandButton" type="button">‹ 右侧</button>
+    </section>
+  </main>
+
+  <section class="export-preview-modal hidden compact-modal" id="materialPreviewModal" aria-label="样式预览">
+    <div class="export-preview-shell material-shell">
+      <div class="export-preview-head">
+        <div>
+          <h2>样式预览</h2>
+          <p>组合背景、边框、阴影、厚度和表面遮罩，预览成品展示效果。</p>
+        </div>
+        <button class="back-button" id="materialPreviewCloseButton" type="button" title="关闭">×</button>
+      </div>
+      <div class="material-body">
+        <div class="material-canvas-wrap">
+          <div class="preview-zoom-bar">
+            <button id="stylePreviewZoomOutButton" type="button">-</button>
+            <button id="stylePreviewZoomFitButton" type="button">适应</button>
+            <button id="stylePreviewZoomInButton" type="button">+</button>
+          </div>
+          <canvas id="materialPreviewCanvas" width="900" height="640" aria-label="样式预览画布"></canvas>
+        </div>
+        <aside class="material-controls">
+          <label>背景比例
+            <select id="styleRatioSelect">
+              <option value="1:1">1:1</option>
+              <option value="4:3">4:3</option>
+              <option value="16:9">16:9</option>
+              <option value="3:4">3:4</option>
+              <option value="9:16">9:16</option>
+              <option value="custom">自定义</option>
+            </select>
+          </label>
+          <label>方向
+            <select id="styleOrientationSelect">
+              <option value="landscape">横版</option>
+              <option value="portrait">竖版</option>
+            </select>
+          </label>
+          <div class="style-inline">
+            <label>宽
+              <input id="styleCustomWidthInput" type="number" min="320" max="2400" value="1080">
+            </label>
+            <label>高
+              <input id="styleCustomHeightInput" type="number" min="320" max="2400" value="1080">
+            </label>
+          </div>
+          <label>背景颜色
+            <input id="styleBackgroundColorInput" type="color" value="#f4f0e8">
+          </label>
+          <label>背景透明度 <strong id="styleBackgroundAlphaLabel">100</strong>
+            <input id="styleBackgroundAlphaRange" type="range" min="0" max="100" value="100">
+          </label>
+          <label>背景材质
+            <select id="materialBackgroundSelect">
+              <option value="felt">毛毡板</option>
+              <option value="glass">玻璃板</option>
+              <option value="wood">木纹板</option>
+              <option value="kraft">牛皮板</option>
+              <option value="marble">大理石板</option>
+              <option value="linen-bg">亚麻布板</option>
+              <option value="cork">软木板</option>
+              <option value="grid-paper">方格纸</option>
+              <option value="pastel-gradient">柔彩渐变</option>
+              <option value="dark-studio">深色摄影棚</option>
+              <option value="plain">纯色</option>
+              <option value="custom">自定义图片</option>
+            </select>
+          </label>
+          <div class="style-file-row">
+            <button class="mini-button" id="styleBackgroundImageButton" type="button">选择背景图</button>
+            <span id="styleBackgroundImageName">未选择</span>
+            <input id="styleBackgroundImageInput" type="file" accept="image/*" hidden>
+          </div>
+          <label>表面材质遮罩
+            <select id="materialModeSelect">
+              <option value="normal">01 亮面胶感</option>
+              <option value="matte">02 哑光柔面</option>
+              <option value="parchment">03 烘焙纸雾面</option>
+              <option value="coarse-towel">04 粗纹毛巾</option>
+              <option value="fine-towel">05 细纹毛巾</option>
+              <option value="felt-mask">06 毛毡纤维</option>
+              <option value="linen">07 亚麻布纹</option>
+              <option value="canvas">08 帆布纹</option>
+              <option value="diagonal">09 斜纹压纹</option>
+              <option value="wave">10 波纹压纹</option>
+              <option value="ripple">11 水波纹</option>
+              <option value="grid">12 微格纹</option>
+              <option value="dots">13 细点颗粒</option>
+              <option value="grain">14 胶片颗粒</option>
+              <option value="glitter">15 银闪</option>
+              <option value="black-glitter">16 黑闪</option>
+              <option value="rainbow-glitter">17 彩闪</option>
+              <option value="pearl">18 珍珠光</option>
+              <option value="holographic">19 镭射膜</option>
+              <option value="plastic">20 透明塑封</option>
+              <option value="ceramic">21 陶瓷釉面</option>
+              <option value="cross-stitch">22 十字绣针脚</option>
+              <option value="bead-3d">23 拼豆立体</option>
+              <option value="holes">24 保孔颗粒</option>
+            </select>
+          </label>
+          <label>边框类型
+            <select id="materialBaseSelect">
+              <option value="none">无边框</option>
+              <option value="flat">平面边框</option>
+              <option value="frame">立体相框</option>
+              <option value="screen">屏幕框</option>
+              <option value="lace">蕾丝边</option>
+              <option value="bow">蝴蝶结边</option>
+              <option value="wave">波浪边</option>
+              <option value="polka">波点边</option>
+              <option value="ticket">邮票齿边</option>
+              <option value="stitch">缝线边</option>
+              <option value="french-frame">法式鎏金相框</option>
+              <option value="wood-frame">原木相框</option>
+              <option value="metal-frame">金属银框</option>
+              <option value="classic-frame">古典深金框</option>
+              <option value="roman-frame">罗马柱相框</option>
+              <option value="oil-frame">油画厚金框</option>
+              <option value="vine-frame">藤蔓花框</option>
+              <option value="oval-frame">椭圆相框</option>
+              <option value="rounded-frame">圆角矩形相框</option>
+              <option value="square-frame">方形硬边相框</option>
+              <option value="ceramic-frame">粗陶手作框</option>
+              <option value="carved-wood-frame">木雕纹理框</option>
+            </select>
+          </label>
+          <label>边框大小 <strong id="styleBorderSizeLabel">28</strong>
+            <input id="styleBorderSizeRange" type="range" min="0" max="90" value="28">
+          </label>
+          <label>边框颜色
+            <input id="styleBorderColorInput" type="color" value="#d8c7aa">
+          </label>
+          <label>阴影颜色
+            <input id="styleShadowColorInput" type="color" value="#172033">
+          </label>
+          <label>阴影大小 <strong id="styleShadowBlurLabel">28</strong>
+            <input id="styleShadowBlurRange" type="range" min="0" max="90" value="28">
+          </label>
+          <label>阴影透明度 <strong id="styleShadowAlphaLabel">28</strong>
+            <input id="styleShadowAlphaRange" type="range" min="0" max="80" value="28">
+          </label>
+          <label>阴影 X 偏移 <strong id="styleShadowOffsetXLabel">18</strong>
+            <input id="styleShadowOffsetXRange" type="range" min="-80" max="80" value="18">
+          </label>
+          <label>阴影 Y 偏移 <strong id="styleShadowOffsetYLabel">18</strong>
+            <input id="styleShadowOffsetYRange" type="range" min="-80" max="80" value="18">
+          </label>
+          <label>像素厚度 <strong id="styleThicknessLabel">8</strong>
+            <input id="styleThicknessRange" type="range" min="0" max="28" value="8">
+          </label>
+          <label>遮罩强度 <strong id="materialIntensityLabel">70</strong>
+            <input id="materialIntensityRange" type="range" min="0" max="100" value="70">
+          </label>
+          <label>光线
+            <select id="materialLightSelect">
+              <option value="none">不打光</option>
+              <option value="soft">柔光</option>
+              <option value="left">左上侧光</option>
+              <option value="right">右上侧光</option>
+              <option value="top">顶部亮光</option>
+              <option value="bottom">底部反光</option>
+              <option value="front">正面棚拍</option>
+              <option value="backlit">逆光轮廓</option>
+              <option value="warm">暖光</option>
+              <option value="cool">冷光</option>
+              <option value="dramatic">强对比</option>
+            </select>
+          </label>
+          <label>装饰
+            <select id="materialDecorSelect">
+              <option value="none">无装饰</option>
+              <option value="sparkle">细闪点</option>
+              <option value="stars">星光</option>
+              <option value="grain">胶片颗粒</option>
+            </select>
+          </label>
+          <div class="material-section">
+            <strong>装饰素材库</strong>
+            <div class="style-file-row">
+              <label class="mini-button file-label" for="styleStickerInput">上传贴纸</label>
+              <button class="mini-button" id="styleStickerUploadButton" type="button">选择文件</button>
+              <span>透明 PNG 效果最佳</span>
+              <input id="styleStickerInput" class="file-input-hidden" type="file" accept="image/*" multiple>
+            </div>
+            <div class="style-sticker-list" id="styleStickerList"></div>
+            <div class="style-inline">
+              <label>贴纸大小 <strong id="styleStickerSizeLabel">120</strong>
+                <input id="styleStickerSizeRange" type="range" min="24" max="420" value="120">
+              </label>
+              <label>贴纸透明 <strong id="styleStickerOpacityLabel">100</strong>
+                <input id="styleStickerOpacityRange" type="range" min="5" max="100" value="100">
+              </label>
+            </div>
+            <button class="mini-button" id="styleStickerRemoveButton" type="button">删除选中贴纸</button>
+          </div>
+          <div class="material-section">
+            <strong>添加文字</strong>
+            <label>文字内容
+              <input id="styleTextInput" type="text" value="Q像素">
+            </label>
+            <label>字体
+              <select id="styleTextFontSelect"></select>
+            </label>
+            <div class="style-inline">
+              <label>字号 <strong id="styleTextSizeLabel">48</strong>
+                <input id="styleTextSizeRange" type="range" min="12" max="220" value="48">
+              </label>
+              <label>字重 <strong id="styleTextWeightLabel">800</strong>
+                <input id="styleTextWeightRange" type="range" min="100" max="900" step="100" value="800">
+              </label>
+            </div>
+            <div class="style-inline">
+              <label>文字颜色
+                <input id="styleTextColorInput" type="color" value="#172033">
+              </label>
+              <label>透明度 <strong id="styleTextOpacityLabel">100</strong>
+                <input id="styleTextOpacityRange" type="range" min="5" max="100" value="100">
+              </label>
+            </div>
+            <div class="style-inline">
+              <label>描边色
+                <input id="styleTextStrokeColorInput" type="color" value="#ffffff">
+              </label>
+              <label>描边 <strong id="styleTextStrokeWidthLabel">3</strong>
+                <input id="styleTextStrokeWidthRange" type="range" min="0" max="18" value="3">
+              </label>
+            </div>
+            <label>文字阴影 <strong id="styleTextShadowLabel">18</strong>
+              <input id="styleTextShadowRange" type="range" min="0" max="60" value="18">
+            </label>
+            <div class="style-inline">
+              <button class="mini-button" id="styleTextApplyButton" type="button">添加/更新文字</button>
+              <button class="mini-button" id="styleTextRemoveButton" type="button">删除文字</button>
+            </div>
+          </div>
+          <div class="material-section">
+            <strong>样式库</strong>
+            <div class="style-inline">
+              <input id="stylePresetNameInput" type="text" value="我的样式">
+              <button class="mini-button" id="stylePresetSaveButton" type="button">保存样式</button>
+            </div>
+            <div class="style-preset-list" id="stylePresetList"></div>
+          </div>
+          <div class="material-note">
+            <strong>样式说明</strong>
+            <p>预览图不添加标题文字；背景和表面遮罩均为离线内置程序化纹理。</p>
+          </div>
+          <button class="text-button" id="materialExportButton" type="button">导出样式预览</button>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <section class="export-preview-modal hidden" id="exportPreviewModal" aria-label="导出预览">
+    <div class="export-preview-card">
+      <header class="export-preview-head">
+        <div>
+          <h2>导出预览</h2>
+          <p>确认图纸、网格、色号和统计信息无误后再导出。</p>
+        </div>
+        <button class="back-button" id="exportPreviewCloseButton" type="button" title="关闭">×</button>
+      </header>
+      <div class="export-preview-body">
+        <div class="export-preview-stage">
+          <div class="preview-zoom-bar">
+            <button id="exportPreviewZoomOutButton" type="button">-</button>
+            <button id="exportPreviewZoomFitButton" type="button">适应</button>
+            <button id="exportPreviewZoomInButton" type="button">+</button>
+          </div>
+          <canvas id="exportPreviewCanvas" width="900" height="620" aria-label="导出预览画布"></canvas>
+        </div>
+        <aside class="export-preview-side">
+          <div class="export-settings">
+            <h3>图纸显示</h3>
+            <label class="switch-row"><span><strong>显示网格</strong><em>在导出图纸中显示细网格</em></span><input id="exportGridToggle" type="checkbox" checked></label>
+            <label class="switch-row"><span><strong>显示中线</strong><em>每 5 格加粗辅助线</em></span><input id="exportCenterToggle" type="checkbox" checked></label>
+            <label class="switch-row"><span><strong>显示色号</strong><em>每格显示 Mard 色号</em></span><input id="exportCodesToggle" type="checkbox" checked></label>
+            <label class="switch-row"><span><strong>四周数字</strong><em>横轴、纵轴编号围绕图纸四边</em></span><input id="exportAxisToggle" type="checkbox" checked></label>
+            <label class="switch-row"><span><strong>图纸外框</strong><em>导出时加清晰外边框</em></span><input id="exportOuterBorderToggle" type="checkbox" checked></label>
+            <label class="switch-row"><span><strong>展示图纸信息</strong><em>作品名、尺寸、总颗数</em></span><input id="exportInfoToggle" type="checkbox" checked></label>
+            <label class="switch-row"><span><strong>显示应用信息</strong><em>显示 Q像素与色号品牌信息</em></span><input id="exportAppInfoToggle" type="checkbox" checked></label>
+
+            <h3>纸张与比例</h3>
+            <div class="inline-setting">
+              <label>纸张规格</label>
+              <select id="paperPresetSelect" class="full-input">
+                <option value="auto">自动贴合内容</option>
+                <option value="a4">A4 竖版图纸</option>
+                <option value="a3">A3 大幅图纸</option>
+                <option value="square">正方形分享图</option>
+                <option value="long">长图预览</option>
+              </select>
+            </div>
+            <div class="inline-setting">
+              <label>纸张方向</label>
+              <div class="mini-segmented">
+                <button id="paperOrientationPortraitButton" type="button" data-orientation="portrait" class="active">竖向</button>
+                <button id="paperOrientationLandscapeButton" type="button" data-orientation="landscape">横向</button>
+              </div>
+            </div>
+            <div class="inline-setting">
+              <label>图纸比例</label>
+              <select id="exportRatioSelect" class="full-input">
+                <option value="auto">自动比例</option>
+                <option value="1:1">1:1 正方形</option>
+                <option value="4:3">4:3 横版</option>
+                <option value="16:9">16:9 横版</option>
+                <option value="custom">自定义</option>
+              </select>
+            </div>
+            <div class="mini-grid">
+              <label class="mini-field">比例宽
+                <input id="exportRatioWidthInput" type="number" min="1" max="99" value="4">
+              </label>
+              <label class="mini-field">比例高
+                <input id="exportRatioHeightInput" type="number" min="1" max="99" value="3">
+              </label>
+            </div>
+            <label class="switch-row"><span><strong>自动单格尺寸</strong><em>根据图纸大小自动保证可读性</em></span><input id="exportAutoCellToggle" type="checkbox" checked></label>
+            <div class="inline-setting">
+              <label>像素样式</label>
+              <select id="exportPixelStyleSelect" class="full-input">
+                <option value="current">跟随画布</option>
+                <option value="solid-square">方块无间隙像素</option>
+                <option value="round-bead">圆形拼豆颗粒</option>
+                <option value="soft-rounded">圆角软像素</option>
+              </select>
+            </div>
+            <div class="range-setting"><label>单格尺寸 <strong id="exportCellSizeLabel">22</strong></label><input id="exportCellSizeRange" type="range" min="8" max="44" value="22"></div>
+            <div class="inline-setting">
+              <label>高清倍数</label>
+              <select id="exportScaleSelect" class="full-input">
+                <option value="1">1x 标准</option>
+                <option value="1.5">1.5x 高清</option>
+                <option value="2">2x 高清</option>
+                <option value="2.5">2.5x 超清</option>
+                <option value="3">3x 超清</option>
+                <option value="4">4x 印刷级</option>
+                <option value="6">6x 精细图纸</option>
+                <option value="8">8x 超精细图纸</option>
+              </select>
+              <input id="exportScaleNumber" class="full-input" type="number" min="1" max="8" step="0.1" value="2" inputmode="decimal">
+            </div>
+            <div class="range-setting"><label>页面边距 <strong id="exportMarginLabel">42</strong></label><input id="exportMarginRange" type="range" min="12" max="160" value="42"></div>
+            <div class="inline-setting">
+              <label>背景颜色</label>
+              <input id="exportBackgroundColorInput" type="color" value="#ffffff">
+            </div>
+            <label class="switch-row"><span><strong>透明背景</strong><em>关闭白底，便于后期排版</em></span><input id="exportTransparentToggle" type="checkbox"></label>
+
+            <h3>色号统计</h3>
+            <label class="switch-row"><span><strong>显示色号统计</strong><em>统计条固定在底部</em></span><input id="exportUsageToggle" type="checkbox" checked></label>
+            <label class="switch-row"><span><strong>按数量排序</strong><em>从多到少排列</em></span><input id="exportSortToggle" type="checkbox" checked></label>
+            <div class="inline-setting">
+              <label>统计排列</label>
+              <div class="mini-segmented">
+                <button id="usageLayoutWrapButton" type="button" data-usage-layout="wrap" class="active">自由排列</button>
+                <button id="usageLayoutGridButton" type="button" data-usage-layout="grid">对齐网格</button>
+              </div>
+            </div>
+            <div class="inline-setting">
+              <label>统计样式</label>
+              <div class="mini-segmented">
+                <button id="usageStyleChipsButton" type="button" data-usage-style="chips" class="active">色块条</button>
+                <button id="usageStyleTableButton" type="button" data-usage-style="table">详细表</button>
+              </div>
+            </div>
+            <div class="range-setting"><label>统计字号 <strong id="usageFontSizeLabel">16</strong></label><input id="usageFontSizeRange" type="range" min="10" max="28" value="16"></div>
+
+            <details class="region-details">
+              <summary>区域划分</summary>
+              <label class="switch-row"><span><strong>启用分区预览</strong><em>把一张图纸拆成多个局部图纸，每块单独显示色号统计</em></span><input id="exportRegionToggle" type="checkbox"></label>
+              <div class="region-auto-grid">
+                <label>横向块数 <input id="exportRegionColsInput" type="number" min="1" max="12" value="2"></label>
+                <label>纵向块数 <input id="exportRegionRowsInput" type="number" min="1" max="12" value="2"></label>
+                <button id="exportRegionAutoButton" type="button">自动划分</button>
+                <button id="exportRegionGuideButton" type="button">按辅助线划分</button>
+              </div>
+              <div class="region-form-grid">
+                <label>起始行 <input id="exportRegionStartRowInput" type="number" min="1" value="1"></label>
+                <label>起始列 <input id="exportRegionStartColInput" type="number" min="1" value="1"></label>
+                <label>高度 <input id="exportRegionHeightInput" type="number" min="1" value="52"></label>
+                <label>宽度 <input id="exportRegionWidthInput" type="number" min="1" value="52"></label>
+                <button id="exportRegionAddButton" type="button">添加区域</button>
+              </div>
+              <div class="inline-setting">
+                <label>当前区域</label>
+                <select id="exportRegionSelect" class="full-input"></select>
+              </div>
+              <div class="inline-setting">
+                <label>多选导出区域</label>
+                <select id="exportRegionMultiSelect" class="full-input region-multi-select" multiple size="5"></select>
+              </div>
+              <div class="region-nudge-grid">
+                <label>微调步长 <input id="exportRegionNudgeInput" type="number" min="1" max="200" value="1"></label>
+                <button id="exportRegionNudgeUpButton" type="button">上移</button>
+                <button id="exportRegionNudgeDownButton" type="button">下移</button>
+                <button id="exportRegionNudgeLeftButton" type="button">左移</button>
+                <button id="exportRegionNudgeRightButton" type="button">右移</button>
+              </div>
+              <div class="region-actions">
+                <button id="exportRegionExportButton" type="button">导出当前区域</button>
+                <button id="exportRegionExportSelectedButton" type="button">导出多选区域</button>
+                <button id="exportRegionExportAllButton" type="button">导出全部区域</button>
+                <button id="exportRegionDeleteButton" type="button">删除当前区域</button>
+              </div>
+            </details>
+
+            <details class="export-preset-details">
+              <summary>导出预设</summary>
+              <div class="style-inline">
+                <input id="exportPresetNameInput" type="text" value="常用图纸设置">
+                <button class="mini-button" id="exportPresetSaveButton" type="button">保存当前设置</button>
+              </div>
+              <div class="style-preset-list" id="exportPresetList"></div>
+            </details>
+
+            <details class="watermark-details" open>
+              <summary>水印设置</summary>
+              <label class="switch-row"><span><strong>文字水印</strong><em>支持大小、透明度、间距和偏移</em></span><input id="watermarkEnabledToggle" type="checkbox"></label>
+              <input id="exportWatermarkInput" class="full-input" type="text" placeholder="输入文字水印，例如 @Q像素">
+              <div class="watermark-grid">
+                <label>颜色 <input id="watermarkColorInput" type="color" value="#222222"></label>
+                <label>字号 <input id="watermarkFontSizeRange" type="range" min="6" max="64" value="20"><strong id="watermarkFontSizeLabel">20</strong></label>
+                <label>粗细 <input id="watermarkWeightRange" type="range" min="300" max="900" step="100" value="800"><strong id="watermarkWeightLabel">800</strong></label>
+                <label>透明度 <input id="watermarkOpacityRange" type="range" min="5" max="100" value="30"><strong id="watermarkOpacityLabel">30%</strong></label>
+                <label>旋转角度 <input id="watermarkAngleRange" type="range" min="-45" max="45" value="0"><strong id="watermarkAngleLabel">0°</strong></label>
+                <label>行距 <input id="watermarkRowGapRange" type="range" min="1" max="16" value="6"><strong id="watermarkRowGapLabel">6x</strong></label>
+                <label>间距 <input id="watermarkColGapRange" type="range" min="1" max="16" value="8"><strong id="watermarkColGapLabel">8x</strong></label>
+                <label>水平偏移 <input id="watermarkOffsetXRange" type="range" min="-200" max="200" value="0"><strong id="watermarkOffsetXLabel">0</strong></label>
+                <label>垂直偏移 <input id="watermarkOffsetYRange" type="range" min="-200" max="200" value="0"><strong id="watermarkOffsetYLabel">0</strong></label>
+              </div>
+            </details>
+
+            <h3>图册与导出</h3>
+            <div class="range-setting"><label>图册分块 <strong id="albumTileSizeLabel">52</strong></label><input id="albumTileSizeRange" type="range" min="20" max="100" value="52"></div>
+            <label class="switch-row"><span><strong>图册总览页</strong><em>图册 PNG/PDF 开头附完整总览</em></span><input id="albumOverviewToggle" type="checkbox" checked></label>
+            <label class="switch-row"><span><strong>分块页标题</strong><em>标注行列范围，方便拼接</em></span><input id="albumPageTitleToggle" type="checkbox" checked></label>
+            <label class="switch-row"><span><strong>同时导出镜像图</strong><em>主图导出时附带镜像版</em></span><input id="exportMirrorToggle" type="checkbox"></label>
+            <label class="switch-row"><span><strong>导出 PDF 版</strong><em>主图同时保存为 PDF</em></span><input id="exportPdfToggle" type="checkbox"></label>
+          </div>
+          <button class="text-button secondary" id="exportPreviewRefreshButton" type="button">刷新预览</button>
+          <button class="text-button" id="exportPreviewPngButton" type="button">导出图片</button>
+          <button class="text-button secondary" id="exportPreviewMirrorButton" type="button">导出镜像图</button>
+          <button class="text-button secondary" id="exportPreviewAlbumButton" type="button">导出图册</button>
+          <button class="text-button secondary" id="exportPreviewPdfButton" type="button">导出 PDF</button>
+          <p>预览会实时反映图纸显示、底部色号统计、水印和镜像设置。</p>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <section class="project-action-modal hidden" id="importChoiceModal" aria-label="导入图片方式">
+    <div class="project-action-card import-choice-card">
+      <button class="project-action-close" id="importChoiceCancelButton" type="button" title="关闭">×</button>
+      <div class="project-action-head">
+        <div>
+          <h2>导入图片</h2>
+          <p id="importChoiceFileName">选择导入方式</p>
+        </div>
+      </div>
+      <div class="layer-import-options">
+        <button id="importCalibrateButton" class="recommended-choice" type="button">
+          <strong>像素校准后导入</strong>
+          <span>适合已有格子、截图或需要精确对齐的图片</span>
+        </button>
+        <button id="importDirectButton" type="button">
+          <strong>直接导入</strong>
+          <span>适合普通照片或不需要网格校准的图片</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section class="calibration-modal hidden" id="calibrationModal" aria-label="像素校准">
+    <header class="calibration-topbar">
+      <button id="calibrationBackButton" type="button" title="返回">‹</button>
+      <h2>像素校准</h2>
+      <button id="calibrationDoneButton" type="button">完成</button>
+    </header>
+    <p class="calibration-hint">先放大将红线与图纸格子对齐，再调整网格列数，最后调整单元格大小，直到图片边缘格子对齐。</p>
+    <div class="calibration-workspace">
+      <div class="calibration-canvas-wrap">
+        <canvas id="calibrationCanvas" width="900" height="640" aria-label="像素校准画布"></canvas>
+      </div>
+      <aside class="calibration-card">
+        <section>
+          <h3>1. 网格位置</h3>
+          <div class="calibration-nudge-grid">
+            <button id="calibrationNudgeLeftButton" type="button">←</button>
+            <button id="calibrationNudgeUpButton" type="button">↑</button>
+            <button id="calibrationNudgeDownButton" type="button">↓</button>
+            <button id="calibrationNudgeRightButton" type="button">→</button>
+          </div>
+        </section>
+        <section class="calibration-number-grid">
+          <label>2. 网格列数
+            <input id="calibrationColumnsInput" type="number" min="1" max="500" value="39" inputmode="numeric">
+          </label>
+          <label>3. 单元格大小
+            <input id="calibrationCellSizeInput" type="number" min="1" max="200" step="0.1" value="13.6" inputmode="decimal">
+          </label>
+        </section>
+        <label class="switch-row compact disabled-feature">
+          <span><strong>AI识别色号</strong><em>预留功能，本次先手动校准</em></span>
+          <input id="calibrationAiToggle" type="checkbox" disabled>
+        </label>
+      </aside>
+    </div>
+  </section>
+
+  <section class="project-action-modal hidden" id="projectActionModal" aria-label="设计文件操作">
+    <div class="project-action-card">
+      <button class="project-action-close" id="projectActionCloseButton" type="button" title="关闭">×</button>
+      <div class="project-action-head">
+        <img id="projectActionThumb" alt="">
+        <div>
+          <h2 id="projectActionTitle">未命名</h2>
+          <p>创建时间 <span id="projectActionCreated">--</span></p>
+          <p>更新时间 <span id="projectActionUpdated">--</span></p>
+        </div>
+      </div>
+      <button id="projectActionOpenButton" type="button">打开设计</button>
+      <button id="projectActionRenameButton" type="button">重命名</button>
+      <button id="projectActionDuplicateButton" type="button">创建副本</button>
+      <button id="projectActionDeleteButton" class="danger" type="button">删除设计</button>
+    </div>
+  </section>
+
+  <section class="project-action-modal hidden" id="layerImportModal" aria-label="导入图层">
+    <div class="project-action-card layer-import-card">
+      <button class="project-action-close" id="layerImportCloseButton" type="button" title="关闭">×</button>
+      <div class="project-action-head">
+        <div>
+          <h2>导入图层</h2>
+          <p>选择图片、源文件，或直接从画布空间把已有设计加入当前画布。</p>
+        </div>
+      </div>
+      <div class="layer-import-options">
+        <button id="layerImportImageButton" type="button">
+          <strong>导入图片文件</strong>
+          <span>PNG / JPG / WebP 会自动转换为当前画布尺寸的新图层</span>
+        </button>
+        <button id="layerImportProjectFileButton" type="button">
+          <strong>导入 .qpx 源文件</strong>
+          <span>从系统文件中选择 Q像素源文件作为新图层</span>
+        </button>
+      </div>
+      <div class="layer-import-space-head">
+        <h3>从画布空间导入</h3>
+        <span>已有设计会居中加入当前画布</span>
+      </div>
+      <div class="layer-import-project-list" id="layerImportProjectList"></div>
+    </div>
+  </section>
+
+  <section class="project-action-modal hidden" id="trashModal" aria-label="回收站">
+    <div class="project-action-card">
+      <button class="project-action-close" id="trashCloseButton" type="button" title="关闭">×</button>
+      <div class="project-action-head">
+        <div>
+          <h2>回收站</h2>
+          <p>这里保留近 30 天删除的设计文件。</p>
+        </div>
+      </div>
+      <div class="trash-list" id="trashList"></div>
+    </div>
+  </section>
+
+  <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden>
+  <input id="projectFileInput" type="file" accept=".qpx,application/json" hidden>
+  <script src="./app.js"></script>
+</body>
+</html>
