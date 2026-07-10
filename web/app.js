@@ -1681,7 +1681,7 @@
     return Object.assign({}, pattern, { cells: next });
   }
 
-  function createPatternFromSourceWithCalibration(source, calibration, sourceLabel) {
+  function createPatternFromSourceWithCalibration(source, calibration, sourceLabel, options = {}) {
     const sourceCanvas = buildSamplingCanvas(source, 1800);
     const sourceCtx = sourceCanvas.getContext("2d", { willReadFrequently: true });
     const data = sourceCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height).data;
@@ -1722,17 +1722,18 @@
       cells.push(line);
     }
 
-    return cleanPixelArtPattern({
+    const pattern = {
       width: grid.columns,
       height: grid.rows,
       cells,
       sourceLabel: sourceLabel || "校准图片",
       createdAt: new Date().toISOString(),
       calibration: grid
-    });
+    };
+    return options.clean === false ? pattern : cleanPixelArtPattern(pattern);
   }
 
-  function createPatternFromSource(source, width, height, sourceLabel) {
+  function createPatternFromSource(source, width, height, sourceLabel, options = {}) {
     const sourceCanvas = buildSamplingCanvas(source, 1400);
     const sourceCtx = sourceCanvas.getContext("2d", { willReadFrequently: true });
     const data = sourceCtx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height).data;
@@ -1791,13 +1792,21 @@
       cells.push(line);
     }
 
-    return cleanPixelArtPattern({
+    const pattern = {
       width,
       height,
       cells,
       sourceLabel: sourceLabel || "未命名图片",
       createdAt: new Date().toISOString()
-    });
+    };
+    return options.clean === false ? pattern : cleanPixelArtPattern(pattern);
+  }
+
+  function createRestorationPatternFromSource(source, width, height, sourceLabel, calibration) {
+    if (calibration) {
+      return createPatternFromSourceWithCalibration(source, Object.assign({}, calibration), sourceLabel, { clean: false });
+    }
+    return createPatternFromSource(source, width, height, sourceLabel, { clean: false });
   }
 
   function renderBeadMode() {
@@ -4465,8 +4474,19 @@
       setMessage("还原优化已经完成，无需重复处理。", false);
       return 0;
     }
+    if (!state.image) {
+      setMessage("当前图纸没有原图，无法进行原图还原。", true);
+      return 0;
+    }
     const before = cloneCells(state.beads.pattern.cells);
-    const cleaned = restorePixelArtDetails(state.beads.pattern);
+    const restored = createRestorationPatternFromSource(
+      state.image,
+      state.beads.pattern.width,
+      state.beads.pattern.height,
+      state.imageName,
+      state.importCalibration && state.importCalibration.enabled ? state.importCalibration : null
+    );
+    const cleaned = restored;
     let changed = 0;
     for (let row = 0; row < state.beads.pattern.height; row += 1) {
       for (let col = 0; col < state.beads.pattern.width; col += 1) {
@@ -4483,7 +4503,7 @@
     state.beads.restorationFingerprint = getPatternFingerprint(cleaned);
     syncCompositePattern();
     render();
-    setMessage(`已完成轻度还原，补齐 ${changed} 格线条；原有细节已保留。`, false);
+    setMessage(`已根据原图重新还原 ${changed} 格，保留更多线条和高光。`, false);
     return changed;
   }
 
