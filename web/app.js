@@ -273,6 +273,11 @@
     activeActionProjectId: "",
     beads: {
       restorationFingerprint: "",
+      importMode: "fidelity",
+      sourceCompareEnabled: false,
+      sourceCompareOpacity: 38,
+      lockedColorCodes: [],
+      lockedColorRoles: {},
       width: 48,
       height: 48,
       lockRatio: true,
@@ -525,12 +530,14 @@
       "projectActionOpenButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
       "layerImportModal", "layerImportCloseButton", "layerImportImageButton", "layerImportProjectFileButton", "layerImportProjectList",
       "importChoiceModal", "importChoiceCancelButton", "importChoiceFileName",
+      "importModeFidelityButton", "importModeBalancedButton", "importModeSimpleButton",
       "importCalibrateButton", "importDirectButton", "calibrationModal",
       "calibrationBackButton", "calibrationDoneButton", "calibrationCanvas",
       "calibrationNudgeLeftButton", "calibrationNudgeUpButton",
       "calibrationNudgeDownButton", "calibrationNudgeRightButton",
       "calibrationColumnsInput", "calibrationCellSizeInput", "calibrationAiToggle",
       "colorOptimizeLimitInput", "colorOptimizeButton", "colorOptimizeUndoButton", "restoreOptimizeButton",
+      "sourceCompareToggle", "sourceCompareOpacityRange", "sourceCompareOpacityLabel", "lockedColorSummary",
       "trashModal", "trashCloseButton", "trashList",
       "usageLayoutWrapButton", "usageLayoutGridButton", "usageFontSizeRange", "usageFontSizeLabel",
       "usageStyleChipsButton", "usageStyleTableButton", "exportAxisToggle", "exportOuterBorderToggle",
@@ -725,6 +732,10 @@
     els.showGridToggle.checked = params.showGrid;
     if (els.codeFontScaleRange) els.codeFontScaleRange.value = String(state.beads.codeFontScale);
     if (els.codeFontScaleNumber) els.codeFontScaleNumber.value = String(state.beads.codeFontScale);
+    state.beads.sourceCompareOpacity = clamp(state.beads.sourceCompareOpacity || 38, 10, 85);
+    if (els.sourceCompareToggle) els.sourceCompareToggle.checked = Boolean(state.beads.sourceCompareEnabled);
+    if (els.sourceCompareOpacityRange) els.sourceCompareOpacityRange.value = String(state.beads.sourceCompareOpacity);
+    if (els.sourceCompareOpacityLabel) els.sourceCompareOpacityLabel.textContent = `${state.beads.sourceCompareOpacity}%`;
     els.paletteSelect.value = state.beads.selectedCode;
     if (els.projectTitleInput) els.projectTitleInput.value = state.beads.projectTitle || "未命名";
     if (els.exportGridToggle) els.exportGridToggle.checked = state.beads.exportSettings.showGrid;
@@ -840,6 +851,8 @@
     renderLayerList();
     renderColorStrip();
     renderSelectionColorPanel();
+    renderLockedColorSummary();
+    syncImportModeControls();
     renderExportPresetList();
     renderUsage();
     renderProjectList();
@@ -1611,9 +1624,10 @@
     return changed ? Object.assign({}, pattern, { cells }) : pattern;
   }
 
-  function cleanPixelArtPattern(pattern) {
+  function cleanPixelArtPattern(pattern, lockedCodes) {
     if (!pattern || !pattern.cells || pattern.width < 3 || pattern.height < 3) return pattern;
     const backgroundCode = getLikelyBackgroundCode(pattern);
+    const locked = lockedCodes || new Set();
     let cells = cloneCells(pattern.cells);
 
     for (let pass = 0; pass < 2; pass += 1) {
@@ -1625,6 +1639,7 @@
         for (let col = 0; col < pattern.width; col += 1) {
           const code = cells[row][col];
           if (!code) continue;
+          if (locked.has(code)) continue;
           const neighbors = getNeighborCodes(cells, row, col);
           const majority = getMajorityNeighborCode(neighbors);
           if (!majority.code || majority.code === code) continue;
@@ -1672,6 +1687,7 @@
       for (let col = 0; col < pattern.width; col += 1) {
         const code = cells[row][col];
         if (!code || (counts.get(code) || 0) > rareLimit) continue;
+        if (locked.has(code)) continue;
         const candidates = getNeighborCodes(cells, row, col).filter((item) => item !== code);
         const replacement = getNearestNeighborColorCode(code, candidates);
         if (replacement) next[row][col] = replacement;
@@ -1844,12 +1860,42 @@
     const gridHeight = pattern.height * cellSize;
     const x = Math.round((canvas.width - gridWidth) / 2 + state.view.panX);
     const y = Math.round((canvas.height - gridHeight) / 2 + state.view.panY);
+    drawSourceComparisonLayer(ctx, pattern, x, y, cellSize);
     drawPatternGrid(ctx, pattern, x, y, cellSize, options);
     drawGuideLines(ctx, x, y, cellSize, pattern);
     drawSelectionOverlay(ctx, x, y, cellSize);
     drawFloatingSelectionOverlay(ctx, x, y, cellSize);
     drawAxisLabels(ctx, { x, y, width: gridWidth, height: gridHeight }, pattern.width, pattern.height, cellSize, cellSize);
     return { x, y, cellSize, width: gridWidth, height: gridHeight };
+  }
+
+  function drawSourceComparisonLayer(ctx, pattern, x, y, cellSize) {
+    if (!state.beads.sourceCompareEnabled || !state.image || !pattern) return;
+    const opacity = clamp(state.beads.sourceCompareOpacity || 38, 10, 85) / 100;
+    const image = state.image;
+    const imageWidth = image.naturalWidth || image.width;
+    const imageHeight = image.naturalHeight || image.height;
+    let sx = 0;
+    let sy = 0;
+    let sw = imageWidth;
+    let sh = imageHeight;
+    const calibration = state.importCalibration && state.importCalibration.enabled ? state.importCalibration : null;
+    if (calibration) {
+      const grid = normalizeCalibration(calibration, imageWidth, imageHeight);
+      sx = Math.max(0, grid.offsetX);
+      sy = Math.max(0, grid.offsetY);
+      sw = Math.min(imageWidth - sx, pattern.width * grid.cellSize);
+      sh = Math.min(imageHeight - sy, pattern.height * grid.cellSize);
+    }
+    if (sw <= 0 || sh <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(image, sx, sy, sw, sh, x, y, pattern.width * cellSize, pattern.height * cellSize);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "rgba(255, 255, 255, .18)";
+    ctx.fillRect(x, y, pattern.width * cellSize, pattern.height * cellSize);
+    ctx.restore();
   }
 
   function drawPatternGrid(ctx, pattern, x, y, cellSize, options) {
@@ -1873,6 +1919,7 @@
     ctx.save();
     ctx.imageSmoothingEnabled = false;
     ctx.translate(x, y);
+    ctx.globalAlpha = state.beads.sourceCompareEnabled && !options.export ? 0.78 : 1;
     for (let row = 0; row < pattern.height; row += 1) {
       for (let col = 0; col < pattern.width; col += 1) {
         const code = pattern.cells[row][col];
@@ -1910,6 +1957,7 @@
       }
     }
 
+    ctx.globalAlpha = 1;
     if (showGrid) {
       ctx.beginPath();
       ctx.strokeStyle = cellSize >= 10 ? "rgba(23, 32, 51, .28)" : "rgba(23, 32, 51, .16)";
@@ -2182,6 +2230,38 @@
     return calculateUsage(pattern).length;
   }
 
+  function getImportMode() {
+    return ["fidelity", "balanced", "simple"].includes(state.beads.importMode) ? state.beads.importMode : "fidelity";
+  }
+
+  function getImportModeLabel(mode) {
+    const labels = { fidelity: "高保真", balanced: "均衡", simple: "易制作" };
+    return labels[mode || getImportMode()] || labels.fidelity;
+  }
+
+  function setImportMode(mode) {
+    state.beads.importMode = ["fidelity", "balanced", "simple"].includes(mode) ? mode : "fidelity";
+    syncImportModeControls();
+  }
+
+  function syncImportModeControls() {
+    [
+      ["importModeFidelityButton", "fidelity"],
+      ["importModeBalancedButton", "balanced"],
+      ["importModeSimpleButton", "simple"]
+    ].forEach(([id, mode]) => {
+      if (els[id]) els[id].classList.toggle("active", getImportMode() === mode);
+    });
+  }
+
+  function getLockedColorSet() {
+    return new Set(Array.isArray(state.beads.lockedColorCodes) ? state.beads.lockedColorCodes : []);
+  }
+
+  function isLockedColorCode(code) {
+    return Boolean(code && getLockedColorSet().has(code));
+  }
+
   function getCellNeighborCodes(cells, row, col) {
     return [
       cells[row - 1] && cells[row - 1][col],
@@ -2189,6 +2269,139 @@
       cells[row] && cells[row][col - 1],
       cells[row] && cells[row][col + 1]
     ].filter(Boolean);
+  }
+
+  function analyzeLockedColorRoles(pattern) {
+    if (!pattern || !pattern.cells) return { codes: [], roles: {} };
+    const usage = calculateUsage(pattern);
+    const total = Math.max(1, pattern.width * pattern.height);
+    const backgroundCode = getLikelyBackgroundCode(pattern);
+    const roles = {};
+    const addRole = (code, role) => {
+      if (!code) return;
+      if (!roles[code]) roles[code] = new Set();
+      roles[code].add(role);
+    };
+
+    const importance = analyzeColorImportance(pattern);
+    importance
+      .filter((item) => item.code !== backgroundCode && colorBrightness(item.color.rgb) <= 86)
+      .sort((a, b) => b.edgeScore - a.edgeScore || b.count - a.count)
+      .slice(0, 4)
+      .forEach((item) => addRole(item.code, "轮廓"));
+
+    const lightStats = new Map();
+    for (let row = 0; row < pattern.height; row += 1) {
+      for (let col = 0; col < pattern.width; col += 1) {
+        const code = pattern.cells[row][col];
+        if (!code || code === backgroundCode) continue;
+        const color = getPaletteColor(code);
+        if (colorBrightness(color.rgb) < 220) continue;
+        const neighbors = getNeighborCodes(pattern.cells, row, col);
+        const nearDark = neighbors.some(isDarkOutlineCode);
+        const enclosed = neighbors.filter((item) => item && item !== backgroundCode).length >= 3;
+        if (!nearDark && !enclosed) continue;
+        const item = lightStats.get(code) || { code, count: 0, nearDark: 0 };
+        item.count += 1;
+        if (nearDark) item.nearDark += 1;
+        lightStats.set(code, item);
+      }
+    }
+    Array.from(lightStats.values())
+      .filter((item) => item.count <= Math.max(14, total * 0.035) || item.nearDark >= 1)
+      .sort((a, b) => b.nearDark - a.nearDark || a.count - b.count)
+      .slice(0, 3)
+      .forEach((item) => addRole(item.code, "高光"));
+
+    const roleMap = {};
+    Object.keys(roles).forEach((code) => {
+      roleMap[code] = Array.from(roles[code]);
+    });
+    return { codes: Object.keys(roleMap), roles: roleMap };
+  }
+
+  function updateLockedColorsFromPattern(pattern) {
+    const analysis = analyzeLockedColorRoles(pattern);
+    state.beads.lockedColorCodes = analysis.codes;
+    state.beads.lockedColorRoles = analysis.roles;
+    renderLockedColorSummary();
+    return analysis;
+  }
+
+  function renderLockedColorSummary() {
+    if (!els.lockedColorSummary) return;
+    const codes = Array.isArray(state.beads.lockedColorCodes) ? state.beads.lockedColorCodes : [];
+    if (!codes.length) {
+      els.lockedColorSummary.textContent = "未识别锁定色";
+      return;
+    }
+    const roles = state.beads.lockedColorRoles || {};
+    els.lockedColorSummary.textContent = `已锁定 ${codes.length} 个色号：` + codes
+      .map((code) => `${code}${roles[code] && roles[code].length ? `(${roles[code].join("/")})` : ""}`)
+      .join("、");
+  }
+
+  function protectLockedCells(sourcePattern, targetPattern, lockedCodes) {
+    if (!sourcePattern || !targetPattern || !lockedCodes || !lockedCodes.size) return targetPattern;
+    const cells = cloneCells(targetPattern.cells);
+    const height = Math.min(sourcePattern.height, targetPattern.height);
+    const width = Math.min(sourcePattern.width, targetPattern.width);
+    for (let row = 0; row < height; row += 1) {
+      for (let col = 0; col < width; col += 1) {
+        const code = sourcePattern.cells[row][col];
+        if (lockedCodes.has(code)) cells[row][col] = code;
+      }
+    }
+    return Object.assign({}, targetPattern, { cells });
+  }
+
+  function reducePatternToColorLimit(pattern, limit, lockedCodes) {
+    const target = clamp(limit || 28, 2, beadPalette.length);
+    const locked = lockedCodes || new Set();
+    const currentUsage = calculateUsage(pattern);
+    if (currentUsage.length <= target) return pattern;
+    const analysis = analyzeColorImportance(pattern).sort((a, b) => b.importance - a.importance);
+    const colorStats = new Map(analysis.map((item) => [item.code, item]));
+    const kept = [];
+    locked.forEach((code) => {
+      if (currentUsage.some((item) => item.code === code) && kept.length < target) kept.push(code);
+    });
+    const darkest = analysis
+      .slice()
+      .filter((item) => !kept.includes(item.code))
+      .sort((a, b) => colorBrightness(a.color.rgb) - colorBrightness(b.color.rgb))
+      .slice(0, Math.max(0, Math.min(3, target - kept.length)))
+      .map((item) => item.code);
+    [...darkest, ...analysis.map((item) => item.code)].forEach((code) => {
+      if (kept.length < target && !kept.includes(code)) kept.push(code);
+    });
+    const keptSet = new Set(kept);
+    const replacements = new Map();
+    currentUsage.forEach((item) => {
+      if (!keptSet.has(item.code) && !locked.has(item.code)) {
+        replacements.set(item.code, getNearestKeptCode(item.code, kept, colorStats));
+      }
+    });
+    if (!replacements.size) return pattern;
+    const cells = cloneCells(pattern.cells);
+    for (let row = 0; row < pattern.height; row += 1) {
+      for (let col = 0; col < pattern.width; col += 1) {
+        const code = cells[row][col];
+        if (replacements.has(code)) cells[row][col] = replacements.get(code);
+      }
+    }
+    const smoothed = smoothOptimizedCells(cells, locked);
+    return Object.assign({}, pattern, { cells: smoothed.cells });
+  }
+
+  function applyImportModeToPattern(rawPattern, mode) {
+    const safeMode = ["fidelity", "balanced", "simple"].includes(mode) ? mode : getImportMode();
+    const analysis = updateLockedColorsFromPattern(rawPattern);
+    const locked = new Set(analysis.codes);
+    if (safeMode === "fidelity") return rawPattern;
+    const cleaned = protectLockedCells(rawPattern, cleanPixelArtPattern(rawPattern, locked), locked);
+    if (safeMode === "balanced") return restorePixelArtDetails(cleaned);
+    return reducePatternToColorLimit(restorePixelArtDetails(cleaned), 28, locked);
   }
 
   function analyzeColorImportance(pattern) {
@@ -2244,13 +2457,15 @@
     return best;
   }
 
-  function smoothOptimizedCells(cells) {
+  function smoothOptimizedCells(cells, lockedCodes) {
+    const locked = lockedCodes || new Set();
     const next = cloneCells(cells);
     let changed = 0;
     for (let row = 1; row < cells.length - 1; row += 1) {
       for (let col = 1; col < cells[row].length - 1; col += 1) {
         const code = cells[row][col];
         if (!code) continue;
+        if (locked.has(code)) continue;
         const counts = new Map();
         for (let dy = -1; dy <= 1; dy += 1) {
           for (let dx = -1; dx <= 1; dx += 1) {
@@ -2267,7 +2482,7 @@
             dominantCount = count;
           }
         });
-        if (dominant && dominant !== code && dominantCount >= 6) {
+        if (dominant && dominant !== code && dominantCount >= 6 && !locked.has(dominant)) {
           next[row][col] = dominant;
           changed += 1;
         }
@@ -2661,6 +2876,9 @@
     state.beads.activeLayerId = "";
     state.beads.pixelSignature = "";
     state.beads.restorationFingerprint = "";
+    state.beads.sourceCompareEnabled = false;
+    state.beads.lockedColorCodes = [];
+    state.beads.lockedColorRoles = {};
     state.view.zoom = 1;
     state.view.panX = 0;
     state.view.panY = 0;
@@ -2806,7 +3024,8 @@
   function completeCalibrationImport() {
     const session = state.importSession;
     if (!session || !state.importCalibration) return;
-    const pattern = createPatternFromSourceWithCalibration(session.image, state.importCalibration, session.name);
+    const rawPattern = createPatternFromSourceWithCalibration(session.image, state.importCalibration, session.name, { clean: false });
+    const pattern = session.mode === "layer" ? cleanPixelArtPattern(rawPattern) : applyImportModeToPattern(rawPattern, getImportMode());
     closeCalibrationModal();
     closeImportChoiceModal();
     if (session.mode === "layer") {
@@ -2850,11 +3069,13 @@
     state.beads.activeLayerId = "";
     state.beads.sourceLabel = session.name;
     state.beads.pixelSignature = "";
+    state.beads.restorationFingerprint = "";
+    state.beads.sourceCompareEnabled = false;
     ensureLayers();
     clearHistory();
     if (els.imageStatus) els.imageStatus.textContent = session.name;
     setMode("beads");
-    setMessage(`已按校准网格生成 ${pattern.width} x ${pattern.height} 图纸。`, false);
+    setMessage(`已按校准网格和${getImportModeLabel()}模式生成 ${pattern.width} x ${pattern.height} 图纸。`, false);
     state.importSession = null;
   }
 
@@ -2889,9 +3110,10 @@
     const params = clampBeadParams(state.beads);
     state.beads.width = params.width;
     state.beads.height = params.height;
-    const pattern = state.importCalibration
-      ? createPatternFromSourceWithCalibration(state.image, state.importCalibration, state.imageName)
-      : createPatternFromSource(state.image, params.width, params.height, state.imageName);
+    const rawPattern = state.importCalibration
+      ? createPatternFromSourceWithCalibration(state.image, state.importCalibration, state.imageName, { clean: false })
+      : createPatternFromSource(state.image, params.width, params.height, state.imageName, { clean: false });
+    const pattern = applyImportModeToPattern(rawPattern, getImportMode());
     state.beads.pattern = pattern;
     state.beads.layers = [];
     state.beads.activeLayerId = "";
@@ -2902,7 +3124,7 @@
     state.view.panX = 0;
     state.view.panY = 0;
     clearHistory();
-    if (showSuccess !== false) setMessage("拼豆图纸已生成。", false);
+    if (showSuccess !== false) setMessage(`拼豆图纸已按${getImportModeLabel()}模式生成。`, false);
     render();
     return pattern;
   }
@@ -4415,21 +4637,27 @@
       return 0;
     }
 
+    const locked = getLockedColorSet();
+    const safeTarget = Math.max(target, locked.size + 1);
     const analysis = analyzeColorImportance(state.beads.pattern).sort((a, b) => b.importance - a.importance);
     const colorStats = new Map(analysis.map((item) => [item.code, item]));
+    const kept = [];
+    locked.forEach((code) => {
+      if (currentUsage.some((item) => item.code === code) && kept.length < safeTarget) kept.push(code);
+    });
     const darkest = analysis
       .slice()
+      .filter((item) => !kept.includes(item.code))
       .sort((a, b) => colorBrightness(a.color.rgb) - colorBrightness(b.color.rgb))
-      .slice(0, Math.min(3, target))
+      .slice(0, Math.min(3, Math.max(0, safeTarget - kept.length)))
       .map((item) => item.code);
-    const kept = [];
     [...darkest, ...analysis.map((item) => item.code)].forEach((code) => {
-      if (kept.length < target && !kept.includes(code)) kept.push(code);
+      if (kept.length < safeTarget && !kept.includes(code)) kept.push(code);
     });
     const keptSet = new Set(kept);
     const replacements = new Map();
     currentUsage.forEach((item) => {
-      if (!keptSet.has(item.code)) replacements.set(item.code, getNearestKeptCode(item.code, kept, colorStats));
+      if (!keptSet.has(item.code) && !locked.has(item.code)) replacements.set(item.code, getNearestKeptCode(item.code, kept, colorStats));
     });
     if (!replacements.size) return 0;
 
@@ -4439,14 +4667,14 @@
     for (let row = 0; row < state.beads.pattern.height; row += 1) {
       for (let col = 0; col < state.beads.pattern.width; col += 1) {
         const code = cells[row][col];
-        if (replacements.has(code)) {
+        if (replacements.has(code) && !locked.has(code)) {
           cells[row][col] = replacements.get(code);
           changed += 1;
         }
       }
     }
 
-    const smoothed = smoothOptimizedCells(cells);
+    const smoothed = smoothOptimizedCells(cells, locked);
     for (let row = 0; row < cells.length; row += 1) {
       cells[row] = smoothed.cells[row].slice();
     }
@@ -4459,7 +4687,7 @@
     syncCompositePattern();
     render();
     const after = countPatternColors(state.beads.pattern);
-    setMessage(`已将 ${currentUsage.length} 种色号优化为 ${after} 种。`, after > target);
+    setMessage(`已将 ${currentUsage.length} 种色号优化为 ${after} 种，已保护轮廓/高光锁定色。`, after > safeTarget);
     return changed;
   }
 
@@ -4486,7 +4714,8 @@
       state.imageName,
       state.importCalibration && state.importCalibration.enabled ? state.importCalibration : null
     );
-    const cleaned = restored;
+    const locked = getLockedColorSet();
+    const cleaned = protectLockedCells(state.beads.pattern, restored, locked);
     let changed = 0;
     for (let row = 0; row < state.beads.pattern.height; row += 1) {
       for (let col = 0; col < state.beads.pattern.width; col += 1) {
@@ -9314,7 +9543,12 @@
         guideOrientation: state.beads.guideOrientation,
         guideStyle: state.beads.guideStyle,
         guideColor: state.beads.guideColor,
-        guideOpacity: state.beads.guideOpacity
+        guideOpacity: state.beads.guideOpacity,
+        importMode: getImportMode(),
+        sourceCompareEnabled: Boolean(state.beads.sourceCompareEnabled),
+        sourceCompareOpacity: state.beads.sourceCompareOpacity,
+        lockedColorCodes: Array.isArray(state.beads.lockedColorCodes) ? state.beads.lockedColorCodes.slice() : [],
+        lockedColorRoles: Object.assign({}, state.beads.lockedColorRoles || {})
       }
     };
   }
@@ -9373,6 +9607,19 @@
     state.beads.baseboardColor = payload.editorSettings && /^#[0-9a-f]{6}$/i.test(payload.editorSettings.baseboardColor || "")
       ? payload.editorSettings.baseboardColor
       : state.beads.baseboardColor;
+    state.beads.importMode = ["fidelity", "balanced", "simple"].includes(payload.editorSettings && payload.editorSettings.importMode)
+      ? payload.editorSettings.importMode
+      : "fidelity";
+    state.beads.sourceCompareEnabled = Boolean(payload.editorSettings && payload.editorSettings.sourceCompareEnabled);
+    state.beads.sourceCompareOpacity = payload.editorSettings && payload.editorSettings.sourceCompareOpacity != null
+      ? clamp(payload.editorSettings.sourceCompareOpacity, 10, 85)
+      : 38;
+    state.beads.lockedColorCodes = Array.isArray(payload.editorSettings && payload.editorSettings.lockedColorCodes)
+      ? payload.editorSettings.lockedColorCodes.filter((code) => code && getPaletteColor(code).code === code)
+      : [];
+    state.beads.lockedColorRoles = payload.editorSettings && payload.editorSettings.lockedColorRoles && typeof payload.editorSettings.lockedColorRoles === "object"
+      ? Object.assign({}, payload.editorSettings.lockedColorRoles)
+      : {};
     state.beads.guideLines = Array.isArray(payload.editorSettings && payload.editorSettings.guideLines)
       ? payload.editorSettings.guideLines.map((guide, index) => normalizeGuideLine(guide, index))
       : [];
@@ -9587,6 +9834,10 @@
     state.beads.selectedCells = [];
     state.beads.clipboard = null;
     state.beads.inspectedCell = null;
+    state.beads.sourceCompareEnabled = false;
+    state.beads.sourceCompareOpacity = 38;
+    state.beads.lockedColorCodes = [];
+    state.beads.lockedColorRoles = {};
     ensureLayers();
     syncCompositePattern();
     clearHistory();
@@ -10204,6 +10455,13 @@
     });
     els.homeOpenProjectButton.addEventListener("click", () => els.projectFileInput.click());
     if (els.importChoiceCancelButton) els.importChoiceCancelButton.addEventListener("click", cancelImportSession);
+    [
+      ["importModeFidelityButton", "fidelity"],
+      ["importModeBalancedButton", "balanced"],
+      ["importModeSimpleButton", "simple"]
+    ].forEach(([id, mode]) => {
+      if (els[id]) els[id].addEventListener("click", () => setImportMode(mode));
+    });
     if (els.importDirectButton) els.importDirectButton.addEventListener("click", applyImportedImageDirectly);
     if (els.importCalibrateButton) els.importCalibrateButton.addEventListener("click", openCalibrationModal);
     if (els.calibrationBackButton) {
@@ -10622,6 +10880,19 @@
       });
     }
     if (els.restoreOptimizeButton) els.restoreOptimizeButton.addEventListener("click", restoreOptimizePattern);
+    if (els.sourceCompareToggle) {
+      els.sourceCompareToggle.addEventListener("change", () => {
+        state.beads.sourceCompareEnabled = els.sourceCompareToggle.checked;
+        render();
+      });
+    }
+    if (els.sourceCompareOpacityRange) {
+      els.sourceCompareOpacityRange.addEventListener("input", () => {
+        state.beads.sourceCompareOpacity = clamp(els.sourceCompareOpacityRange.value, 10, 85);
+        syncBeadControls();
+        render();
+      });
+    }
     if (els.colorOptimizeUndoButton) els.colorOptimizeUndoButton.addEventListener("click", undoEdit);
     els.cellTargetSelect.addEventListener("change", () => {
       selectBeadColor(els.cellTargetSelect.value);
@@ -11366,6 +11637,39 @@
       transferSyntheticSquarePixelToBeads,
       calculateUsage,
       countPatternColors,
+      getImportMode: () => getImportMode(),
+      setImportMode: (mode) => {
+        setImportMode(mode);
+        return getImportMode();
+      },
+      getImportModeLabels: () => [
+        els.importModeFidelityButton,
+        els.importModeBalancedButton,
+        els.importModeSimpleButton
+      ].filter(Boolean).map((button) => button.textContent.trim()),
+      setSourceCompare: (enabled, opacity) => {
+        state.beads.sourceCompareEnabled = Boolean(enabled);
+        if (opacity != null) state.beads.sourceCompareOpacity = clamp(opacity, 10, 85);
+        syncBeadControls();
+        return {
+          enabled: state.beads.sourceCompareEnabled,
+          opacity: state.beads.sourceCompareOpacity
+        };
+      },
+      getLockedColorRoles: () => ({
+        codes: Array.isArray(state.beads.lockedColorCodes) ? state.beads.lockedColorCodes.slice() : [],
+        roles: Object.assign({}, state.beads.lockedColorRoles || {})
+      }),
+      setLockedColorCodes: (codes) => {
+        state.beads.lockedColorCodes = Array.isArray(codes) ? codes.filter((code) => code && getPaletteColor(code).code === code) : [];
+        state.beads.lockedColorRoles = state.beads.lockedColorCodes.reduce((roles, code) => {
+          roles[code] = ["手动锁定"];
+          return roles;
+        }, {});
+        renderLockedColorSummary();
+        return state.beads.lockedColorCodes.slice();
+      },
+      analyzeLockedColorRoles,
       makeDefaultCalibration,
       normalizeCalibration,
       createPatternFromSourceWithCalibration,

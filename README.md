@@ -10,6 +10,7 @@ Q Pixel is a local pixel-art and bead-pattern editor. It includes the web app, t
 - Native macOS save bridge for PNG exports and `.qpx` design files.
 - Color optimization control that can reduce a pattern to a target color-count limit, such as 20 colors, while preserving dark outlines and important regions as much as possible.
 - Optional image import calibration for all image imports, including grid offset, column count, and cell size.
+- Import fidelity tools: original-image comparison overlay, high-fidelity / balanced / easy-to-make import modes, and local intelligent color-code recognition that locks likely outline and highlight colors.
 - Service worker cache refresh so tablets and browsers update to the same app version.
 
 ## Project Layout

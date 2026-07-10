@@ -44,6 +44,9 @@
     <section id="importChoiceModal" class="hidden">
       <span id="importChoiceFileName"></span>
       <button id="importChoiceCancelButton" type="button">取消</button>
+      <button id="importModeFidelityButton" type="button">高保真</button>
+      <button id="importModeBalancedButton" type="button">均衡</button>
+      <button id="importModeSimpleButton" type="button">易制作</button>
       <button id="importCalibrateButton" type="button"><strong>像素校准后导入</strong></button>
       <button id="importDirectButton" type="button"><strong>直接导入</strong></button>
     </section>
@@ -63,6 +66,10 @@
     <button id="colorOptimizeButton" type="button">优化色号</button>
     <button id="colorOptimizeUndoButton" type="button">撤销优化</button>
     <button id="restoreOptimizeButton" type="button">还原优化</button>
+    <input id="sourceCompareToggle" type="checkbox">
+    <input id="sourceCompareOpacityRange" type="range" min="10" max="85" value="38">
+    <span id="sourceCompareOpacityLabel"></span>
+    <div id="lockedColorSummary"></div>
   </div>
   <script src="./app.js"></script>
   <script>
@@ -459,6 +466,18 @@
         if (!window.QPixelTest.getImportChoiceLabels().includes("像素校准后导入")) {
           throw new Error("import calibration choice missing");
         }
+        const modeLabels = window.QPixelTest.getImportModeLabels();
+        if (!modeLabels.includes("高保真") || !modeLabels.includes("均衡") || !modeLabels.includes("易制作")) {
+          throw new Error("import mode labels missing");
+        }
+        if (window.QPixelTest.setImportMode("balanced") !== "balanced" || window.QPixelTest.setImportMode("simple") !== "simple") {
+          throw new Error("import mode switching failed");
+        }
+        window.QPixelTest.setImportMode("fidelity");
+        const compareState = window.QPixelTest.setSourceCompare(true, 55);
+        if (!compareState.enabled || compareState.opacity !== 55) {
+          throw new Error("source compare state failed");
+        }
         if (typeof window.QPixelTest.estimatePixelArtGrid !== "function" || typeof window.QPixelTest.restoreOptimizePattern !== "function") {
           throw new Error("restore optimization hooks missing");
         }
@@ -479,6 +498,27 @@
         if (JSON.stringify(restoredAgain.cells) !== JSON.stringify(restoredFixture.cells)) {
           throw new Error("restoration should be idempotent");
         }
+        const roleFixture = {
+          width: 7,
+          height: 7,
+          cells: Array.from({ length: 7 }, () => Array.from({ length: 7 }, () => "H2"))
+        };
+        for (let i = 1; i < 6; i += 1) {
+          roleFixture.cells[1][i] = "H7";
+          roleFixture.cells[5][i] = "H7";
+          roleFixture.cells[i][1] = "H7";
+          roleFixture.cells[i][5] = "H7";
+        }
+        for (let row = 2; row <= 4; row += 1) {
+          for (let col = 2; col <= 4; col += 1) {
+            roleFixture.cells[row][col] = "H7";
+          }
+        }
+        roleFixture.cells[3][3] = "H1";
+        const roleAnalysis = window.QPixelTest.analyzeLockedColorRoles(roleFixture);
+        if (!roleAnalysis.codes.includes("H7") || !roleAnalysis.codes.includes("H1")) {
+          throw new Error("locked color role analysis failed");
+        }
 
         const noisy = await window.QPixelTest.activateSyntheticBeadPattern(48, 36);
         const colorCodes = Array.from({ length: 26 }, (_, index) => `A${index + 1}`);
@@ -488,11 +528,15 @@
           }
         }
         const beforeColorCount = window.QPixelTest.countPatternColors(noisy.pattern);
+        window.QPixelTest.setLockedColorCodes(["A1"]);
         const optimizedCount = window.QPixelTest.optimizePatternColors(20);
         const afterColorCount = window.QPixelTest.countPatternColors(window.QPixelTest.getActivePattern());
         if (beforeColorCount <= 20) throw new Error("synthetic pattern should start above color limit");
-        if (optimizedCount <= 0 || afterColorCount > 20) {
+        if (optimizedCount <= 0 || afterColorCount > 21) {
           throw new Error(`color optimization failed ${beforeColorCount} -> ${afterColorCount}`);
+        }
+        if (!window.QPixelTest.calculateUsage(window.QPixelTest.getActivePattern()).some((item) => item.code === "A1")) {
+          throw new Error("locked color was removed during optimization");
         }
         window.QPixelTest.undoEdit();
         if (window.QPixelTest.countPatternColors(window.QPixelTest.getActivePattern()) !== beforeColorCount) {

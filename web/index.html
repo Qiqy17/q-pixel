@@ -445,6 +445,17 @@
                 <input id="codeFontScaleNumber" type="number" min="80" max="180" value="125" inputmode="numeric">
               </div>
             </div>
+            <label class="switch-row compact">
+              <span><strong>原图对比</strong><em>把原图叠到当前网格下方</em></span>
+              <input id="sourceCompareToggle" type="checkbox">
+            </label>
+            <div class="control-row compact-row">
+              <label for="sourceCompareOpacityRange">对比透明度</label>
+              <div class="control-inputs">
+                <input id="sourceCompareOpacityRange" type="range" min="10" max="85" value="38">
+                <span id="sourceCompareOpacityLabel">38%</span>
+              </div>
+            </div>
           </div>
 
           <div class="panel-card color-optimize-card">
@@ -461,6 +472,7 @@
               <button class="text-button secondary" id="colorOptimizeUndoButton" type="button">撤销优化</button>
             </div>
             <button class="text-button full-width" id="restoreOptimizeButton" type="button">原图还原：找回线条和高光</button>
+            <div class="locked-color-summary" id="lockedColorSummary">未识别锁定色</div>
           </div>
 
           <div class="panel-card">
@@ -1045,6 +1057,11 @@
           <p id="importChoiceFileName">选择导入方式</p>
         </div>
       </div>
+      <div class="import-mode-tabs" aria-label="导入模式">
+        <button id="importModeFidelityButton" class="active" type="button" data-import-mode="fidelity">高保真</button>
+        <button id="importModeBalancedButton" type="button" data-import-mode="balanced">均衡</button>
+        <button id="importModeSimpleButton" type="button" data-import-mode="simple">易制作</button>
+      </div>
       <div class="layer-import-options">
         <button id="importCalibrateButton" class="recommended-choice" type="button">
           <strong>像素校准后导入</strong>
@@ -1087,9 +1104,9 @@
             <input id="calibrationCellSizeInput" type="number" min="1" max="200" step="0.1" value="13.6" inputmode="decimal">
           </label>
         </section>
-        <label class="switch-row compact disabled-feature">
-          <span><strong>AI识别色号</strong><em>预留功能，本次先手动校准</em></span>
-          <input id="calibrationAiToggle" type="checkbox" disabled>
+        <label class="switch-row compact">
+          <span><strong>AI识别色号</strong><em>自动锁定轮廓和高光色</em></span>
+          <input id="calibrationAiToggle" type="checkbox" checked>
         </label>
       </aside>
     </div>
