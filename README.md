@@ -1,5 +1,7 @@
 # Q Pixel
 
+[中文说明](README.zh-CN.md)
+
 Q Pixel is a local pixel-art and bead-pattern editor. It includes the web app, the macOS WebKit wrapper, local sync services, import calibration, color-count optimization, and regression tests.
 
 ## What This Version Includes
