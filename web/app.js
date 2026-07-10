@@ -272,6 +272,7 @@
     activeSessionStart: Date.now(),
     activeActionProjectId: "",
     beads: {
+      restorationFingerprint: "",
       width: 48,
       height: 48,
       lockRatio: true,
@@ -1585,6 +1586,31 @@
     return null;
   }
 
+  function getPatternFingerprint(pattern) {
+    if (!pattern || !pattern.cells) return "";
+    return `${pattern.width}x${pattern.height}:${pattern.cells.map((row) => row.join(",")).join(";")}`;
+  }
+
+  function restorePixelArtDetails(pattern) {
+    if (!pattern || !pattern.cells || pattern.width < 3 || pattern.height < 3) return pattern;
+    const cells = cloneCells(pattern.cells);
+    let changed = false;
+    for (let row = 0; row < pattern.height; row += 1) {
+      for (let col = 0; col < pattern.width; col += 1) {
+        const current = cells[row][col];
+        const bridgeCode = getLineBridgeCode(cells, row, col);
+        if (!bridgeCode || current === bridgeCode) continue;
+        // Only repair a background/blank cell or a clearly non-outline cell.
+        // Existing dark outlines and light details are intentionally untouched.
+        if (current && isDarkOutlineCode(current)) continue;
+        if (current && !isVeryLightCode(current)) continue;
+        cells[row][col] = bridgeCode;
+        changed = true;
+      }
+    }
+    return changed ? Object.assign({}, pattern, { cells }) : pattern;
+  }
+
   function cleanPixelArtPattern(pattern) {
     if (!pattern || !pattern.cells || pattern.width < 3 || pattern.height < 3) return pattern;
     const backgroundCode = getLikelyBackgroundCode(pattern);
@@ -2625,6 +2651,7 @@
     state.beads.layers = [];
     state.beads.activeLayerId = "";
     state.beads.pixelSignature = "";
+    state.beads.restorationFingerprint = "";
     state.view.zoom = 1;
     state.view.panX = 0;
     state.view.panY = 0;
@@ -2914,6 +2941,7 @@
     state.beads.redoStack.push(cloneLayerState());
     const snapshot = state.beads.undoStack.pop();
     if (!restoreLayerState(snapshot)) state.beads.pattern.cells = snapshot;
+    state.beads.restorationFingerprint = "";
     setMessage("已撤销。", false);
     render();
   }
@@ -2923,6 +2951,7 @@
     state.beads.undoStack.push(cloneLayerState());
     const snapshot = state.beads.redoStack.pop();
     if (!restoreLayerState(snapshot)) state.beads.pattern.cells = snapshot;
+    state.beads.restorationFingerprint = "";
     setMessage("已重做。", false);
     render();
   }
@@ -4431,8 +4460,13 @@
       return 0;
     }
     syncCompositePattern();
+    const beforeFingerprint = getPatternFingerprint(state.beads.pattern);
+    if (state.beads.restorationFingerprint === beforeFingerprint) {
+      setMessage("还原优化已经完成，无需重复处理。", false);
+      return 0;
+    }
     const before = cloneCells(state.beads.pattern.cells);
-    const cleaned = cleanPixelArtPattern(state.beads.pattern);
+    const cleaned = restorePixelArtDetails(state.beads.pattern);
     let changed = 0;
     for (let row = 0; row < state.beads.pattern.height; row += 1) {
       for (let col = 0; col < state.beads.pattern.width; col += 1) {
@@ -4440,21 +4474,16 @@
       }
     }
     if (!changed) {
-      setMessage("当前图纸已经比较干净，无需还原优化。", true);
+      state.beads.restorationFingerprint = beforeFingerprint;
+      setMessage("未发现明确断线，原图细节保持不变。", false);
       return 0;
     }
     pushHistory();
     state.beads.pattern = cleaned;
-    if (state.beads.layers.length <= 1) {
-      state.beads.layers = [makeLayer("主图层", cleaned.cells, true, false, "")];
-      state.beads.activeLayerId = state.beads.layers[0].id;
-    } else {
-      state.beads.layers = [makeLayer("还原优化", cleaned.cells, true, false, "")];
-      state.beads.activeLayerId = state.beads.layers[0].id;
-    }
+    state.beads.restorationFingerprint = getPatternFingerprint(cleaned);
     syncCompositePattern();
     render();
-    setMessage(`已完成还原优化，调整 ${changed} 格。`, false);
+    setMessage(`已完成轻度还原，补齐 ${changed} 格线条；原有细节已保留。`, false);
     return changed;
   }
 
@@ -11323,6 +11352,7 @@
       generateSyntheticCalibratedPattern,
       estimatePixelArtGrid,
       restoreOptimizePattern,
+      restorePixelArtDetails,
       optimizePatternColors,
       undoEdit,
       mergeProjectsForTest: mergeProjects,

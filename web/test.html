@@ -462,6 +462,23 @@
         if (typeof window.QPixelTest.estimatePixelArtGrid !== "function" || typeof window.QPixelTest.restoreOptimizePattern !== "function") {
           throw new Error("restore optimization hooks missing");
         }
+        const dark = "H7";
+        const light = "H2";
+        const detail = "F13";
+        const fixtureCells = Array.from({ length: 7 }, () => Array.from({ length: 7 }, () => light));
+        fixtureCells[3][1] = dark;
+        fixtureCells[3][3] = dark;
+        fixtureCells[1][1] = dark;
+        fixtureCells[5][1] = dark;
+        fixtureCells[2][2] = detail;
+        const restoredFixture = window.QPixelTest.restorePixelArtDetails({ width: 7, height: 7, cells: fixtureCells });
+        if (restoredFixture.cells[3][2] !== dark || restoredFixture.cells[2][2] !== detail || restoredFixture.cells[2][4] !== light) {
+          throw new Error("conservative restoration changed details or missed outline gap");
+        }
+        const restoredAgain = window.QPixelTest.restorePixelArtDetails(restoredFixture);
+        if (JSON.stringify(restoredAgain.cells) !== JSON.stringify(restoredFixture.cells)) {
+          throw new Error("restoration should be idempotent");
+        }
 
         const noisy = await window.QPixelTest.activateSyntheticBeadPattern(48, 36);
         const colorCodes = Array.from({ length: 26 }, (_, index) => `A${index + 1}`);
