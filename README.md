@@ -65,3 +65,22 @@ Browser regression page:
 web/test.html
 ```
 
+## Publish To GitHub
+
+Log in with GitHub CLI first:
+
+```sh
+gh auth login --hostname github.com --git-protocol https --web
+```
+
+Then publish:
+
+```sh
+./scripts/deploy_github.sh
+```
+
+By default this publishes to:
+
+```text
+https://github.com/Qiqy17/q-pixel
+```
