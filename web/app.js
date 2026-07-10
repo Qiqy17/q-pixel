@@ -529,7 +529,7 @@
       "calibrationNudgeLeftButton", "calibrationNudgeUpButton",
       "calibrationNudgeDownButton", "calibrationNudgeRightButton",
       "calibrationColumnsInput", "calibrationCellSizeInput", "calibrationAiToggle",
-      "colorOptimizeLimitInput", "colorOptimizeButton", "colorOptimizeUndoButton",
+      "colorOptimizeLimitInput", "colorOptimizeButton", "colorOptimizeUndoButton", "restoreOptimizeButton",
       "trashModal", "trashCloseButton", "trashList",
       "usageLayoutWrapButton", "usageLayoutGridButton", "usageFontSizeRange", "usageFontSizeLabel",
       "usageStyleChipsButton", "usageStyleTableButton", "exportAxisToggle", "exportOuterBorderToggle",
@@ -1276,9 +1276,112 @@
     return canvas;
   }
 
-  function makeDefaultCalibration(sourceWidth, sourceHeight) {
-    const columns = clamp(Math.round(Math.max(16, Math.min(80, sourceWidth / 12))), 1, bounds.beadSize.max);
-    const cellSize = Math.max(1, sourceWidth / columns);
+  function rgbDistanceFromData(data, width, aX, aY, bX, bY) {
+    const a = (aY * width + aX) * 4;
+    const b = (bY * width + bX) * 4;
+    return Math.sqrt(
+      Math.pow(data[a] - data[b], 2) +
+      Math.pow(data[a + 1] - data[b + 1], 2) +
+      Math.pow(data[a + 2] - data[b + 2], 2)
+    );
+  }
+
+  function clusterPositions(positions, tolerance) {
+    if (!positions.length) return [];
+    const sorted = positions.slice().sort((a, b) => a - b);
+    const clusters = [];
+    let current = [sorted[0]];
+    for (let index = 1; index < sorted.length; index += 1) {
+      const value = sorted[index];
+      const average = current.reduce((sum, item) => sum + item, 0) / current.length;
+      if (Math.abs(value - average) <= tolerance) {
+        current.push(value);
+      } else {
+        clusters.push(Math.round(average));
+        current = [value];
+      }
+    }
+    clusters.push(Math.round(current.reduce((sum, item) => sum + item, 0) / current.length));
+    return clusters;
+  }
+
+  function scoreCellCandidate(gaps, candidate) {
+    let score = 0;
+    gaps.forEach((gap) => {
+      if (gap < candidate * 0.7) return;
+      const multiple = Math.max(1, Math.round(gap / candidate));
+      const diff = Math.abs(gap - multiple * candidate);
+      const tolerance = Math.max(1.5, candidate * 0.18);
+      if (diff <= tolerance) score += 1 + Math.min(4, multiple) * 0.2;
+    });
+    return score;
+  }
+
+  function estimateCellSizeInAxis(canvas, data, axis) {
+    const length = axis === "x" ? canvas.width : canvas.height;
+    const cross = axis === "x" ? canvas.height : canvas.width;
+    const lines = [0.18, 0.28, 0.38, 0.5, 0.62, 0.72, 0.82].map((ratio) => clamp(cross * ratio, 1, cross - 2));
+    const positions = [];
+
+    lines.forEach((line) => {
+      for (let pos = 1; pos < length; pos += 1) {
+        const x1 = axis === "x" ? pos - 1 : line;
+        const y1 = axis === "x" ? line : pos - 1;
+        const x2 = axis === "x" ? pos : line;
+        const y2 = axis === "x" ? line : pos;
+        if (rgbDistanceFromData(data, canvas.width, x1, y1, x2, y2) > 38) positions.push(pos);
+      }
+    });
+
+    const clustered = clusterPositions(positions, 2);
+    const gaps = [];
+    for (let index = 1; index < clustered.length; index += 1) {
+      const gap = clustered[index] - clustered[index - 1];
+      if (gap >= 3 && gap <= Math.max(80, length / 3)) gaps.push(gap);
+    }
+    if (gaps.length < 4) return null;
+
+    let best = null;
+    for (let candidate = 3; candidate <= Math.min(48, Math.max(3, length / 8)); candidate += 1) {
+      const score = scoreCellCandidate(gaps, candidate);
+      if (!best || score > best.score) best = { size: candidate, score };
+    }
+    if (!best || best.score < Math.max(3, gaps.length * 0.2)) return null;
+    return best.size;
+  }
+
+  function estimatePixelArtGrid(source) {
+    const sourceWidth = source.naturalWidth || source.width;
+    const sourceHeight = source.naturalHeight || source.height;
+    if (!sourceWidth || !sourceHeight) return null;
+    const canvas = buildSamplingCanvas(source, 1100);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const scaleX = canvas.width / sourceWidth;
+    const scaleY = canvas.height / sourceHeight;
+    const cellX = estimateCellSizeInAxis(canvas, data, "x");
+    const cellY = estimateCellSizeInAxis(canvas, data, "y");
+    const canvasCell = cellX && cellY ? (cellX + cellY) / 2 : (cellX || cellY);
+    if (!canvasCell) return null;
+    const sourceCell = canvasCell / ((scaleX + scaleY) / 2);
+    if (!Number.isFinite(sourceCell) || sourceCell < 2) return null;
+    const width = clamp(Math.round(sourceWidth / sourceCell), bounds.beadSize.min, bounds.beadSize.max);
+    const height = clamp(Math.round(sourceHeight / sourceCell), bounds.beadSize.min, bounds.beadSize.max);
+    return {
+      width,
+      height,
+      cellSize: Number(sourceCell.toFixed(2)),
+      confidence: Math.min(1, Math.max(0.2, canvasCell / 18))
+    };
+  }
+
+  function makeDefaultCalibration(sourceWidth, sourceHeight, gridEstimate) {
+    const columns = gridEstimate && gridEstimate.width
+      ? clamp(gridEstimate.width, 1, bounds.beadSize.max)
+      : clamp(Math.round(Math.max(16, Math.min(80, sourceWidth / 12))), 1, bounds.beadSize.max);
+    const cellSize = gridEstimate && gridEstimate.cellSize
+      ? Math.max(1, Number(gridEstimate.cellSize))
+      : Math.max(1, sourceWidth / columns);
     return {
       enabled: true,
       offsetX: 0,
@@ -1461,6 +1564,27 @@
     return best;
   }
 
+  function countDarkNeighbors(cells, row, col) {
+    return getNeighborCodes(cells, row, col).filter(isDarkOutlineCode).length;
+  }
+
+  function getLineBridgeCode(cells, row, col) {
+    const pairs = [
+      [[0, -1], [0, 1]],
+      [[-1, 0], [1, 0]],
+      [[-1, -1], [1, 1]],
+      [[-1, 1], [1, -1]]
+    ];
+    for (const pair of pairs) {
+      const first = cells[row + pair[0][0]] && cells[row + pair[0][0]][col + pair[0][1]];
+      const second = cells[row + pair[1][0]] && cells[row + pair[1][0]][col + pair[1][1]];
+      if (first && second && isDarkOutlineCode(first) && isDarkOutlineCode(second)) {
+        return first === second ? first : getNearestNeighborColorCode(first, [second]);
+      }
+    }
+    return null;
+  }
+
   function cleanPixelArtPattern(pattern) {
     if (!pattern || !pattern.cells || pattern.width < 3 || pattern.height < 3) return pattern;
     const backgroundCode = getLikelyBackgroundCode(pattern);
@@ -1484,6 +1608,17 @@
           const rare = (counts.get(code) || 0) <= rareLimit;
           const dark = isDarkOutlineCode(code);
           const majorityDark = isDarkOutlineCode(majority.code);
+          const darkNeighbors = countDarkNeighbors(cells, row, col);
+
+          if (isVeryLightCode(code) && darkNeighbors >= 4) continue;
+
+          if (!dark && darkNeighbors >= 2) {
+            const bridgeCode = getLineBridgeCode(cells, row, col);
+            if (bridgeCode && !isVeryLightCode(code)) {
+              next[row][col] = bridgeCode;
+              continue;
+            }
+          }
 
           if (backgroundCode && code !== backgroundCode && isVeryLightCode(code) && backgroundNeighbors >= 3) {
             next[row][col] = backgroundCode;
@@ -2493,12 +2628,17 @@
     state.view.zoom = 1;
     state.view.panX = 0;
     state.view.panY = 0;
+    const gridEstimate = estimatePixelArtGrid(session.image);
+    if (gridEstimate) {
+      state.beads.width = gridEstimate.width;
+      state.beads.height = gridEstimate.height;
+    }
     if (els.imageStatus) els.imageStatus.textContent = state.imageName;
-    setMessage("图片已载入，可调节参数。", false);
-    if (state.beads.lockRatio) applyAspectLock("width");
+    setMessage(gridEstimate ? `已按图片自动匹配 ${gridEstimate.width} x ${gridEstimate.height} 像素精度。` : "图片已载入，可调节参数。", false);
     if (state.mode === "beads") {
       generateBeadsFromImage(false);
     } else {
+      syncBeadControls();
       render();
     }
     state.importSession = null;
@@ -2510,7 +2650,7 @@
     closeImportChoiceModal();
     const width = session.image.naturalWidth || session.image.width;
     const height = session.image.naturalHeight || session.image.height;
-    state.importCalibration = makeDefaultCalibration(width, height);
+    state.importCalibration = makeDefaultCalibration(width, height, estimatePixelArtGrid(session.image));
     syncCalibrationInputs();
     if (els.calibrationModal) els.calibrationModal.classList.remove("hidden");
     renderCalibrationCanvas();
@@ -4282,6 +4422,39 @@
     render();
     const after = countPatternColors(state.beads.pattern);
     setMessage(`已将 ${currentUsage.length} 种色号优化为 ${after} 种。`, after > target);
+    return changed;
+  }
+
+  function restoreOptimizePattern() {
+    if (!state.beads.pattern) {
+      setMessage("请先生成图纸。", true);
+      return 0;
+    }
+    syncCompositePattern();
+    const before = cloneCells(state.beads.pattern.cells);
+    const cleaned = cleanPixelArtPattern(state.beads.pattern);
+    let changed = 0;
+    for (let row = 0; row < state.beads.pattern.height; row += 1) {
+      for (let col = 0; col < state.beads.pattern.width; col += 1) {
+        if (before[row][col] !== cleaned.cells[row][col]) changed += 1;
+      }
+    }
+    if (!changed) {
+      setMessage("当前图纸已经比较干净，无需还原优化。", true);
+      return 0;
+    }
+    pushHistory();
+    state.beads.pattern = cleaned;
+    if (state.beads.layers.length <= 1) {
+      state.beads.layers = [makeLayer("主图层", cleaned.cells, true, false, "")];
+      state.beads.activeLayerId = state.beads.layers[0].id;
+    } else {
+      state.beads.layers = [makeLayer("还原优化", cleaned.cells, true, false, "")];
+      state.beads.activeLayerId = state.beads.layers[0].id;
+    }
+    syncCompositePattern();
+    render();
+    setMessage(`已完成还原优化，调整 ${changed} 格。`, false);
     return changed;
   }
 
@@ -10399,6 +10572,7 @@
         if (!changed && state.beads.pattern) render();
       });
     }
+    if (els.restoreOptimizeButton) els.restoreOptimizeButton.addEventListener("click", restoreOptimizePattern);
     if (els.colorOptimizeUndoButton) els.colorOptimizeUndoButton.addEventListener("click", undoEdit);
     els.cellTargetSelect.addEventListener("change", () => {
       selectBeadColor(els.cellTargetSelect.value);
@@ -11147,6 +11321,8 @@
       normalizeCalibration,
       createPatternFromSourceWithCalibration,
       generateSyntheticCalibratedPattern,
+      estimatePixelArtGrid,
+      restoreOptimizePattern,
       optimizePatternColors,
       undoEdit,
       mergeProjectsForTest: mergeProjects,

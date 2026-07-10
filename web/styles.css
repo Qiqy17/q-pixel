@@ -621,6 +621,10 @@ select {
   border: 1px solid #aeb7c8;
 }
 
+.text-button.full-width {
+  width: 100%;
+}
+
 .icon-button:hover,
 .text-button:hover {
   transform: translateY(-1px);
