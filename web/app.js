@@ -1336,6 +1336,190 @@
     ];
   }
 
+  function sampleDominantBeadCode(data, canvasWidth, canvasHeight, x, y, width, height) {
+    const insetX = Math.max(0, width * 0.18);
+    const insetY = Math.max(0, height * 0.18);
+    const x0 = Math.max(0, Math.floor(x + insetX));
+    const y0 = Math.max(0, Math.floor(y + insetY));
+    const x1 = Math.min(canvasWidth, Math.ceil(x + width - insetX));
+    const y1 = Math.min(canvasHeight, Math.ceil(y + height - insetY));
+    const step = Math.max(1, Math.floor(Math.max(x1 - x0, y1 - y0) / 14));
+    const counts = new Map();
+
+    for (let sy = y0; sy < y1; sy += step) {
+      for (let sx = x0; sx < x1; sx += step) {
+        const index = (sy * canvasWidth + sx) * 4;
+        const alpha = data[index + 3] / 255;
+        if (alpha < 0.12) continue;
+        const code = nearestBeadColor(data[index], data[index + 1], data[index + 2]).code;
+        const centerX = x + width / 2;
+        const centerY = y + height / 2;
+        const dx = Math.abs(sx - centerX) / Math.max(1, width / 2);
+        const dy = Math.abs(sy - centerY) / Math.max(1, height / 2);
+        const centerWeight = 1 + Math.max(0, 1 - Math.max(dx, dy));
+        counts.set(code, (counts.get(code) || 0) + alpha * centerWeight);
+      }
+    }
+
+    let bestCode = null;
+    let bestCount = 0;
+    counts.forEach((count, code) => {
+      if (count > bestCount) {
+        bestCode = code;
+        bestCount = count;
+      }
+    });
+    return bestCode;
+  }
+
+  function getPatternCodeCounts(cells) {
+    const counts = new Map();
+    cells.forEach((row) => {
+      row.forEach((code) => {
+        if (code) counts.set(code, (counts.get(code) || 0) + 1);
+      });
+    });
+    return counts;
+  }
+
+  function getLikelyBackgroundCode(pattern) {
+    if (!pattern || !pattern.cells.length) return null;
+    const counts = new Map();
+    const add = (code) => {
+      if (code) counts.set(code, (counts.get(code) || 0) + 1);
+    };
+    for (let col = 0; col < pattern.width; col += 1) {
+      add(pattern.cells[0][col]);
+      add(pattern.cells[pattern.height - 1][col]);
+    }
+    for (let row = 1; row < pattern.height - 1; row += 1) {
+      add(pattern.cells[row][0]);
+      add(pattern.cells[row][pattern.width - 1]);
+    }
+    let bestCode = null;
+    let bestCount = 0;
+    counts.forEach((count, code) => {
+      if (count > bestCount) {
+        bestCode = code;
+        bestCount = count;
+      }
+    });
+    return bestCode;
+  }
+
+  function isVeryLightCode(code) {
+    const color = getPaletteColor(code);
+    return colorBrightness(color.rgb) >= 222;
+  }
+
+  function isDarkOutlineCode(code) {
+    const color = getPaletteColor(code);
+    return colorBrightness(color.rgb) <= 70;
+  }
+
+  function getNeighborCodes(cells, row, col) {
+    const codes = [];
+    for (let dr = -1; dr <= 1; dr += 1) {
+      for (let dc = -1; dc <= 1; dc += 1) {
+        if (!dr && !dc) continue;
+        const line = cells[row + dr];
+        if (!line) continue;
+        const code = line[col + dc];
+        if (code) codes.push(code);
+      }
+    }
+    return codes;
+  }
+
+  function getMajorityNeighborCode(codes) {
+    const counts = new Map();
+    codes.forEach((code) => counts.set(code, (counts.get(code) || 0) + 1));
+    let bestCode = null;
+    let bestCount = 0;
+    counts.forEach((count, code) => {
+      if (count > bestCount) {
+        bestCode = code;
+        bestCount = count;
+      }
+    });
+    return { code: bestCode, count: bestCount };
+  }
+
+  function getNearestNeighborColorCode(code, candidates) {
+    if (!code || !candidates.length) return null;
+    const color = getPaletteColor(code);
+    let best = candidates[0];
+    let bestDistance = Infinity;
+    candidates.forEach((candidate) => {
+      const target = getPaletteColor(candidate);
+      const distance = labDistance(color.lab, target.lab);
+      if (distance < bestDistance) {
+        best = candidate;
+        bestDistance = distance;
+      }
+    });
+    return best;
+  }
+
+  function cleanPixelArtPattern(pattern) {
+    if (!pattern || !pattern.cells || pattern.width < 3 || pattern.height < 3) return pattern;
+    const backgroundCode = getLikelyBackgroundCode(pattern);
+    let cells = cloneCells(pattern.cells);
+
+    for (let pass = 0; pass < 2; pass += 1) {
+      const next = cloneCells(cells);
+      const counts = getPatternCodeCounts(cells);
+      const rareLimit = Math.max(2, Math.floor(pattern.width * pattern.height * 0.006));
+
+      for (let row = 0; row < pattern.height; row += 1) {
+        for (let col = 0; col < pattern.width; col += 1) {
+          const code = cells[row][col];
+          if (!code) continue;
+          const neighbors = getNeighborCodes(cells, row, col);
+          const majority = getMajorityNeighborCode(neighbors);
+          if (!majority.code || majority.code === code) continue;
+
+          const sameNeighbors = neighbors.filter((item) => item === code).length;
+          const backgroundNeighbors = backgroundCode ? neighbors.filter((item) => item === backgroundCode).length : 0;
+          const rare = (counts.get(code) || 0) <= rareLimit;
+          const dark = isDarkOutlineCode(code);
+          const majorityDark = isDarkOutlineCode(majority.code);
+
+          if (backgroundCode && code !== backgroundCode && isVeryLightCode(code) && backgroundNeighbors >= 3) {
+            next[row][col] = backgroundCode;
+            continue;
+          }
+
+          if (dark && sameNeighbors >= 2) continue;
+          if (majority.count >= 5 && (!dark || majorityDark || sameNeighbors <= 1)) {
+            next[row][col] = majority.code;
+            continue;
+          }
+
+          if (rare && sameNeighbors <= 1 && majority.count >= 3) {
+            next[row][col] = majority.code;
+          }
+        }
+      }
+      cells = next;
+    }
+
+    const counts = getPatternCodeCounts(cells);
+    const next = cloneCells(cells);
+    const rareLimit = Math.max(2, Math.floor(pattern.width * pattern.height * 0.004));
+    for (let row = 0; row < pattern.height; row += 1) {
+      for (let col = 0; col < pattern.width; col += 1) {
+        const code = cells[row][col];
+        if (!code || (counts.get(code) || 0) > rareLimit) continue;
+        const candidates = getNeighborCodes(cells, row, col).filter((item) => item !== code);
+        const replacement = getNearestNeighborColorCode(code, candidates);
+        if (replacement) next[row][col] = replacement;
+      }
+    }
+
+    return Object.assign({}, pattern, { cells: next });
+  }
+
   function createPatternFromSourceWithCalibration(source, calibration, sourceLabel) {
     const sourceCanvas = buildSamplingCanvas(source, 1800);
     const sourceCtx = sourceCanvas.getContext("2d", { willReadFrequently: true });
@@ -1350,28 +1534,41 @@
     for (let row = 0; row < grid.rows; row += 1) {
       const line = [];
       for (let col = 0; col < grid.columns; col += 1) {
-        const sample = sampleAverageColor(
+        const sampleX = (grid.offsetX + col * grid.cellSize) * scaleX;
+        const sampleY = (grid.offsetY + row * grid.cellSize) * scaleY;
+        const sampleWidth = grid.cellSize * scaleX;
+        const sampleHeight = grid.cellSize * scaleY;
+        const dominantCode = sampleDominantBeadCode(
           data,
           sourceCanvas.width,
           sourceCanvas.height,
-          (grid.offsetX + col * grid.cellSize) * scaleX,
-          (grid.offsetY + row * grid.cellSize) * scaleY,
-          grid.cellSize * scaleX,
-          grid.cellSize * scaleY
+          sampleX,
+          sampleY,
+          sampleWidth,
+          sampleHeight
         );
-        line.push(sample ? nearestBeadColor(sample[0], sample[1], sample[2]).code : null);
+        const sample = dominantCode ? null : sampleAverageColor(
+          data,
+          sourceCanvas.width,
+          sourceCanvas.height,
+          sampleX,
+          sampleY,
+          sampleWidth,
+          sampleHeight
+        );
+        line.push(dominantCode || (sample ? nearestBeadColor(sample[0], sample[1], sample[2]).code : null));
       }
       cells.push(line);
     }
 
-    return {
+    return cleanPixelArtPattern({
       width: grid.columns,
       height: grid.rows,
       cells,
       sourceLabel: sourceLabel || "校准图片",
       createdAt: new Date().toISOString(),
       calibration: grid
-    };
+    });
   }
 
   function createPatternFromSource(source, width, height, sourceLabel) {
@@ -1389,6 +1586,19 @@
         const sy0 = Math.floor(row * scaleY);
         const sx1 = Math.min(sourceCanvas.width, Math.ceil((col + 1) * scaleX));
         const sy1 = Math.min(sourceCanvas.height, Math.ceil((row + 1) * scaleY));
+        const dominantCode = sampleDominantBeadCode(
+          data,
+          sourceCanvas.width,
+          sourceCanvas.height,
+          sx0,
+          sy0,
+          Math.max(1, sx1 - sx0),
+          Math.max(1, sy1 - sy0)
+        );
+        if (dominantCode) {
+          line.push(dominantCode);
+          continue;
+        }
         let linR = 0;
         let linG = 0;
         let linB = 0;
@@ -1420,13 +1630,13 @@
       cells.push(line);
     }
 
-    return {
+    return cleanPixelArtPattern({
       width,
       height,
       cells,
       sourceLabel: sourceLabel || "未命名图片",
       createdAt: new Date().toISOString()
-    };
+    });
   }
 
   function renderBeadMode() {
@@ -10813,6 +11023,9 @@
     state.beads.height = generated.pattern.height;
     state.beads.projectTitle = "测试源文件";
     state.beads.sourceLabel = "测试图";
+    state.beads.layers = [];
+    state.beads.activeLayerId = "";
+    ensureLayers();
     clearHistory();
     return { pattern: state.beads.pattern, usage: calculateUsage(state.beads.pattern) };
   }
