@@ -572,6 +572,31 @@
         if (fallbackProjects.length !== 1 || fallbackProjects[0].title !== "缓存兜底测试") {
           throw new Error("project memory cache fallback failed");
         }
+        const summaryProject = window.QPixelTest.normalizeProjectForTest({
+          id: "summary-only",
+          title: "摘要作品",
+          savedAt: "2026-07-13T00:00:00.000Z",
+          updatedAt: "2026-07-13T00:00:00.000Z",
+          width: 22,
+          height: 18,
+          hasPayload: true
+        });
+        if (summaryProject.payload || summaryProject.width !== 22 || summaryProject.height !== 18) {
+          throw new Error("summary project normalization failed");
+        }
+        const fullProject = window.QPixelTest.normalizeProjectForTest({
+          id: "full-payload",
+          title: "完整作品",
+          payload: {
+            id: "full-payload",
+            title: "完整作品",
+            savedAt: "2026-07-13T00:00:00.000Z",
+            pattern: { width: 16, height: 16, cells: emptyCells }
+          }
+        });
+        if (!fullProject.payload || !window.QPixelTest.hasCachedProjectPayloadForTest("full-payload")) {
+          throw new Error("project payload cache failed");
+        }
 
         document.getElementById("pngData").textContent = exportDataUrl;
         document.getElementById("beadPngData").textContent = beadDataUrl;

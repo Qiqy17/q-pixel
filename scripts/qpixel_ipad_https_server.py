@@ -10,7 +10,7 @@ import tempfile
 from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 
 ROOT = Path(__file__).resolve().parent
@@ -45,8 +45,19 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path == "/api/projects/index":
+            self.send_json([summary for summary in (project_summary(project) for project in self.read_projects()) if summary])
+            return
         if path == "/api/projects":
             self.send_json(self.read_projects())
+            return
+        project_id = get_project_id_from_path(path)
+        if project_id:
+            project = find_project(self.read_projects(), project_id)
+            if project:
+                self.send_json(project)
+            else:
+                self.send_error(404, "Project not found")
             return
         if path == "/api/settings":
             self.send_json(self.read_settings())
@@ -57,6 +68,10 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/settings":
             self.write_settings_request()
+            return
+        project_id = get_project_id_from_path(path)
+        if project_id:
+            self.write_single_project_request(project_id)
             return
         if path != "/api/projects":
             self.send_error(404)
@@ -78,6 +93,28 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
         tmp.write_text(json.dumps(payload[:200], ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, PROJECTS_FILE)
         self.send_json({"ok": True, "count": len(payload[:200])})
+
+    def write_single_project_request(self, project_id):
+        length = int(self.headers.get("Content-Length") or "0")
+        raw = self.rfile.read(length)
+        try:
+            payload = json.loads(raw.decode("utf-8") or "{}")
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+        if not isinstance(payload, dict) or not payload.get("id"):
+            self.send_error(400, "Expected project object")
+            return
+        if str(payload.get("id")) != project_id:
+            self.send_error(400, "Project id mismatch")
+            return
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        backup_projects_file()
+        projects = merge_projects(self.read_projects(), [payload])
+        tmp = PROJECTS_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(projects[:200], ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, PROJECTS_FILE)
+        self.send_json({"ok": True, "id": project_id, "count": len(projects[:200])})
 
     def write_settings_request(self):
         length = int(self.headers.get("Content-Length") or "0")
@@ -187,6 +224,36 @@ def normalize_project(project):
     return project if isinstance(project, dict) and project.get("id") else None
 
 
+def project_summary(project):
+    project = normalize_project(project)
+    if not project:
+        return None
+    payload = project.get("payload") if isinstance(project.get("payload"), dict) else {}
+    pattern = payload.get("pattern") if isinstance(payload.get("pattern"), dict) else {}
+    summary = {key: value for key, value in project.items() if key != "payload"}
+    summary["hasPayload"] = bool(project.get("payload"))
+    summary["width"] = summary.get("width") or pattern.get("width") or 0
+    summary["height"] = summary.get("height") or pattern.get("height") or 0
+    summary["payloadSize"] = len(json.dumps(project.get("payload") or {}, ensure_ascii=False))
+    return summary
+
+
+def get_project_id_from_path(path):
+    prefix = "/api/projects/"
+    if not path.startswith(prefix):
+        return ""
+    project_id = unquote(path[len(prefix):].strip("/"))
+    return project_id if project_id and "/" not in project_id else ""
+
+
+def find_project(projects, project_id):
+    for project in projects or []:
+        project = normalize_project(project)
+        if project and str(project.get("id")) == project_id:
+            return project
+    return None
+
+
 def merge_projects(existing, incoming):
     merged = {}
     for project in list(existing or []) + list(incoming or []):
@@ -195,6 +262,9 @@ def merge_projects(existing, incoming):
             continue
         current = merged.get(project["id"])
         if current is None or project_sort_time(project) >= project_sort_time(current):
+            if current and not project.get("payload") and current.get("payload"):
+                project = dict(project)
+                project["payload"] = current.get("payload")
             merged[project["id"]] = project
     return sorted(merged.values(), key=project_sort_time, reverse=True)
 

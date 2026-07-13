@@ -250,6 +250,7 @@
     importCalibration: null,
     projectCache: [],
     projectCacheReady: false,
+    projectPayloadCache: new Map(),
     forceProjectStorageFailureForTest: false,
     params: {
       precision: 80,
@@ -9664,6 +9665,9 @@
 
   function storeProjectsLocally(projects) {
     const normalized = projects.map(normalizeProject).slice(0, 120);
+    normalized.forEach((project) => {
+      if (project.payload) state.projectPayloadCache.set(project.id, project.payload);
+    });
     state.projectCache = normalized;
     state.projectCacheReady = true;
     try {
@@ -9712,8 +9716,10 @@
     const now = new Date().toISOString();
     const createdAt = project.createdAt || (payload && payload.createdAt) || project.savedAt || now;
     const savedAt = project.savedAt || (payload && payload.savedAt) || now;
+    const id = project.id || (payload && payload.id) || makeId();
+    if (payload) state.projectPayloadCache.set(id, payload);
     return Object.assign({}, project, {
-      id: project.id || (payload && payload.id) || makeId(),
+      id,
       title: project.title || (payload && payload.title) || "未命名",
       createdAt,
       savedAt,
@@ -9755,10 +9761,52 @@
   }
 
   async function fetchRemoteProjects() {
-    const response = await fetch(`${syncApiBase}/api/projects`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`sync ${response.status}`);
-    const projects = await response.json();
-    return Array.isArray(projects) ? projects.map(normalizeProject).filter((project) => !isInternalTestProject(project)) : [];
+    try {
+      const response = await fetch(`${syncApiBase}/api/projects/index`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`sync-index ${response.status}`);
+      const projects = await response.json();
+      return Array.isArray(projects) ? projects.map(normalizeProject).filter((project) => !isInternalTestProject(project)) : [];
+    } catch {
+      const response = await fetch(`${syncApiBase}/api/projects`, { cache: "no-store" });
+      if (!response.ok) throw new Error(`sync ${response.status}`);
+      const projects = await response.json();
+      return Array.isArray(projects) ? projects.map(normalizeProject).filter((project) => !isInternalTestProject(project)) : [];
+    }
+  }
+
+  async function fetchRemoteProjectPayload(id) {
+    if (!id || !window.fetch) return null;
+    if (state.projectPayloadCache.has(id)) return state.projectPayloadCache.get(id);
+    const local = getProjects().find((item) => item.id === id);
+    if (local && local.payload) {
+      state.projectPayloadCache.set(id, local.payload);
+      return local.payload;
+    }
+    const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(id)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`project ${response.status}`);
+    const project = normalizeProject(await response.json());
+    if (project.payload) {
+      state.projectPayloadCache.set(id, project.payload);
+      const projects = getProjects().map((item) => item.id === id ? Object.assign({}, item, project) : item);
+      storeProjectsLocally(projects);
+      return project.payload;
+    }
+    return null;
+  }
+
+  function saveProjectToRemote(project) {
+    if (!window.fetch || !project || !project.id) return Promise.resolve(null);
+    return fetch(`${syncApiBase}/api/projects/${encodeURIComponent(project.id)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(normalizeProject(project))
+    }).then((response) => {
+      if (!response.ok) throw new Error(`project-save ${response.status}`);
+      return response.json().catch(() => ({ ok: true }));
+    }).catch(() => {
+      setMessage("电脑同步服务暂时不可用，已先保存到当前设备。", true);
+      return null;
+    });
   }
 
   function saveProjectsToRemote(projects) {
@@ -9785,7 +9833,7 @@
       const remoteProjects = await fetchRemoteProjects();
       const merged = mergeProjects(localProjects, remoteProjects);
       const localResult = storeProjectsLocally(merged);
-      if (merged.length && projectsDifferForSync(merged, remoteProjects)) saveProjectsToRemote(merged);
+      if (merged.length && projectsDifferForSync(merged, remoteProjects) && merged.every((project) => project.payload)) saveProjectsToRemote(merged);
       renderHomeProjects();
       renderProjectList();
       setMessage(localResult.memoryOnly
@@ -10014,11 +10062,22 @@
     if (els.projectActionModal) els.projectActionModal.classList.add("hidden");
   }
 
-  function duplicateProject(id) {
+  async function duplicateProject(id) {
     const source = getProjects().find((item) => item.id === id);
     if (!source) return;
+    let payload = source.payload;
+    try {
+      payload = payload || await fetchRemoteProjectPayload(id);
+    } catch {
+      payload = null;
+    }
+    if (!payload) {
+      setMessage("这个设计文件还没有完整内容，无法复制。", true);
+      return;
+    }
     const now = new Date().toISOString();
     const copy = normalizeProject(JSON.parse(JSON.stringify(source)));
+    copy.payload = JSON.parse(JSON.stringify(payload));
     copy.id = makeId();
     copy.title = `${source.title || "未命名"} 副本`;
     copy.createdAt = now;
@@ -10233,22 +10292,33 @@
       designDates,
       payload
     });
-    setProjects(projects).then((result) => {
+    setProjects(projects, { remote: false }).then(() => saveProjectToRemote(projects[0])).then((result) => {
       setMessage(result && result.ok ? "已保存并同步到电脑创作空间。" : "已保存到当前设备，电脑同步服务暂时不可用。", !(result && result.ok));
     });
     renderProjectList();
     renderHomeProjects();
   }
 
-  function loadProject(id) {
+  async function loadProject(id) {
     const project = getProjects().find((item) => item.id === id);
     if (!project) {
       setMessage("没有找到这个本地作品。", true);
       return;
     }
-    applyProjectPayload(project.payload);
+    setMessage("正在打开设计文件...", false);
+    let payload = project.payload;
+    try {
+      payload = payload || await fetchRemoteProjectPayload(id);
+    } catch {
+      payload = null;
+    }
+    if (!payload) {
+      setMessage("这个设计文件还没有完整内容，请先同步或在保存它的设备上重新保存一次。", true);
+      return;
+    }
+    applyProjectPayload(payload);
     const projects = getProjects().map((item) => item.id === id ? Object.assign({}, item, { openCount: Math.max(0, Number(item.openCount || 0)) + 1 }) : item);
-    setProjects(projects);
+    setProjects(projects, { remote: false });
     closeProjectActionModal();
     showEditor();
   }
@@ -10320,7 +10390,7 @@
   function renderLayerImportProjectList() {
     if (!els.layerImportProjectList) return;
     const projects = getProjects()
-      .filter((project) => !isInternalTestProject(project) && project.payload && project.payload.pattern)
+      .filter((project) => !isInternalTestProject(project))
       .sort((a, b) => projectSortTime(b) - projectSortTime(a));
     els.layerImportProjectList.innerHTML = "";
     if (!projects.length) {
@@ -10341,8 +10411,18 @@
       button.querySelector("img").src = project.thumbnail || "";
       button.querySelector("strong").textContent = project.title || "未命名";
       button.querySelector("em").textContent = `${project.width || "-"} x ${project.height || "-"} · ${formatShortDate(project.updatedAt || project.savedAt)}`;
-      button.addEventListener("click", () => {
-        if (importProjectPayloadAsLayer(project.payload, project.title || "画布空间设计")) closeLayerImportModal();
+      button.addEventListener("click", async () => {
+        let payload = project.payload;
+        try {
+          payload = payload || await fetchRemoteProjectPayload(project.id);
+        } catch {
+          payload = null;
+        }
+        if (!payload) {
+          setMessage("这个设计文件还没有完整内容，无法导入为图层。", true);
+          return;
+        }
+        if (importProjectPayloadAsLayer(payload, project.title || "画布空间设计")) closeLayerImportModal();
       });
       els.layerImportProjectList.appendChild(button);
     });
@@ -11709,8 +11789,11 @@
       resetProjectCacheForTest: () => {
         state.projectCache = [];
         state.projectCacheReady = false;
+        state.projectPayloadCache.clear();
         return true;
       },
+      normalizeProjectForTest: (project) => normalizeProject(project),
+      hasCachedProjectPayloadForTest: (id) => state.projectPayloadCache.has(id),
       getImportChoiceLabels: () => {
         const labels = [];
         if (els.importCalibrateButton) labels.push((els.importCalibrateButton.querySelector("strong") || els.importCalibrateButton).textContent.trim());
