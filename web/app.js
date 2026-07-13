@@ -248,6 +248,9 @@
     pendingSaveMessage: "",
     importSession: null,
     importCalibration: null,
+    projectCache: [],
+    projectCacheReady: false,
+    forceProjectStorageFailureForTest: false,
     params: {
       precision: 80,
       gap: 0,
@@ -9646,11 +9649,30 @@
   }
 
   function getProjects() {
+    if (state.projectCacheReady) return state.projectCache.map(normalizeProject);
     try {
       const parsed = JSON.parse(localStorage.getItem(storageKey) || "[]");
-      return Array.isArray(parsed) ? parsed.map(normalizeProject) : [];
+      const projects = Array.isArray(parsed) ? parsed.map(normalizeProject) : [];
+      state.projectCache = projects;
+      state.projectCacheReady = true;
+      return projects;
     } catch {
-      return [];
+      state.projectCacheReady = true;
+      return state.projectCache.map(normalizeProject);
+    }
+  }
+
+  function storeProjectsLocally(projects) {
+    const normalized = projects.map(normalizeProject).slice(0, 120);
+    state.projectCache = normalized;
+    state.projectCacheReady = true;
+    try {
+      if (state.forceProjectStorageFailureForTest) throw new Error("forced project storage failure");
+      localStorage.setItem(storageKey, JSON.stringify(normalized));
+      return { ok: true, localStorage: true, count: normalized.length };
+    } catch (error) {
+      console.warn("Q像素本机缓存写入失败，已改用当前页面缓存。", error);
+      return { ok: true, memoryOnly: true, count: normalized.length };
     }
   }
 
@@ -9674,13 +9696,9 @@
 
   function setProjects(projects, options = {}) {
     const normalized = projects.map(normalizeProject).slice(0, 120);
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(normalized));
-    } catch (error) {
-      console.warn("Q像素本机缓存写入失败，改用电脑同步文件保存。", error);
-    }
+    const localResult = storeProjectsLocally(normalized);
     if (options.remote === false) return Promise.resolve({ ok: true, localOnly: true, count: normalized.length });
-    return saveProjectsToRemote(normalized).then((result) => result || { ok: false, count: normalized.length });
+    return saveProjectsToRemote(normalized).then((result) => result || Object.assign({ ok: false }, localResult));
   }
 
   function isInternalTestProject(project) {
@@ -9766,11 +9784,13 @@
     try {
       const remoteProjects = await fetchRemoteProjects();
       const merged = mergeProjects(localProjects, remoteProjects);
-      localStorage.setItem(storageKey, JSON.stringify(merged));
+      const localResult = storeProjectsLocally(merged);
       if (merged.length && projectsDifferForSync(merged, remoteProjects)) saveProjectsToRemote(merged);
       renderHomeProjects();
       renderProjectList();
-      setMessage(`创作空间已同步：当前链接可见 ${merged.length} 个文件。`, false);
+      setMessage(localResult.memoryOnly
+        ? `创作空间已同步：当前链接可见 ${merged.length} 个文件。本机缓存空间不足，已使用当前页面缓存。`
+        : `创作空间已同步：当前链接可见 ${merged.length} 个文件。`, false);
       return merged;
     } catch {
       renderHomeProjects();
@@ -11680,6 +11700,17 @@
       optimizePatternColors,
       undoEdit,
       mergeProjectsForTest: mergeProjects,
+      setProjectsForTest: (projects, options) => setProjects(projects, Object.assign({ remote: false }, options || {})),
+      getProjectsForTest: () => getProjects(),
+      setProjectStorageFailureForTest: (enabled) => {
+        state.forceProjectStorageFailureForTest = Boolean(enabled);
+        return state.forceProjectStorageFailureForTest;
+      },
+      resetProjectCacheForTest: () => {
+        state.projectCache = [];
+        state.projectCacheReady = false;
+        return true;
+      },
       getImportChoiceLabels: () => {
         const labels = [];
         if (els.importCalibrateButton) labels.push((els.importCalibrateButton.querySelector("strong") || els.importCalibrateButton).textContent.trim());

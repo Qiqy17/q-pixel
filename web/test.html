@@ -551,6 +551,27 @@
         if (mergedProjects.length !== 1 || mergedProjects[0].title !== "new") {
           throw new Error("sync merge should keep newest project");
         }
+        window.QPixelTest.setProjectStorageFailureForTest(true);
+        const cacheFallbackProject = {
+          id: "cache-fallback",
+          title: "缓存兜底测试",
+          createdAt: "2026-07-13T00:00:00.000Z",
+          savedAt: "2026-07-13T00:00:00.000Z",
+          updatedAt: "2026-07-13T00:00:00.000Z",
+          payload: {
+            id: "cache-fallback",
+            title: "缓存兜底测试",
+            savedAt: "2026-07-13T00:00:00.000Z",
+            pattern: { width: 16, height: 16, cells: emptyCells }
+          }
+        };
+        await window.QPixelTest.setProjectsForTest([cacheFallbackProject]);
+        const fallbackProjects = window.QPixelTest.getProjectsForTest();
+        window.QPixelTest.setProjectStorageFailureForTest(false);
+        window.QPixelTest.resetProjectCacheForTest();
+        if (fallbackProjects.length !== 1 || fallbackProjects[0].title !== "缓存兜底测试") {
+          throw new Error("project memory cache fallback failed");
+        }
 
         document.getElementById("pngData").textContent = exportDataUrl;
         document.getElementById("beadPngData").textContent = beadDataUrl;
