@@ -10101,7 +10101,12 @@
       `;
       card.querySelector(".home-project-thumb").src = project.thumbnail || "";
       card.querySelector(".home-project-title").textContent = project.title || "未命名";
-      card.querySelector(".home-project-meta").textContent = `${project.width || "-"} x ${project.height || "-"} · ${formatShortDate(project.updatedAt || project.savedAt)}`;
+      card.querySelector(".home-project-meta").innerHTML = "";
+      card.querySelector(".home-project-meta").append(
+        document.createTextNode(`${project.width || "-"} x ${project.height || "-"} · ${formatShortDate(project.updatedAt || project.savedAt)}`)
+      );
+      const badges = makeProjectBadges(project);
+      if (badges) card.querySelector(".home-project-meta").appendChild(badges);
       card.addEventListener("click", () => loadProject(project.id));
       card.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -10522,7 +10527,12 @@
       `;
       card.querySelector(".project-thumb").src = project.thumbnail || "";
       card.querySelector(".project-title").textContent = project.title || "未命名";
-      card.querySelector(".project-meta").textContent = `${project.width || "-"} x ${project.height || "-"} · ${formatShortDate(project.updatedAt || project.savedAt)}`;
+      card.querySelector(".project-meta").innerHTML = "";
+      card.querySelector(".project-meta").append(
+        document.createTextNode(`${project.width || "-"} x ${project.height || "-"} · ${formatShortDate(project.updatedAt || project.savedAt)}`)
+      );
+      const badges = makeProjectBadges(project);
+      if (badges) card.querySelector(".project-meta").appendChild(badges);
       card.querySelector('[data-action="open"]').addEventListener("click", () => loadProject(project.id));
       card.querySelector('[data-action="delete"]').addEventListener("click", () => deleteProject(project.id));
       els.projectList.appendChild(card);
@@ -10590,6 +10600,23 @@
     const date = iso ? new Date(iso) : new Date();
     if (Number.isNaN(date.getTime())) return "";
     return `${date.getMonth() + 1}-${date.getDate()} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  }
+
+  function makeProjectBadges(project) {
+    const badges = [];
+    const historyCount = Array.isArray(project && project.history) ? project.history.length : 0;
+    if (historyCount) badges.push(`历史 ${historyCount}`);
+    if (project && project.conflictOf) badges.push("冲突副本");
+    if (!badges.length) return null;
+    const wrap = document.createElement("span");
+    wrap.className = "project-badges";
+    badges.forEach((label) => {
+      const badge = document.createElement("span");
+      badge.className = label === "冲突副本" ? "project-badge warning" : "project-badge";
+      badge.textContent = label;
+      wrap.appendChild(badge);
+    });
+    return wrap;
   }
 
   function formatDateTime(iso) {
