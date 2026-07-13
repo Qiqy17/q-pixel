@@ -544,12 +544,62 @@
         }
 
         const emptyCells = Array.from({ length: 16 }, () => Array.from({ length: 16 }, () => null));
+        const filledCells = emptyCells.map((row, rowIndex) => row.map((value, colIndex) => rowIndex === colIndex ? "A1" : value));
+        const alternateCells = emptyCells.map((row, rowIndex) => row.map((value, colIndex) => rowIndex + colIndex === 15 ? "A2" : value));
+        const basePayload = { id: "history", title: "历史测试", savedAt: "2026-01-01T00:00:00.000Z", pattern: { width: 16, height: 16, cells: emptyCells } };
+        const changedPayload = { id: "history", title: "历史测试", savedAt: "2026-01-02T00:00:00.000Z", pattern: { width: 16, height: 16, cells: filledCells } };
+        const existingHistoryProject = {
+          id: "history",
+          title: "历史测试",
+          savedAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          payload: basePayload
+        };
+        const nextHistoryProject = window.QPixelTest.withProjectHistoryForTest({
+          id: "history",
+          title: "历史测试",
+          savedAt: "2026-01-02T00:00:00.000Z",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          payload: changedPayload
+        }, existingHistoryProject);
+        if (!nextHistoryProject.history || nextHistoryProject.history.length !== 1 || nextHistoryProject.history[0].fingerprint !== window.QPixelTest.payloadFingerprintForTest(basePayload)) {
+          throw new Error("project history snapshot failed");
+        }
+        const unchangedHistoryProject = window.QPixelTest.withProjectHistoryForTest({
+          id: "history",
+          title: "历史测试",
+          savedAt: "2026-01-03T00:00:00.000Z",
+          updatedAt: "2026-01-03T00:00:00.000Z",
+          payload: changedPayload
+        }, nextHistoryProject);
+        if (unchangedHistoryProject.history.length !== 1) {
+          throw new Error("unchanged save should not add history");
+        }
         const mergedProjects = window.QPixelTest.mergeProjectsForTest(
           [{ id: "same", title: "old", updatedAt: "2026-01-01T00:00:00.000Z", savedAt: "2026-01-01T00:00:00.000Z", payload: { pattern: { width: 16, height: 16, cells: emptyCells } } }],
           [{ id: "same", title: "new", updatedAt: "2026-01-02T00:00:00.000Z", savedAt: "2026-01-02T00:00:00.000Z", payload: { pattern: { width: 16, height: 16, cells: emptyCells } } }]
         );
         if (mergedProjects.length !== 1 || mergedProjects[0].title !== "new") {
           throw new Error("sync merge should keep newest project");
+        }
+        const baseFingerprint = window.QPixelTest.payloadFingerprintForTest(basePayload);
+        const conflictProjects = window.QPixelTest.mergeProjectsForTest(
+          [{ id: "conflict", title: "本机版本", updatedAt: "2026-01-03T00:00:00.000Z", savedAt: "2026-01-03T00:00:00.000Z", syncFingerprint: baseFingerprint, payload: { id: "conflict", pattern: { width: 16, height: 16, cells: filledCells } } }],
+          [{ id: "conflict", title: "远端版本", updatedAt: "2026-01-04T00:00:00.000Z", savedAt: "2026-01-04T00:00:00.000Z", syncFingerprint: baseFingerprint, payload: { id: "conflict", pattern: { width: 16, height: 16, cells: alternateCells } } }]
+        );
+        if (conflictProjects.length !== 2 || !conflictProjects.some((project) => /冲突副本/.test(project.title || ""))) {
+          throw new Error("sync conflict copy failed");
+        }
+        const summaryMerged = window.QPixelTest.mergeProjectsForTest(
+          [{ id: "summary-merge", title: "完整", updatedAt: "2026-01-01T00:00:00.000Z", savedAt: "2026-01-01T00:00:00.000Z", history: nextHistoryProject.history, payload: basePayload }],
+          [{ id: "summary-merge", title: "摘要", updatedAt: "2026-01-02T00:00:00.000Z", savedAt: "2026-01-02T00:00:00.000Z", width: 16, height: 16, hasPayload: true }]
+        );
+        if (summaryMerged.length !== 1 || !summaryMerged[0].payload || !summaryMerged[0].history.length) {
+          throw new Error("summary merge should preserve payload and history");
+        }
+        const healthMessage = window.QPixelTest.formatSyncHealthMessageForTest({ ok: true, projectsOk: true, projectCount: 37, backupCount: 4 });
+        if (!/37/.test(healthMessage) || !/备份 4/.test(healthMessage)) {
+          throw new Error("sync health message failed");
         }
         window.QPixelTest.setProjectStorageFailureForTest(true);
         const cacheFallbackProject = {

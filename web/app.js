@@ -251,6 +251,7 @@
     projectCache: [],
     projectCacheReady: false,
     projectPayloadCache: new Map(),
+    lastSyncHealth: null,
     forceProjectStorageFailureForTest: false,
     params: {
       precision: 80,
@@ -9649,6 +9650,130 @@
     return `qpx-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
+  function stableStringify(value) {
+    if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+    if (value && typeof value === "object") {
+      return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+    }
+    return JSON.stringify(value);
+  }
+
+  function meaningfulPayload(payload) {
+    if (!payload || typeof payload !== "object") return null;
+    const copy = JSON.parse(JSON.stringify(payload));
+    delete copy.savedAt;
+    delete copy.createdAt;
+    delete copy.title;
+    delete copy.id;
+    return copy;
+  }
+
+  function payloadFingerprint(payload) {
+    const text = stableStringify(meaningfulPayload(payload));
+    let hash = 2166136261;
+    for (let index = 0; index < text.length; index += 1) {
+      hash ^= text.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return `fp-${(hash >>> 0).toString(16).padStart(8, "0")}-${text.length}`;
+  }
+
+  function normalizeProjectHistory(history) {
+    return Array.isArray(history)
+      ? history
+        .filter((item) => item && item.payload && item.fingerprint)
+        .map((item) => ({
+          id: item.id || makeId(),
+          title: item.title || "未命名",
+          savedAt: item.savedAt || new Date().toISOString(),
+          fingerprint: item.fingerprint,
+          payload: item.payload
+        }))
+        .slice(0, 12)
+      : [];
+  }
+
+  function makeProjectVersion(project) {
+    if (!project || !project.payload) return null;
+    return {
+      id: makeId(),
+      title: project.title || (project.payload && project.payload.title) || "未命名",
+      savedAt: project.savedAt || (project.payload && project.payload.savedAt) || new Date().toISOString(),
+      fingerprint: payloadFingerprint(project.payload),
+      payload: JSON.parse(JSON.stringify(project.payload))
+    };
+  }
+
+  function withProjectHistory(nextProject, existingProject) {
+    const next = normalizeProject(nextProject);
+    const existing = existingProject ? normalizeProject(existingProject) : null;
+    const history = normalizeProjectHistory((existing && existing.history) || next.history);
+    const nextFingerprint = payloadFingerprint(next.payload);
+    next.syncFingerprint = next.syncFingerprint || (existing && existing.syncFingerprint) || (existing && existing.payload ? payloadFingerprint(existing.payload) : nextFingerprint);
+    if (existing && existing.payload) {
+      const previousFingerprint = payloadFingerprint(existing.payload);
+      const alreadyLatest = history[0] && history[0].fingerprint === previousFingerprint;
+      if (previousFingerprint !== nextFingerprint && !alreadyLatest) {
+        const version = makeProjectVersion(existing);
+        if (version) history.unshift(version);
+      }
+    }
+    next.history = history.slice(0, 12);
+    return next;
+  }
+
+  function hasMeaningfulPayloadConflict(existing, incoming) {
+    if (!existing || !incoming || !existing.payload || !incoming.payload) return false;
+    const existingFingerprint = payloadFingerprint(existing.payload);
+    const incomingFingerprint = payloadFingerprint(incoming.payload);
+    if (existingFingerprint === incomingFingerprint) return false;
+    const base = existing.syncFingerprint || incoming.syncFingerprint || "";
+    if (!base) return false;
+    return existingFingerprint !== base && incomingFingerprint !== base;
+  }
+
+  function makeConflictCopy(project) {
+    const now = new Date().toISOString();
+    const copy = normalizeProject(JSON.parse(JSON.stringify(project)));
+    const originalId = copy.id;
+    copy.id = makeId();
+    copy.title = `${copy.title || "未命名"} 冲突副本`;
+    copy.createdAt = now;
+    copy.savedAt = now;
+    copy.updatedAt = now;
+    copy.openCount = 0;
+    copy.conflictOf = originalId;
+    copy.syncFingerprint = copy.payload ? payloadFingerprint(copy.payload) : copy.syncFingerprint;
+    if (copy.payload) {
+      copy.payload.id = copy.id;
+      copy.payload.title = copy.title;
+      copy.payload.createdAt = now;
+      copy.payload.savedAt = now;
+    }
+    return copy;
+  }
+
+  function mergeProjectRecords(current, incoming, conflictCopies) {
+    if (!current) return incoming;
+    const currentWithPayload = current.payload ? current : Object.assign({}, current, { payload: incoming.payload || current.payload });
+    const incomingWithPayload = incoming.payload ? incoming : Object.assign({}, incoming, { payload: current.payload || incoming.payload });
+    if (hasMeaningfulPayloadConflict(currentWithPayload, incomingWithPayload)) {
+      const currentTime = projectSortTime(currentWithPayload);
+      const incomingTime = projectSortTime(incomingWithPayload);
+      const winner = incomingTime >= currentTime ? incomingWithPayload : currentWithPayload;
+      const loser = incomingTime >= currentTime ? currentWithPayload : incomingWithPayload;
+      conflictCopies.push(makeConflictCopy(loser));
+      return winner;
+    }
+    const newer = projectSortTime(incoming) >= projectSortTime(current) ? incoming : current;
+    const older = newer === incoming ? current : incoming;
+    return Object.assign({}, newer, {
+      payload: newer.payload || older.payload || null,
+      history: normalizeProjectHistory([...(newer.history || []), ...(older.history || [])]),
+      syncFingerprint: newer.syncFingerprint || older.syncFingerprint || (newer.payload ? payloadFingerprint(newer.payload) : "")
+    });
+  }
+
   function getProjects() {
     if (state.projectCacheReady) return state.projectCache.map(normalizeProject);
     try {
@@ -9730,6 +9855,8 @@
       editSeconds: Math.max(0, Number(project.editSeconds || 0)),
       openCount: Math.max(0, Number(project.openCount || 0)),
       designDates: project.designDates && typeof project.designDates === "object" ? project.designDates : {},
+      syncFingerprint: project.syncFingerprint || (payload ? payloadFingerprint(payload) : ""),
+      history: normalizeProjectHistory(project.history),
       payload
     });
   }
@@ -9740,13 +9867,12 @@
 
   function mergeProjects(localProjects, remoteProjects) {
     const map = new Map();
+    const conflictCopies = [];
     [...remoteProjects, ...localProjects].map(normalizeProject).filter((project) => !isInternalTestProject(project)).forEach((project) => {
       const existing = map.get(project.id);
-      if (!existing || projectSortTime(project) >= projectSortTime(existing)) {
-        map.set(project.id, project);
-      }
+      map.set(project.id, mergeProjectRecords(existing, project, conflictCopies));
     });
-    return Array.from(map.values()).sort((a, b) => projectSortTime(b) - projectSortTime(a)).slice(0, 120);
+    return Array.from(map.values()).concat(conflictCopies).sort((a, b) => projectSortTime(b) - projectSortTime(a)).slice(0, 120);
   }
 
   function normalizedProjectsForSyncCompare(projects) {
@@ -9794,6 +9920,35 @@
     return null;
   }
 
+  function normalizeSyncHealth(health) {
+    health = health && typeof health === "object" ? health : {};
+    return {
+      ok: health.ok !== false,
+      projectsOk: health.projectsOk !== false,
+      settingsOk: health.settingsOk !== false,
+      projectCount: Math.max(0, Number(health.projectCount || 0)),
+      projectsFileExists: Boolean(health.projectsFileExists),
+      projectsFileSize: Math.max(0, Number(health.projectsFileSize || 0)),
+      backupCount: Math.max(0, Number(health.backupCount || 0)),
+      updatedAt: health.updatedAt || new Date().toISOString()
+    };
+  }
+
+  function formatSyncHealthMessage(health) {
+    const status = normalizeSyncHealth(health);
+    if (!status.ok || !status.projectsOk) return "同步服务可访问，但作品文件读取异常。";
+    return `同步服务正常，当前有 ${status.projectCount} 个作品，备份 ${status.backupCount} 份。`;
+  }
+
+  async function fetchSyncHealth() {
+    if (!window.fetch) return null;
+    const response = await fetch(`${syncApiBase}/api/health`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`health ${response.status}`);
+    const health = normalizeSyncHealth(await response.json());
+    state.lastSyncHealth = health;
+    return health;
+  }
+
   function saveProjectToRemote(project) {
     if (!window.fetch || !project || !project.id) return Promise.resolve(null);
     return fetch(`${syncApiBase}/api/projects/${encodeURIComponent(project.id)}`, {
@@ -9830,15 +9985,17 @@
     const localProjects = getProjects();
     if (manual) setMessage("正在同步电脑创作空间...", false);
     try {
+      const health = manual ? await fetchSyncHealth().catch(() => null) : null;
       const remoteProjects = await fetchRemoteProjects();
       const merged = mergeProjects(localProjects, remoteProjects);
       const localResult = storeProjectsLocally(merged);
       if (merged.length && projectsDifferForSync(merged, remoteProjects) && merged.every((project) => project.payload)) saveProjectsToRemote(merged);
       renderHomeProjects();
       renderProjectList();
+      const healthText = health ? `${formatSyncHealthMessage(health)} ` : "";
       setMessage(localResult.memoryOnly
-        ? `创作空间已同步：当前链接可见 ${merged.length} 个文件。本机缓存空间不足，已使用当前页面缓存。`
-        : `创作空间已同步：当前链接可见 ${merged.length} 个文件。`, false);
+        ? `${healthText}创作空间已同步：当前链接可见 ${merged.length} 个文件。本机缓存空间不足，已使用当前页面缓存。`
+        : `${healthText}创作空间已同步：当前链接可见 ${merged.length} 个文件。`, false);
       return merged;
     } catch {
       renderHomeProjects();
@@ -10278,7 +10435,7 @@
     designDates[today] = Math.max(0, Number(designDates[today] || 0)) + Math.max(1, sessionSeconds);
     state.beads.projectId = payload.id;
     const projects = getProjects().filter((item) => item.id !== payload.id);
-    projects.unshift({
+    const nextProject = withProjectHistory({
       id: payload.id,
       title: payload.title,
       createdAt: (existing && existing.createdAt) || payload.createdAt || payload.savedAt,
@@ -10291,7 +10448,8 @@
       openCount: Math.max(0, Number(existing && existing.openCount || 0)),
       designDates,
       payload
-    });
+    }, existing);
+    projects.unshift(nextProject);
     setProjects(projects, { remote: false }).then(() => saveProjectToRemote(projects[0])).then((result) => {
       setMessage(result && result.ok ? "已保存并同步到电脑创作空间。" : "已保存到当前设备，电脑同步服务暂时不可用。", !(result && result.ok));
     });
@@ -11780,6 +11938,9 @@
       optimizePatternColors,
       undoEdit,
       mergeProjectsForTest: mergeProjects,
+      payloadFingerprintForTest: payloadFingerprint,
+      withProjectHistoryForTest: withProjectHistory,
+      formatSyncHealthMessageForTest: formatSyncHealthMessage,
       setProjectsForTest: (projects, options) => setProjects(projects, Object.assign({ remote: false }, options || {})),
       getProjectsForTest: () => getProjects(),
       setProjectStorageFailureForTest: (enabled) => {

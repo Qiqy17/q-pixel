@@ -9,6 +9,8 @@ from urllib.parse import unquote, urlparse
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path.home() / "Documents" / "Q像素"
 PROJECTS_FILE = DATA_DIR / "qpixel-projects.json"
+SETTINGS_FILE = DATA_DIR / "qpixel-settings.json"
+BACKUP_DIR = DATA_DIR / "backups"
 
 
 class QPixelHandler(SimpleHTTPRequestHandler):
@@ -28,6 +30,9 @@ class QPixelHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path == "/api/health":
+            self.send_json(health_payload(self.read_projects()))
+            return
         if path == "/api/projects/index":
             self.send_json([summary for summary in (project_summary(project) for project in self.read_projects()) if summary])
             return
@@ -146,6 +151,35 @@ def find_project(projects, project_id):
         if project and str(project.get("id")) == project_id:
             return project
     return None
+
+
+def file_size(path):
+    try:
+        return path.stat().st_size if path.exists() else 0
+    except OSError:
+        return 0
+
+
+def health_payload(projects):
+    projects_ok = isinstance(projects, list)
+    return {
+        "ok": projects_ok,
+        "projectsOk": projects_ok,
+        "settingsOk": True,
+        "projectCount": len(projects) if projects_ok else 0,
+        "projectsFileExists": PROJECTS_FILE.exists(),
+        "projectsFileSize": file_size(PROJECTS_FILE),
+        "settingsFileExists": SETTINGS_FILE.exists(),
+        "settingsFileSize": file_size(SETTINGS_FILE),
+        "backupCount": len(list(BACKUP_DIR.glob("*.json"))) if BACKUP_DIR.exists() else 0,
+        "dataDir": str(DATA_DIR),
+        "updatedAt": datetime_now_iso(),
+    }
+
+
+def datetime_now_iso():
+    from datetime import datetime
+    return datetime.now().isoformat()
 
 
 def merge_projects(existing, incoming):
