@@ -10,7 +10,9 @@ from urllib.parse import unquote, urlparse
 from qpixel_openai import OpenAIConfigError, OpenAIRequestError, generate_image
 
 
-ROOT = Path(__file__).resolve().parent
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_WEB_DIR = SCRIPT_DIR.parent / "web"
+ROOT = REPO_WEB_DIR if REPO_WEB_DIR.is_dir() else SCRIPT_DIR
 DATA_DIR = Path.home() / "Documents" / "Q像素"
 PROJECTS_FILE = DATA_DIR / "qpixel-projects.json"
 SETTINGS_FILE = DATA_DIR / "qpixel-settings.json"
