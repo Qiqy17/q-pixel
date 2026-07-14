@@ -276,6 +276,8 @@
     lastRender: null,
     activeSessionStart: Date.now(),
     hasUnsavedChanges: false,
+    inventory: {},
+    buildProgress: {},
     activeActionProjectId: "",
     activeHistoryProjectId: "",
     beads: {
@@ -283,6 +285,7 @@
       importMode: "fidelity",
       sourceCompareEnabled: false,
       sourceCompareOpacity: 38,
+      buildMode: false,
       lockedColorCodes: [],
       lockedColorRoles: {},
       width: 48,
@@ -411,6 +414,7 @@
   };
 
   const storageKey = "q-pixel-local-projects-v1";
+  const inventoryStorageKey = "q-pixel-inventory-v1";
   const trashStorageKey = "q-pixel-trash-projects-v1";
   const stylePresetStorageKey = "q-pixel-style-presets-v1";
   const styleStickerStorageKey = "q-pixel-style-stickers-v1";
@@ -467,7 +471,7 @@
       "homeRecordYear", "homeRecordMonth", "homeRecordPrevButton", "homeRecordNextButton", "homeRecordCalendar", "homeDesignDays",
       "homeAvgDayTime", "homeAvgWorkTime", "homeRecordList", "homeSignature",
       "editorTopbar", "editorWorkspace", "controlPanel", "topbarCollapseButton", "topbarExpandButton",
-      "sidePanelCollapseButton", "sidePanelExpandButton", "backHomeButton", "saveTopButton", "saveStatus",
+      "sidePanelCollapseButton", "sidePanelExpandButton", "backHomeButton", "saveTopButton", "saveStatus", "aiGenerateTopButton",
       "fileInput", "dropZone", "previewCanvas", "emptyState", "emptyTitle",
       "emptyDescription", "imageStatus", "canvasSize", "renderHint", "message",
       "precisionRange", "precisionNumber", "gapRange", "gapNumber", "radiusRange",
@@ -478,6 +482,7 @@
       "beadHeightNumber", "beadLockRatio", "generateBeadsButton", "usePixelButton",
       "showCodesToggle", "showGridToggle", "codeFontScaleRange", "codeFontScaleNumber",
       "importSummary", "importChoiceSummary",
+      "qualitySummary", "qualityCheckButton", "exportMaterialsButton", "buildModeToggle", "buildProgress", "clearBuildProgressButton",
       "paletteSelect", "paletteGrid", "cellTargetPaletteGrid", "selectionColorTargetPaletteGrid",
       "replaceFromSelect", "replaceToSelect", "replaceAllButton", "usageSummary",
       "usageList", "exportChartButton", "toolBrushButton", "toolPickerButton",
@@ -535,8 +540,9 @@
       "charmHoleSizeLabel", "charmKeyringSelect", "charmCordSelect", "charmLinkSelect", "charmExportButton",
       "toolRailGrip", "toolRailBGrip", "toolRailCollapseButton", "toolRailBCollapseButton", "colorStripGrip", "projectActionModal", "projectActionCloseButton",
       "projectActionThumb", "projectActionTitle", "projectActionCreated", "projectActionUpdated",
-      "projectActionOpenButton", "projectActionHistoryButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
+      "projectActionOpenButton", "projectActionHistoryButton", "projectActionTemplateButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
       "projectHistoryModal", "projectHistoryCloseButton", "projectHistoryTitle", "projectHistoryList",
+      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiStyleSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiGenerateStatus", "aiPromptCopyButton", "aiGenerateButton",
       "layerImportModal", "layerImportCloseButton", "layerImportImageButton", "layerImportProjectFileButton", "layerImportProjectList",
       "importChoiceModal", "importChoiceCancelButton", "importChoiceFileName",
       "importModeFidelityButton", "importModeBalancedButton", "importModeSimpleButton",
@@ -1876,11 +1882,29 @@
     const y = Math.round((canvas.height - gridHeight) / 2 + state.view.panY);
     drawSourceComparisonLayer(ctx, pattern, x, y, cellSize);
     drawPatternGrid(ctx, pattern, x, y, cellSize, options);
+    drawBuildProgressOverlay(ctx, pattern, x, y, cellSize);
     drawGuideLines(ctx, x, y, cellSize, pattern);
     drawSelectionOverlay(ctx, x, y, cellSize);
     drawFloatingSelectionOverlay(ctx, x, y, cellSize);
     drawAxisLabels(ctx, { x, y, width: gridWidth, height: gridHeight }, pattern.width, pattern.height, cellSize, cellSize);
     return { x, y, cellSize, width: gridWidth, height: gridHeight };
+  }
+
+  function drawBuildProgressOverlay(ctx, pattern, x, y, cellSize) {
+    if (!state.beads.buildMode || !state.buildProgress || !pattern) return;
+    ctx.save();
+    ctx.fillStyle = "rgba(32, 166, 122, .28)";
+    ctx.strokeStyle = "rgba(20, 126, 91, .78)";
+    ctx.lineWidth = Math.max(1, cellSize * .08);
+    Object.keys(state.buildProgress).forEach((key) => {
+      const [row, col] = key.split(":").map(Number);
+      if (!Number.isInteger(row) || !Number.isInteger(col) || !pattern.cells[row] || !pattern.cells[row][col]) return;
+      const px = x + col * cellSize;
+      const py = y + row * cellSize;
+      ctx.fillRect(px, py, cellSize, cellSize);
+      ctx.strokeRect(px + cellSize * .18, py + cellSize * .18, cellSize * .64, cellSize * .64);
+    });
+    ctx.restore();
   }
 
   function drawSourceComparisonLayer(ctx, pattern, x, y, cellSize) {
@@ -2529,6 +2553,160 @@
     return calculateUsage(pattern).reduce((sum, item) => sum + item.count, 0);
   }
 
+  function loadInventory() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(inventoryStorageKey) || "{}");
+      state.inventory = parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      state.inventory = {};
+    }
+  }
+
+  function saveInventory() {
+    localStorage.setItem(inventoryStorageKey, JSON.stringify(state.inventory || {}));
+  }
+
+  function getInventoryStock(code) {
+    return Math.max(0, Math.floor(Number(state.inventory && state.inventory[code] || 0)));
+  }
+
+  function analyzePatternQuality(pattern) {
+    if (!pattern || !Array.isArray(pattern.cells)) return { colors: 0, total: 0, isolated: 0, rareColors: 0, outline: 0, locked: 0 };
+    const usage = calculateUsage(pattern);
+    let isolated = 0;
+    let outline = 0;
+    for (let row = 0; row < pattern.height; row += 1) {
+      for (let col = 0; col < pattern.width; col += 1) {
+        const code = pattern.cells[row][col];
+        if (!code) continue;
+        if (isDarkOutlineCode(code)) outline += 1;
+        const neighbors = getNeighborCodes(pattern.cells, row, col).filter(Boolean);
+        if (neighbors.filter((neighbor) => neighbor === code).length === 0) isolated += 1;
+      }
+    }
+    return {
+      colors: usage.length,
+      total: usage.reduce((sum, item) => sum + item.count, 0),
+      isolated,
+      rareColors: usage.filter((item) => item.count <= 2).length,
+      outline,
+      locked: getLockedColorSet().size
+    };
+  }
+
+  function renderQualitySummary() {
+    if (!els.qualitySummary) return;
+    const result = analyzePatternQuality(state.beads.pattern);
+    if (!result.total) {
+      els.qualitySummary.textContent = "导入后可检查杂色、轮廓和高光。";
+      return result;
+    }
+    els.qualitySummary.textContent = `图纸检查：${result.colors} 色 / ${result.total} 格 · 孤立格 ${result.isolated} · 低用量色 ${result.rareColors} · 轮廓格 ${result.outline} · 锁定色 ${result.locked}`;
+    return result;
+  }
+
+  function renderBuildProgress() {
+    if (!els.buildProgress) return;
+    const total = countPatternCells(state.beads.pattern);
+    const done = Object.keys(state.buildProgress || {}).length;
+    els.buildProgress.textContent = `制作进度：${Math.min(done, total)} / ${total}（${total ? Math.round(Math.min(done, total) / total * 100) : 0}%）`;
+    if (els.buildModeToggle) els.buildModeToggle.checked = Boolean(state.beads.buildMode);
+  }
+
+  function toggleBuildCell(cell) {
+    if (!cell || !state.beads.pattern || !state.beads.pattern.cells[cell.row][cell.col]) return false;
+    const key = `${cell.row}:${cell.col}`;
+    if (state.buildProgress[key]) delete state.buildProgress[key];
+    else state.buildProgress[key] = true;
+    renderBuildProgress();
+    markUnsavedChanges();
+    return true;
+  }
+
+  function clearBuildProgress() {
+    state.buildProgress = {};
+    renderBuildProgress();
+    markUnsavedChanges();
+    render();
+  }
+
+  function exportMaterialsCsv() {
+    const usage = calculateUsage(state.beads.pattern);
+    if (!usage.length) {
+      setMessage("请先生成图纸，再导出材料清单。", true);
+      return;
+    }
+    const rows = [["色号", "名称", "所需数量", "已有库存", "缺少数量"]];
+    usage.forEach((item) => {
+      const stock = getInventoryStock(item.code);
+      rows.push([item.code, item.color.name, item.count, stock, Math.max(0, item.count - stock)]);
+    });
+    const csv = "\ufeff" + rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(",")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${state.beads.projectTitle || "Q像素材料清单"}-材料清单.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setMessage("材料清单已导出。", false);
+  }
+
+  function openAiGenerateModal() {
+    if (els.aiGenerateModal) els.aiGenerateModal.classList.remove("hidden");
+    if (els.aiGenerateStatus) {
+      const endpoint = localStorage.getItem("q-pixel-ai-endpoint-v1") || "";
+      els.aiGenerateStatus.textContent = endpoint
+        ? `已配置生成服务：${endpoint}`
+        : "未配置 AI 生成服务。可先保存提示词，配置服务后直接生成。";
+    }
+  }
+
+  function closeAiGenerateModal() {
+    if (els.aiGenerateModal) els.aiGenerateModal.classList.add("hidden");
+  }
+
+  function buildAiGenerationRequest() {
+    return {
+      prompt: (els.aiPromptInput && els.aiPromptInput.value || "").trim(),
+      style: els.aiStyleSelect ? els.aiStyleSelect.value : "pixel",
+      width: clamp(els.aiWidthInput && els.aiWidthInput.value || 48, 16, 128),
+      height: clamp(els.aiHeightInput && els.aiHeightInput.value || 48, 16, 128),
+      colorLimit: clamp(els.aiColorLimitInput && els.aiColorLimitInput.value || 20, 2, 64),
+      target: "q-pixel-pattern",
+      palette: "MARD-221"
+    };
+  }
+
+  async function startAiGeneration() {
+    const request = buildAiGenerationRequest();
+    if (!request.prompt) {
+      if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "请先输入主题描述。";
+      return;
+    }
+    const endpoint = localStorage.getItem("q-pixel-ai-endpoint-v1") || "";
+    if (!endpoint) {
+      if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "当前未配置 AI 服务。请求格式已准备好，请在本机设置 q-pixel-ai-endpoint-v1 后重试。";
+      return;
+    }
+    if (els.aiGenerateButton) els.aiGenerateButton.disabled = true;
+    if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "正在生成，请稍候...";
+    try {
+      const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request) });
+      if (!response.ok) throw new Error(`AI ${response.status}`);
+      const result = await response.json();
+      if (!result || !result.payload || !applyProjectPayload(result.payload, false)) throw new Error("返回内容不是有效 Q像素源文件");
+      markUnsavedChanges();
+      closeAiGenerateModal();
+      showEditor();
+      setMessage("AI 像素图已生成，可继续校准和编辑。", false);
+    } catch (error) {
+      if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = `生成失败：${error.message || "服务不可用"}`;
+    } finally {
+      if (els.aiGenerateButton) els.aiGenerateButton.disabled = false;
+    }
+  }
+
   function renderUsage() {
     const usage = calculateUsage(state.beads.pattern);
     const total = usage.reduce((sum, item) => sum + item.count, 0);
@@ -2547,15 +2725,25 @@
           <span class="usage-code"></span>
           <span class="usage-name"></span>
           <span class="usage-count"></span>
+          <input class="usage-stock" type="number" min="0" inputmode="numeric" title="已有库存">
         `;
         row.querySelector(".usage-swatch").style.backgroundColor = item.color.hex;
         row.querySelector(".usage-code").textContent = item.code;
         row.querySelector(".usage-name").textContent = item.color.name;
-        row.querySelector(".usage-count").textContent = String(item.count);
+        row.querySelector(".usage-count").textContent = `${item.count} 需`;
+        const stockInput = row.querySelector(".usage-stock");
+        stockInput.value = String(getInventoryStock(item.code));
+        stockInput.addEventListener("change", () => {
+          state.inventory[item.code] = Math.max(0, Math.floor(Number(stockInput.value || 0)));
+          saveInventory();
+          renderUsage();
+        });
         els.usageList.appendChild(row);
       });
     }
     populateReplaceControls(usage);
+    renderQualitySummary();
+    renderBuildProgress();
   }
 
   function populatePaletteControls() {
@@ -5429,6 +5617,12 @@
     const cell = getCellFromPointer(event);
     if (!cell) return;
     event.preventDefault();
+
+    if (state.beads.buildMode) {
+      toggleBuildCell(cell);
+      render();
+      return;
+    }
 
     if (state.beads.floatingSelection) {
       startFloatingSelectionDrag(cell);
@@ -9581,6 +9775,7 @@
         cells: layer.cells
       })),
       activeLayerId: state.beads.activeLayerId,
+      buildProgress: Object.assign({}, state.buildProgress || {}),
       exportSettings: Object.assign({}, state.beads.exportSettings),
       exportRegions: normalizeExportRegions(state.beads.exportRegions, state.beads.pattern),
       editorSettings: {
@@ -9665,6 +9860,8 @@
     state.beads.sourceCompareOpacity = payload.editorSettings && payload.editorSettings.sourceCompareOpacity != null
       ? clamp(payload.editorSettings.sourceCompareOpacity, 10, 85)
       : 38;
+    state.buildProgress = payload.buildProgress && typeof payload.buildProgress === "object" ? Object.assign({}, payload.buildProgress) : {};
+    state.beads.buildMode = false;
     state.beads.lockedColorCodes = Array.isArray(payload.editorSettings && payload.editorSettings.lockedColorCodes)
       ? payload.editorSettings.lockedColorCodes.filter((code) => code && getPaletteColor(code).code === code)
       : [];
@@ -10475,6 +10672,29 @@
     setMessage("已创建副本。", false);
   }
 
+  async function useProjectAsTemplate(id) {
+    const source = getProjects().find((item) => item.id === id);
+    if (!source) return;
+    let payload = source.payload;
+    if (!payload) {
+      try { payload = await fetchRemoteProjectPayload(id); } catch { payload = null; }
+    }
+    if (!payload) {
+      setMessage("这个设计文件还没有完整内容，无法套用模板。", true);
+      return;
+    }
+    const template = JSON.parse(JSON.stringify(payload));
+    delete template.id;
+    template.title = `${source.title || "未命名"} 模板`;
+    template.createdAt = new Date().toISOString();
+    template.savedAt = template.createdAt;
+    if (!applyProjectPayload(template, false)) return;
+    markUnsavedChanges();
+    closeProjectActionModal();
+    showEditor();
+    setMessage("已套用为新设计，原项目不会被修改。", false);
+  }
+
   function renameProject(id) {
     const projects = getProjects();
     const project = projects.find((item) => item.id === id);
@@ -10992,6 +11212,7 @@
     });
     els.projectActionOpenButton.addEventListener("click", () => loadProject(state.activeActionProjectId));
     if (els.projectActionHistoryButton) els.projectActionHistoryButton.addEventListener("click", () => openProjectHistoryModal(state.activeActionProjectId));
+    if (els.projectActionTemplateButton) els.projectActionTemplateButton.addEventListener("click", () => useProjectAsTemplate(state.activeActionProjectId));
     if (els.projectActionRenameButton) els.projectActionRenameButton.addEventListener("click", () => renameProject(state.activeActionProjectId));
     els.projectActionDuplicateButton.addEventListener("click", () => duplicateProject(state.activeActionProjectId));
     els.projectActionDeleteButton.addEventListener("click", () => deleteProject(state.activeActionProjectId));
@@ -11399,6 +11620,28 @@
     if (els.restoreLightButton) els.restoreLightButton.addEventListener("click", () => restoreOptimizePattern("light"));
     if (els.restoreBalancedButton) els.restoreBalancedButton.addEventListener("click", () => restoreOptimizePattern("balanced"));
     if (els.restoreDetailButton) els.restoreDetailButton.addEventListener("click", () => restoreOptimizePattern("detail"));
+    if (els.qualityCheckButton) els.qualityCheckButton.addEventListener("click", () => {
+      const result = renderQualitySummary();
+      setMessage(result && result.isolated ? `检查完成：发现 ${result.isolated} 个孤立格，建议先预览后再均衡还原。` : "检查完成：暂未发现明显孤立格。", Boolean(result && result.isolated));
+    });
+    if (els.exportMaterialsButton) els.exportMaterialsButton.addEventListener("click", exportMaterialsCsv);
+    if (els.buildModeToggle) els.buildModeToggle.addEventListener("change", () => {
+      state.beads.buildMode = els.buildModeToggle.checked;
+      renderBuildProgress();
+      render();
+    });
+    if (els.clearBuildProgressButton) els.clearBuildProgressButton.addEventListener("click", clearBuildProgress);
+    if (els.aiGenerateTopButton) els.aiGenerateTopButton.addEventListener("click", openAiGenerateModal);
+    if (els.aiGenerateCloseButton) els.aiGenerateCloseButton.addEventListener("click", closeAiGenerateModal);
+    if (els.aiPromptCopyButton) els.aiPromptCopyButton.addEventListener("click", async () => {
+      const prompt = els.aiPromptInput ? els.aiPromptInput.value.trim() : "";
+      try { await navigator.clipboard.writeText(prompt); } catch {}
+      if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = prompt ? "提示词已复制。" : "请先输入主题描述。";
+    });
+    if (els.aiGenerateButton) els.aiGenerateButton.addEventListener("click", startAiGeneration);
+    if (els.aiGenerateModal) els.aiGenerateModal.addEventListener("click", (event) => {
+      if (event.target === els.aiGenerateModal) closeAiGenerateModal();
+    });
     if (els.sourceCompareToggle) {
       els.sourceCompareToggle.addEventListener("change", () => {
         state.beads.sourceCompareEnabled = els.sourceCompareToggle.checked;
@@ -12217,6 +12460,17 @@
         return state.hasUnsavedChanges;
       },
       getImportSummaryForTest: () => els.importSummary ? els.importSummary.textContent : "",
+      analyzePatternQualityForTest: analyzePatternQuality,
+      getInventoryForTest: () => Object.assign({}, state.inventory),
+      setInventoryForTest: (inventory) => {
+        state.inventory = inventory && typeof inventory === "object" ? Object.assign({}, inventory) : {};
+        saveInventory();
+        return Object.assign({}, state.inventory);
+      },
+      toggleBuildCellForTest: toggleBuildCell,
+      clearBuildProgressForTest: clearBuildProgress,
+      getBuildProgressForTest: () => Object.assign({}, state.buildProgress),
+      buildAiGenerationRequestForTest: buildAiGenerationRequest,
       setProjectStorageFailureForTest: (enabled) => {
         state.forceProjectStorageFailureForTest = Boolean(enabled);
         return state.forceProjectStorageFailureForTest;
@@ -12418,6 +12672,7 @@
     exposeTestHooks();
     if (!els.previewCanvas) return;
     restoreChromeCollapseState();
+    loadInventory();
     applySavedWatermarkSettings();
     registerOfflineApp();
     populatePaletteControls();

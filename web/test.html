@@ -597,6 +597,31 @@
         if (!window.QPixelTest.getImportModeLabels().includes("高保真") || window.QPixelTest.getImportModeLabels().length !== 3) {
           throw new Error("import mode labels failed");
         }
+        const quality = window.QPixelTest.analyzePatternQualityForTest({
+          width: 3,
+          height: 3,
+          cells: [["A1", null, null], [null, "A2", null], [null, null, null]]
+        });
+        if (quality.colors !== 2 || quality.total !== 2 || quality.isolated !== 2 || quality.rareColors !== 2) {
+          throw new Error("quality analysis failed");
+        }
+        window.QPixelTest.setInventoryForTest({ A1: 3 });
+        if (window.QPixelTest.getInventoryForTest().A1 !== 3) {
+          throw new Error("inventory persistence failed");
+        }
+        await window.QPixelTest.activateSyntheticBeadPattern(16, 16);
+        window.QPixelTest.toggleBuildCellForTest({ row: 0, col: 0 });
+        if (!window.QPixelTest.getBuildProgressForTest()["0:0"]) {
+          throw new Error("build progress toggle failed");
+        }
+        window.QPixelTest.clearBuildProgressForTest();
+        if (Object.keys(window.QPixelTest.getBuildProgressForTest()).length) {
+          throw new Error("build progress clear failed");
+        }
+        const aiRequest = window.QPixelTest.buildAiGenerationRequestForTest();
+        if (aiRequest.target !== "q-pixel-pattern" || aiRequest.palette !== "MARD-221") {
+          throw new Error("AI request contract failed");
+        }
         const restoredHistoryProject = window.QPixelTest.restoreProjectHistoryVersionForTest(
           unchangedHistoryProject,
           unchangedHistoryProject.history[0].id,

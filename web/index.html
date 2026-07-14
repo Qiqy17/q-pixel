@@ -107,6 +107,7 @@
         <button class="text-button secondary" id="chooseTopButton" type="button">导入</button>
         <button class="text-button secondary" id="saveTopButton" type="button">保存</button>
         <span class="save-status" id="saveStatus">已保存</span>
+        <button class="text-button secondary subtle-action" id="aiGenerateTopButton" type="button">AI灵感</button>
         <button class="text-button secondary subtle-action" id="materialPreviewButton" type="button">展示效果</button>
         <button class="text-button" id="exportTopButton" type="button">导出</button>
       </div>
@@ -458,6 +459,17 @@
               </div>
             </div>
             <div class="import-summary" id="importSummary">导入图纸后显示模式、尺寸和色号摘要。</div>
+            <div class="quality-summary" id="qualitySummary">导入后可检查杂色、轮廓和高光。</div>
+            <div class="split-actions compact-actions">
+              <button class="text-button secondary" id="qualityCheckButton" type="button">检查图纸</button>
+              <button class="text-button secondary" id="exportMaterialsButton" type="button">导出材料清单</button>
+            </div>
+            <label class="switch-row compact">
+              <span><strong>制作模式</strong><em>点击格子标记已完成，不改变色号</em></span>
+              <input id="buildModeToggle" type="checkbox">
+            </label>
+            <div class="build-progress" id="buildProgress">制作进度：0 / 0</div>
+            <button class="text-button secondary full-width" id="clearBuildProgressButton" type="button">清除制作进度</button>
           </div>
 
           <div class="panel-card color-optimize-card">
@@ -1083,6 +1095,30 @@
     </div>
   </section>
 
+  <section class="project-action-modal hidden" id="aiGenerateModal" aria-label="AI生成像素图">
+    <div class="project-action-card ai-generate-card">
+      <button class="project-action-close" id="aiGenerateCloseButton" type="button" title="关闭">×</button>
+      <div class="project-action-head ai-generate-head">
+        <div>
+          <h2>AI生成像素图</h2>
+          <p>输入主题后生成适合拼豆的像素草图，再导入当前图纸继续修改。</p>
+        </div>
+      </div>
+      <label class="ai-field">主题描述<textarea id="aiPromptInput" rows="3" placeholder="例如：一只戴红围巾的小猫，黑色轮廓，暖色背景"></textarea></label>
+      <div class="ai-options">
+        <label>风格<select id="aiStyleSelect"><option value="pixel">清晰像素画</option><option value="cute">可爱卡通</option><option value="retro">复古游戏</option></select></label>
+        <label>宽度<input id="aiWidthInput" type="number" min="16" max="128" value="48"></label>
+        <label>高度<input id="aiHeightInput" type="number" min="16" max="128" value="48"></label>
+        <label>最多色号<input id="aiColorLimitInput" type="number" min="2" max="64" value="20"></label>
+      </div>
+      <div id="aiGenerateStatus" class="ai-status">未配置 AI 生成服务。可先保存提示词，配置服务后直接生成。</div>
+      <div class="split-actions">
+        <button class="text-button secondary" id="aiPromptCopyButton" type="button">复制提示词</button>
+        <button class="text-button" id="aiGenerateButton" type="button">开始生成</button>
+      </div>
+    </div>
+  </section>
+
   <section class="calibration-modal hidden" id="calibrationModal" aria-label="像素校准">
     <header class="calibration-topbar">
       <button id="calibrationBackButton" type="button" title="返回">‹</button>
@@ -1133,6 +1169,7 @@
       </div>
       <button id="projectActionOpenButton" type="button">打开设计</button>
       <button id="projectActionHistoryButton" type="button">历史版本</button>
+      <button id="projectActionTemplateButton" type="button">套用为新设计</button>
       <button id="projectActionRenameButton" type="button">重命名</button>
       <button id="projectActionDuplicateButton" type="button">创建副本</button>
       <button id="projectActionDeleteButton" class="danger" type="button">删除设计</button>
