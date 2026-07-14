@@ -275,6 +275,7 @@
     homeRecordMonthOffset: 0,
     lastRender: null,
     activeSessionStart: Date.now(),
+    hasUnsavedChanges: false,
     activeActionProjectId: "",
     activeHistoryProjectId: "",
     beads: {
@@ -466,7 +467,7 @@
       "homeRecordYear", "homeRecordMonth", "homeRecordPrevButton", "homeRecordNextButton", "homeRecordCalendar", "homeDesignDays",
       "homeAvgDayTime", "homeAvgWorkTime", "homeRecordList", "homeSignature",
       "editorTopbar", "editorWorkspace", "controlPanel", "topbarCollapseButton", "topbarExpandButton",
-      "sidePanelCollapseButton", "sidePanelExpandButton", "backHomeButton", "saveTopButton",
+      "sidePanelCollapseButton", "sidePanelExpandButton", "backHomeButton", "saveTopButton", "saveStatus",
       "fileInput", "dropZone", "previewCanvas", "emptyState", "emptyTitle",
       "emptyDescription", "imageStatus", "canvasSize", "renderHint", "message",
       "precisionRange", "precisionNumber", "gapRange", "gapNumber", "radiusRange",
@@ -476,6 +477,7 @@
       "pixelPanel", "beadPanel", "pixelToBeadsButton", "beadWidthNumber",
       "beadHeightNumber", "beadLockRatio", "generateBeadsButton", "usePixelButton",
       "showCodesToggle", "showGridToggle", "codeFontScaleRange", "codeFontScaleNumber",
+      "importSummary", "importChoiceSummary",
       "paletteSelect", "paletteGrid", "cellTargetPaletteGrid", "selectionColorTargetPaletteGrid",
       "replaceFromSelect", "replaceToSelect", "replaceAllButton", "usageSummary",
       "usageList", "exportChartButton", "toolBrushButton", "toolPickerButton",
@@ -543,7 +545,7 @@
       "calibrationNudgeLeftButton", "calibrationNudgeUpButton",
       "calibrationNudgeDownButton", "calibrationNudgeRightButton",
       "calibrationColumnsInput", "calibrationCellSizeInput", "calibrationAiToggle",
-      "colorOptimizeLimitInput", "colorOptimizeButton", "colorOptimizeUndoButton", "restoreOptimizeButton",
+      "colorOptimizeLimitInput", "colorOptimizeButton", "colorOptimizeUndoButton", "restoreOptimizeButton", "restoreLightButton", "restoreBalancedButton", "restoreDetailButton",
       "sourceCompareToggle", "sourceCompareOpacityRange", "sourceCompareOpacityLabel", "lockedColorSummary",
       "trashModal", "trashCloseButton", "trashList",
       "usageLayoutWrapButton", "usageLayoutGridButton", "usageFontSizeRange", "usageFontSizeLabel",
@@ -1611,10 +1613,11 @@
     return `${pattern.width}x${pattern.height}:${pattern.cells.map((row) => row.join(",")).join(";")}`;
   }
 
-  function restorePixelArtDetails(pattern) {
+  function restorePixelArtDetails(pattern, mode = "legacy") {
     if (!pattern || !pattern.cells || pattern.width < 3 || pattern.height < 3) return pattern;
     const cells = cloneCells(pattern.cells);
     let changed = false;
+    const safeMode = ["legacy", "light", "balanced", "detail"].includes(mode) ? mode : "balanced";
     for (let row = 0; row < pattern.height; row += 1) {
       for (let col = 0; col < pattern.width; col += 1) {
         const current = cells[row][col];
@@ -1623,12 +1626,16 @@
         // Only repair a background/blank cell or a clearly non-outline cell.
         // Existing dark outlines and light details are intentionally untouched.
         if (current && isDarkOutlineCode(current)) continue;
-        if (current && !isVeryLightCode(current)) continue;
+        if (current && !isVeryLightCode(current) && safeMode !== "detail") continue;
         cells[row][col] = bridgeCode;
         changed = true;
       }
     }
-    return changed ? Object.assign({}, pattern, { cells }) : pattern;
+    let next = changed ? Object.assign({}, pattern, { cells }) : pattern;
+    if (safeMode === "balanced") {
+      next = cleanPixelArtPattern(next, getLockedColorSet());
+    }
+    return next;
   }
 
   function cleanPixelArtPattern(pattern, lockedCodes) {
@@ -2246,9 +2253,29 @@
     return labels[mode || getImportMode()] || labels.fidelity;
   }
 
+  function renderImportSummary() {
+    if (!els.importSummary) return;
+    const pattern = state.beads.pattern;
+    if (!pattern) {
+      els.importSummary.textContent = "导入图纸后显示模式、尺寸和色号摘要。";
+      return;
+    }
+    const calibrated = Boolean(state.importCalibration && state.importCalibration.enabled);
+    const mode = getImportModeLabel();
+    const colors = countPatternColors(pattern);
+    els.importSummary.textContent = `本次导入：${mode} · ${pattern.width} x ${pattern.height} 格 · ${colors} 种色号 · ${calibrated ? "已使用像素校准" : "自动网格"} · 原图对比${state.beads.sourceCompareEnabled ? "已开" : "已关"}`;
+  }
+
   function setImportMode(mode) {
     state.beads.importMode = ["fidelity", "balanced", "simple"].includes(mode) ? mode : "fidelity";
     syncImportModeControls();
+    if (els.importChoiceSummary) {
+      els.importChoiceSummary.textContent = {
+        fidelity: "高保真：尽量保留原图色块和高光，适合像素画。",
+        balanced: "均衡：修复孤立杂色并保持线条清晰，适合大多数图片。",
+        simple: "易制作：减少色号和局部变化，适合快速制作。"
+      }[getImportMode()];
+    }
   }
 
   function syncImportModeControls() {
@@ -2902,6 +2929,9 @@
       syncBeadControls();
       render();
     }
+    state.beads.sourceCompareEnabled = true;
+    renderImportSummary();
+    markUnsavedChanges();
     state.importSession = null;
   }
 
@@ -3077,12 +3107,14 @@
     state.beads.sourceLabel = session.name;
     state.beads.pixelSignature = "";
     state.beads.restorationFingerprint = "";
-    state.beads.sourceCompareEnabled = false;
+    state.beads.sourceCompareEnabled = true;
     ensureLayers();
     clearHistory();
     if (els.imageStatus) els.imageStatus.textContent = session.name;
     setMode("beads");
     setMessage(`已按校准网格和${getImportModeLabel()}模式生成 ${pattern.width} x ${pattern.height} 图纸。`, false);
+    renderImportSummary();
+    markUnsavedChanges();
     state.importSession = null;
   }
 
@@ -3131,6 +3163,9 @@
     state.view.panX = 0;
     state.view.panY = 0;
     clearHistory();
+    state.beads.sourceCompareEnabled = true;
+    renderImportSummary();
+    markUnsavedChanges();
     if (showSuccess !== false) setMessage(`拼豆图纸已按${getImportModeLabel()}模式生成。`, false);
     render();
     return pattern;
@@ -3172,6 +3207,7 @@
     if (state.beads.undoStack.length > 80) state.beads.undoStack.shift();
     state.beads.redoStack = [];
     updateHistoryButtons();
+    markUnsavedChanges();
   }
 
   function undoEdit() {
@@ -3180,6 +3216,7 @@
     const snapshot = state.beads.undoStack.pop();
     if (!restoreLayerState(snapshot)) state.beads.pattern.cells = snapshot;
     state.beads.restorationFingerprint = "";
+    markUnsavedChanges();
     setMessage("已撤销。", false);
     render();
   }
@@ -3190,6 +3227,7 @@
     const snapshot = state.beads.redoStack.pop();
     if (!restoreLayerState(snapshot)) state.beads.pattern.cells = snapshot;
     state.beads.restorationFingerprint = "";
+    markUnsavedChanges();
     setMessage("已重做。", false);
     render();
   }
@@ -4698,14 +4736,16 @@
     return changed;
   }
 
-  function restoreOptimizePattern() {
+  function restoreOptimizePattern(mode = "balanced") {
     if (!state.beads.pattern) {
       setMessage("请先生成图纸。", true);
       return 0;
     }
     syncCompositePattern();
     const beforeFingerprint = getPatternFingerprint(state.beads.pattern);
-    if (state.beads.restorationFingerprint === beforeFingerprint) {
+    const safeMode = ["light", "balanced", "detail"].includes(mode) ? mode : "balanced";
+    const restorationKey = `${safeMode}:${beforeFingerprint}`;
+    if (state.beads.restorationFingerprint === restorationKey) {
       setMessage("还原优化已经完成，无需重复处理。", false);
       return 0;
     }
@@ -4714,15 +4754,18 @@
       return 0;
     }
     const before = cloneCells(state.beads.pattern.cells);
-    const restored = createRestorationPatternFromSource(
-      state.image,
-      state.beads.pattern.width,
-      state.beads.pattern.height,
-      state.imageName,
-      state.importCalibration && state.importCalibration.enabled ? state.importCalibration : null
-    );
+    const restored = safeMode === "light"
+      ? restorePixelArtDetails(state.beads.pattern, "light")
+      : createRestorationPatternFromSource(
+        state.image,
+        state.beads.pattern.width,
+        state.beads.pattern.height,
+        state.imageName,
+        state.importCalibration && state.importCalibration.enabled ? state.importCalibration : null
+      );
     const locked = getLockedColorSet();
-    const cleaned = protectLockedCells(state.beads.pattern, restored, locked);
+    const restoredWithMode = safeMode === "light" ? restored : restorePixelArtDetails(restored, safeMode);
+    const cleaned = protectLockedCells(state.beads.pattern, restoredWithMode, locked);
     let changed = 0;
     for (let row = 0; row < state.beads.pattern.height; row += 1) {
       for (let col = 0; col < state.beads.pattern.width; col += 1) {
@@ -4730,16 +4773,17 @@
       }
     }
     if (!changed) {
-      state.beads.restorationFingerprint = beforeFingerprint;
+      state.beads.restorationFingerprint = restorationKey;
       setMessage("未发现明确断线，原图细节保持不变。", false);
       return 0;
     }
     pushHistory();
     state.beads.pattern = cleaned;
-    state.beads.restorationFingerprint = getPatternFingerprint(cleaned);
+    state.beads.restorationFingerprint = `${safeMode}:${getPatternFingerprint(cleaned)}`;
     syncCompositePattern();
     render();
-    setMessage(`已根据原图重新还原 ${changed} 格，保留更多线条和高光。`, false);
+    markUnsavedChanges();
+    setMessage(`已按${{ light: "轻度", balanced: "均衡", detail: "强细节" }[safeMode]}还原 ${changed} 格，保留锁定色和原图细节。`, false);
     return changed;
   }
 
@@ -10052,6 +10096,39 @@
     setMessage("", false);
   }
 
+  function updateDirtyStatus() {
+    const dirty = Boolean(state.hasUnsavedChanges);
+    if (els.saveStatus) {
+      els.saveStatus.textContent = dirty ? "未保存" : "已保存";
+      els.saveStatus.classList.toggle("dirty", dirty);
+    }
+    if (els.saveTopButton) els.saveTopButton.title = dirty ? "保存未保存修改" : "当前没有未保存修改";
+  }
+
+  function markUnsavedChanges() {
+    state.hasUnsavedChanges = true;
+    updateDirtyStatus();
+  }
+
+  function markSaved() {
+    state.hasUnsavedChanges = false;
+    updateDirtyStatus();
+  }
+
+  function confirmLeaveWithUnsavedChanges() {
+    if (!state.hasUnsavedChanges) return true;
+    const shouldSave = window.confirm("当前设计有未保存修改。点击“确定”先保存，点击“取消”继续选择。");
+    if (shouldSave) {
+      saveCurrentProject();
+      return !state.hasUnsavedChanges;
+    }
+    return window.confirm("确定放弃未保存修改并继续吗？");
+  }
+
+  function showHomeWithGuard() {
+    if (confirmLeaveWithUnsavedChanges()) showHome();
+  }
+
   function showEditor() {
     const shell = document.querySelector(".app-shell");
     if (shell) shell.classList.remove("is-home");
@@ -10094,6 +10171,7 @@
     ensureLayers();
     syncCompositePattern();
     clearHistory();
+    markUnsavedChanges();
     state.activeSessionStart = Date.now();
     if (els.imageStatus) els.imageStatus.textContent = state.beads.projectTitle;
     if (els.projectTitleInput) els.projectTitleInput.value = state.beads.projectTitle;
@@ -10112,7 +10190,9 @@
     addTile.className = "home-add-tile";
     addTile.type = "button";
     addTile.innerHTML = "<span>+</span><strong>新建设计文件</strong>";
-    addTile.addEventListener("click", createNewDesign);
+    addTile.addEventListener("click", () => {
+      if (confirmLeaveWithUnsavedChanges()) createNewDesign();
+    });
     els.homeProjectGrid.appendChild(addTile);
 
     projects.forEach((project) => {
@@ -10307,6 +10387,7 @@
   }
 
   function previewProjectHistoryVersion(projectId, versionId) {
+    if (!confirmLeaveWithUnsavedChanges()) return;
     const project = getProjects().find((item) => item.id === projectId);
     const version = project && normalizeProjectHistory(project.history).find((item) => item.id === versionId);
     if (!project || !version || !version.payload) {
@@ -10317,6 +10398,7 @@
     payload.title = `${project.title || "未命名"} 历史预览`;
     delete payload.id;
     if (!applyProjectPayload(payload, false)) return;
+    markUnsavedChanges();
     closeProjectHistoryModal();
     closeProjectActionModal();
     showEditor();
@@ -10348,6 +10430,7 @@
     const projects = [restored, ...getProjects().filter((item) => item.id !== projectId)];
     setProjects(projects, { remote: false });
     applyProjectPayload(restored.payload);
+    markSaved();
     closeProjectHistoryModal();
     closeProjectActionModal();
     renderProjectList();
@@ -10588,7 +10671,9 @@
       payload
     }, existing);
     projects.unshift(nextProject);
-    setProjects(projects, { remote: false }).then(() => saveProjectToRemote(projects[0])).then((result) => {
+    setProjects(projects, { remote: false });
+    markSaved();
+    saveProjectToRemote(projects[0]).then((result) => {
       setMessage(result && result.ok ? "已保存并同步到电脑创作空间。" : "已保存到当前设备，电脑同步服务暂时不可用。", !(result && result.ok));
     });
     renderProjectList();
@@ -10596,6 +10681,7 @@
   }
 
   async function loadProject(id) {
+    if (state.hasUnsavedChanges && state.beads.projectId !== id && !confirmLeaveWithUnsavedChanges()) return;
     const project = getProjects().find((item) => item.id === id);
     if (!project) {
       setMessage("没有找到这个本地作品。", true);
@@ -10613,6 +10699,7 @@
       return;
     }
     applyProjectPayload(payload);
+    markSaved();
     const projects = getProjects().map((item) => item.id === id ? Object.assign({}, item, { openCount: Math.max(0, Number(item.openCount || 0)) + 1 }) : item);
     setProjects(projects, { remote: false });
     closeProjectActionModal();
@@ -10846,8 +10933,12 @@
 
   function wireEvents() {
     installSelectionGuard();
-    els.homeNewDesignButton.addEventListener("click", createNewDesign);
-    els.homeNewTopButton.addEventListener("click", createNewDesign);
+    els.homeNewDesignButton.addEventListener("click", () => {
+      if (confirmLeaveWithUnsavedChanges()) createNewDesign();
+    });
+    els.homeNewTopButton.addEventListener("click", () => {
+      if (confirmLeaveWithUnsavedChanges()) createNewDesign();
+    });
     if (els.homeSyncButton) {
       els.homeSyncButton.addEventListener("click", () => {
         syncProjectsFromRemote({ manual: true });
@@ -10916,7 +11007,7 @@
         if (event.target === els.trashModal) closeTrashModal();
       });
     }
-    els.backHomeButton.addEventListener("click", showHome);
+    els.backHomeButton.addEventListener("click", showHomeWithGuard);
     if (els.topbarCollapseButton) els.topbarCollapseButton.addEventListener("click", () => setTopbarCollapsed(true));
     if (els.topbarExpandButton) els.topbarExpandButton.addEventListener("click", () => setTopbarCollapsed(false));
     if (els.sidePanelCollapseButton) els.sidePanelCollapseButton.addEventListener("click", () => setSidePanelCollapsed(true));
@@ -11304,7 +11395,10 @@
         if (!changed && state.beads.pattern) render();
       });
     }
-    if (els.restoreOptimizeButton) els.restoreOptimizeButton.addEventListener("click", restoreOptimizePattern);
+    if (els.restoreOptimizeButton) els.restoreOptimizeButton.addEventListener("click", () => restoreOptimizePattern("balanced"));
+    if (els.restoreLightButton) els.restoreLightButton.addEventListener("click", () => restoreOptimizePattern("light"));
+    if (els.restoreBalancedButton) els.restoreBalancedButton.addEventListener("click", () => restoreOptimizePattern("balanced"));
+    if (els.restoreDetailButton) els.restoreDetailButton.addEventListener("click", () => restoreOptimizePattern("detail"));
     if (els.sourceCompareToggle) {
       els.sourceCompareToggle.addEventListener("change", () => {
         state.beads.sourceCompareEnabled = els.sourceCompareToggle.checked;
@@ -11850,6 +11944,7 @@
 
     els.projectTitleInput.addEventListener("input", () => {
       state.beads.projectTitle = els.projectTitleInput.value.trim() || "未命名";
+      markUnsavedChanges();
     });
     els.saveProjectButton.addEventListener("click", saveCurrentProject);
     els.importProjectButton.addEventListener("click", () => els.projectFileInput.click());
@@ -12102,6 +12197,7 @@
       estimatePixelArtGrid,
       restoreOptimizePattern,
       restorePixelArtDetails,
+      restorePixelArtDetailsForMode: (pattern, mode) => restorePixelArtDetails(pattern, mode),
       optimizePatternColors,
       undoEdit,
       mergeProjectsForTest: mergeProjects,
@@ -12111,6 +12207,16 @@
       formatSyncHealthMessageForTest: formatSyncHealthMessage,
       setProjectsForTest: (projects, options) => setProjects(projects, Object.assign({ remote: false }, options || {})),
       getProjectsForTest: () => getProjects(),
+      getUnsavedChangesForTest: () => Boolean(state.hasUnsavedChanges),
+      markUnsavedChangesForTest: () => {
+        markUnsavedChanges();
+        return state.hasUnsavedChanges;
+      },
+      markSavedForTest: () => {
+        markSaved();
+        return state.hasUnsavedChanges;
+      },
+      getImportSummaryForTest: () => els.importSummary ? els.importSummary.textContent : "",
       setProjectStorageFailureForTest: (enabled) => {
         state.forceProjectStorageFailureForTest = Boolean(enabled);
         return state.forceProjectStorageFailureForTest;

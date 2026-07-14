@@ -575,6 +575,28 @@
         if (unchangedHistoryProject.history.length !== 1) {
           throw new Error("unchanged save should not add history");
         }
+        const modePattern = {
+          width: 4,
+          height: 4,
+          cells: [
+            ["A1", null, "A1", null],
+            [null, "A1", null, null],
+            ["A1", null, "A1", null],
+            [null, null, null, null]
+          ]
+        };
+        ["light", "balanced", "detail"].forEach((mode) => {
+          const restoredMode = window.QPixelTest.restorePixelArtDetailsForMode(modePattern, mode);
+          if (!restoredMode || restoredMode.width !== 4 || restoredMode.height !== 4 || restoredMode.cells.length !== 4) {
+            throw new Error(`restore mode failed: ${mode}`);
+          }
+        });
+        if (window.QPixelTest.markUnsavedChangesForTest() !== true || window.QPixelTest.markSavedForTest() !== false) {
+          throw new Error("dirty state transition failed");
+        }
+        if (!window.QPixelTest.getImportModeLabels().includes("高保真") || window.QPixelTest.getImportModeLabels().length !== 3) {
+          throw new Error("import mode labels failed");
+        }
         const restoredHistoryProject = window.QPixelTest.restoreProjectHistoryVersionForTest(
           unchangedHistoryProject,
           unchangedHistoryProject.history[0].id,
