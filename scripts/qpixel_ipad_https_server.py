@@ -18,6 +18,8 @@ DATA_DIR = Path.home() / "Documents" / "Q像素"
 PROJECTS_FILE = DATA_DIR / "qpixel-projects.json"
 SETTINGS_FILE = DATA_DIR / "qpixel-settings.json"
 BACKUP_DIR = DATA_DIR / "backups"
+PROJECT_BACKUP_LIMIT = 100
+SETTINGS_BACKUP_LIMIT = 30
 CERT_DIR = DATA_DIR / "ipad-cert"
 CERT_FILE = CERT_DIR / "qpixel-ipad.crt"
 KEY_FILE = CERT_DIR / "qpixel-ipad.key"
@@ -304,6 +306,7 @@ def backup_projects_file():
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     backup = BACKUP_DIR / f"qpixel-projects-{stamp}.json"
     shutil.copy2(PROJECTS_FILE, backup)
+    cleanup_backups()
 
 
 def backup_settings_file():
@@ -313,6 +316,36 @@ def backup_settings_file():
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     backup = BACKUP_DIR / f"qpixel-settings-{stamp}.json"
     shutil.copy2(SETTINGS_FILE, backup)
+    cleanup_backups()
+
+
+def cleanup_backup_group(pattern, keep_count, now=None):
+    if not BACKUP_DIR.exists():
+        return 0
+    files = []
+    for path in BACKUP_DIR.glob(pattern):
+        if not path.is_file() or path.suffix != ".json":
+            continue
+        try:
+            files.append((path.stat().st_mtime, path))
+        except OSError:
+            continue
+    files.sort(reverse=True)
+    removed = 0
+    for mtime, path in files[keep_count:]:
+        try:
+            path.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
+def cleanup_backups():
+    return (
+        cleanup_backup_group("qpixel-projects-*.json", PROJECT_BACKUP_LIMIT)
+        + cleanup_backup_group("qpixel-settings-*.json", SETTINGS_BACKUP_LIMIT)
+    )
 
 
 def item_sort_time(item):
@@ -360,6 +393,7 @@ def main():
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--http", action="store_true", help="使用普通 HTTP，保留创作空间同步接口。")
     args = parser.parse_args()
+    cleanup_backups()
     server = ThreadingHTTPServer((args.host, args.port), QPixelHttpsHandler)
     if args.http:
         print(f"Q像素 iPad HTTP 服务：http://{args.cert_host}:{args.port}/index.html")

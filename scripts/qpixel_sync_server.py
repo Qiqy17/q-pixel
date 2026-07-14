@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import json
 import os
+import shutil
+from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
@@ -11,6 +13,8 @@ DATA_DIR = Path.home() / "Documents" / "Q像素"
 PROJECTS_FILE = DATA_DIR / "qpixel-projects.json"
 SETTINGS_FILE = DATA_DIR / "qpixel-settings.json"
 BACKUP_DIR = DATA_DIR / "backups"
+PROJECT_BACKUP_LIMIT = 100
+SETTINGS_BACKUP_LIMIT = 30
 
 
 class QPixelHandler(SimpleHTTPRequestHandler):
@@ -69,6 +73,7 @@ class QPixelHandler(SimpleHTTPRequestHandler):
             self.send_error(400, "Expected project list")
             return
         DATA_DIR.mkdir(parents=True, exist_ok=True)
+        backup_projects_file()
         tmp = PROJECTS_FILE.with_suffix(".tmp")
         tmp.write_text(json.dumps(payload[:200], ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, PROJECTS_FILE)
@@ -89,6 +94,7 @@ class QPixelHandler(SimpleHTTPRequestHandler):
             self.send_error(400, "Project id mismatch")
             return
         DATA_DIR.mkdir(parents=True, exist_ok=True)
+        backup_projects_file()
         projects = merge_projects(self.read_projects(), [payload])
         tmp = PROJECTS_FILE.with_suffix(".tmp")
         tmp.write_text(json.dumps(projects[:200], ensure_ascii=False), encoding="utf-8")
@@ -178,7 +184,6 @@ def health_payload(projects):
 
 
 def datetime_now_iso():
-    from datetime import datetime
     return datetime.now().isoformat()
 
 
@@ -197,7 +202,46 @@ def merge_projects(existing, incoming):
     return sorted(merged.values(), key=project_sort_time, reverse=True)
 
 
+def backup_projects_file():
+    if not PROJECTS_FILE.exists():
+        return
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    shutil.copy2(PROJECTS_FILE, BACKUP_DIR / f"qpixel-projects-{stamp}.json")
+    cleanup_backups()
+
+
+def cleanup_backup_group(pattern, keep_count, now=None):
+    if not BACKUP_DIR.exists():
+        return 0
+    files = []
+    for path in BACKUP_DIR.glob(pattern):
+        if not path.is_file() or path.suffix != ".json":
+            continue
+        try:
+            files.append((path.stat().st_mtime, path))
+        except OSError:
+            continue
+    files.sort(reverse=True)
+    removed = 0
+    for mtime, path in files[keep_count:]:
+        try:
+            path.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
+def cleanup_backups():
+    return (
+        cleanup_backup_group("qpixel-projects-*.json", PROJECT_BACKUP_LIMIT)
+        + cleanup_backup_group("qpixel-settings-*.json", SETTINGS_BACKUP_LIMIT)
+    )
+
+
 def main():
+    cleanup_backups()
     server = ThreadingHTTPServer(("0.0.0.0", 8765), QPixelHandler)
     print("Q像素同步服务：http://0.0.0.0:8765")
     server.serve_forever()
