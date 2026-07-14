@@ -575,6 +575,17 @@
         if (unchangedHistoryProject.history.length !== 1) {
           throw new Error("unchanged save should not add history");
         }
+        const restoredHistoryProject = window.QPixelTest.restoreProjectHistoryVersionForTest(
+          unchangedHistoryProject,
+          unchangedHistoryProject.history[0].id,
+          "2026-01-04T00:00:00.000Z"
+        );
+        if (!restoredHistoryProject || restoredHistoryProject.id !== "history" || restoredHistoryProject.payload.pattern.cells[0][0] !== null || restoredHistoryProject.history[0].payload.pattern.cells[0][0] !== "A1") {
+          throw new Error("project history restore failed");
+        }
+        if (window.QPixelTest.restoreProjectHistoryVersionForTest(unchangedHistoryProject, "missing-version", "2026-01-04T00:00:00.000Z") !== null) {
+          throw new Error("missing history version should be rejected");
+        }
         const mergedProjects = window.QPixelTest.mergeProjectsForTest(
           [{ id: "same", title: "old", updatedAt: "2026-01-01T00:00:00.000Z", savedAt: "2026-01-01T00:00:00.000Z", payload: { pattern: { width: 16, height: 16, cells: emptyCells } } }],
           [{ id: "same", title: "new", updatedAt: "2026-01-02T00:00:00.000Z", savedAt: "2026-01-02T00:00:00.000Z", payload: { pattern: { width: 16, height: 16, cells: emptyCells } } }]

@@ -276,6 +276,7 @@
     lastRender: null,
     activeSessionStart: Date.now(),
     activeActionProjectId: "",
+    activeHistoryProjectId: "",
     beads: {
       restorationFingerprint: "",
       importMode: "fidelity",
@@ -532,7 +533,8 @@
       "charmHoleSizeLabel", "charmKeyringSelect", "charmCordSelect", "charmLinkSelect", "charmExportButton",
       "toolRailGrip", "toolRailBGrip", "toolRailCollapseButton", "toolRailBCollapseButton", "colorStripGrip", "projectActionModal", "projectActionCloseButton",
       "projectActionThumb", "projectActionTitle", "projectActionCreated", "projectActionUpdated",
-      "projectActionOpenButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
+      "projectActionOpenButton", "projectActionHistoryButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
+      "projectHistoryModal", "projectHistoryCloseButton", "projectHistoryTitle", "projectHistoryList",
       "layerImportModal", "layerImportCloseButton", "layerImportImageButton", "layerImportProjectFileButton", "layerImportProjectList",
       "importChoiceModal", "importChoiceCancelButton", "importChoiceFileName",
       "importModeFidelityButton", "importModeBalancedButton", "importModeSimpleButton",
@@ -9722,6 +9724,32 @@
     return next;
   }
 
+  function restoreProjectHistoryVersionForTest(project, versionId, now) {
+    const current = normalizeProject(project);
+    const version = normalizeProjectHistory(current.history).find((item) => item.id === versionId);
+    if (!current.payload || !version || !version.payload) return null;
+    const savedAt = now || new Date().toISOString();
+    const payload = JSON.parse(JSON.stringify(version.payload));
+    payload.id = current.id;
+    payload.title = current.title || payload.title || "未命名";
+    payload.createdAt = current.createdAt || payload.createdAt || savedAt;
+    payload.savedAt = savedAt;
+    return withProjectHistory({
+      id: current.id,
+      title: payload.title,
+      createdAt: current.createdAt || payload.createdAt,
+      savedAt,
+      updatedAt: savedAt,
+      width: payload.pattern && payload.pattern.width,
+      height: payload.pattern && payload.pattern.height,
+      thumbnail: current.thumbnail || "",
+      editSeconds: current.editSeconds,
+      openCount: current.openCount,
+      designDates: current.designDates,
+      payload
+    }, current);
+  }
+
   function hasMeaningfulPayloadConflict(existing, incoming) {
     if (!existing || !incoming || !existing.payload || !incoming.payload) return false;
     const existingFingerprint = payloadFingerprint(existing.payload);
@@ -10216,12 +10244,117 @@
     if (els.projectActionTitle) els.projectActionTitle.textContent = project.title || "未命名";
     if (els.projectActionCreated) els.projectActionCreated.textContent = formatDateTime(project.createdAt || project.savedAt);
     if (els.projectActionUpdated) els.projectActionUpdated.textContent = formatDateTime(project.updatedAt || project.savedAt);
+    if (els.projectActionHistoryButton) {
+      els.projectActionHistoryButton.disabled = !normalizeProjectHistory(project.history).length;
+      els.projectActionHistoryButton.title = els.projectActionHistoryButton.disabled ? "这个设计还没有历史版本" : "查看历史版本";
+    }
     els.projectActionModal.classList.remove("hidden");
   }
 
   function closeProjectActionModal() {
     state.activeActionProjectId = "";
     if (els.projectActionModal) els.projectActionModal.classList.add("hidden");
+  }
+
+  function renderProjectHistoryList(project) {
+    if (!els.projectHistoryList) return;
+    const history = normalizeProjectHistory(project && project.history);
+    els.projectHistoryList.innerHTML = "";
+    if (!history.length) {
+      const empty = document.createElement("div");
+      empty.className = "project-history-empty";
+      empty.textContent = "暂无历史版本。继续保存后，这里会自动保留可回退的版本。";
+      els.projectHistoryList.appendChild(empty);
+      return;
+    }
+    history.forEach((version, index) => {
+      const row = document.createElement("article");
+      row.className = "project-history-item";
+      const pattern = version.payload && version.payload.pattern;
+      const size = pattern && pattern.width && pattern.height ? `${pattern.width} x ${pattern.height}` : "尺寸未知";
+      row.innerHTML = `
+        <div class="project-history-info">
+          <strong></strong>
+          <span></span>
+          <em></em>
+        </div>
+        <div class="project-history-actions">
+          <button class="mini-button" type="button" data-action="preview">预览打开</button>
+          <button class="mini-button primary" type="button" data-action="restore">恢复</button>
+        </div>
+      `;
+      row.querySelector("strong").textContent = version.title || "未命名";
+      row.querySelector("span").textContent = formatDateTime(version.savedAt);
+      row.querySelector("em").textContent = `${size}${index === 0 ? " · 最近版本" : ""}`;
+      row.querySelector('[data-action="preview"]').addEventListener("click", () => previewProjectHistoryVersion(state.activeHistoryProjectId, version.id));
+      row.querySelector('[data-action="restore"]').addEventListener("click", () => restoreProjectHistoryVersionFromUi(state.activeHistoryProjectId, version.id));
+      els.projectHistoryList.appendChild(row);
+    });
+  }
+
+  function openProjectHistoryModal(id) {
+    const project = getProjects().find((item) => item.id === id);
+    if (!project || !els.projectHistoryModal) return;
+    state.activeHistoryProjectId = id;
+    if (els.projectHistoryTitle) els.projectHistoryTitle.textContent = `${project.title || "未命名"} · 历史版本`;
+    renderProjectHistoryList(project);
+    els.projectHistoryModal.classList.remove("hidden");
+  }
+
+  function closeProjectHistoryModal() {
+    state.activeHistoryProjectId = "";
+    if (els.projectHistoryModal) els.projectHistoryModal.classList.add("hidden");
+  }
+
+  function previewProjectHistoryVersion(projectId, versionId) {
+    const project = getProjects().find((item) => item.id === projectId);
+    const version = project && normalizeProjectHistory(project.history).find((item) => item.id === versionId);
+    if (!project || !version || !version.payload) {
+      setMessage("历史版本内容不存在，当前设计没有变化。", true);
+      return;
+    }
+    const payload = JSON.parse(JSON.stringify(version.payload));
+    payload.title = `${project.title || "未命名"} 历史预览`;
+    delete payload.id;
+    if (!applyProjectPayload(payload, false)) return;
+    closeProjectHistoryModal();
+    closeProjectActionModal();
+    showEditor();
+    setMessage("已打开历史版本预览，原设计未被覆盖。", false);
+  }
+
+  async function restoreProjectHistoryVersionFromUi(projectId, versionId) {
+    const project = getProjects().find((item) => item.id === projectId);
+    if (!project) {
+      setMessage("没有找到这个设计文件，当前设计没有变化。", true);
+      return;
+    }
+    let currentPayload = project.payload;
+    if (!currentPayload) {
+      setMessage("正在读取当前版本，然后恢复历史版本...", false);
+      try {
+        currentPayload = await fetchRemoteProjectPayload(projectId);
+      } catch {
+        currentPayload = null;
+      }
+    }
+    const restored = currentPayload
+      ? restoreProjectHistoryVersionForTest(Object.assign({}, project, { payload: currentPayload }), versionId)
+      : null;
+    if (!project || !restored) {
+      setMessage("历史版本内容不存在，当前设计没有变化。", true);
+      return;
+    }
+    const projects = [restored, ...getProjects().filter((item) => item.id !== projectId)];
+    setProjects(projects, { remote: false });
+    applyProjectPayload(restored.payload);
+    closeProjectHistoryModal();
+    closeProjectActionModal();
+    renderProjectList();
+    renderHomeProjects();
+    saveProjectToRemote(restored).then((result) => {
+      setMessage(result && result.ok ? "已恢复历史版本并同步到电脑创作空间。" : "已恢复到当前设备，电脑同步服务暂时不可用。", !(result && result.ok));
+    });
   }
 
   async function duplicateProject(id) {
@@ -10767,9 +10900,16 @@
       if (event.target === els.projectActionModal) closeProjectActionModal();
     });
     els.projectActionOpenButton.addEventListener("click", () => loadProject(state.activeActionProjectId));
+    if (els.projectActionHistoryButton) els.projectActionHistoryButton.addEventListener("click", () => openProjectHistoryModal(state.activeActionProjectId));
     if (els.projectActionRenameButton) els.projectActionRenameButton.addEventListener("click", () => renameProject(state.activeActionProjectId));
     els.projectActionDuplicateButton.addEventListener("click", () => duplicateProject(state.activeActionProjectId));
     els.projectActionDeleteButton.addEventListener("click", () => deleteProject(state.activeActionProjectId));
+    if (els.projectHistoryCloseButton) els.projectHistoryCloseButton.addEventListener("click", closeProjectHistoryModal);
+    if (els.projectHistoryModal) {
+      els.projectHistoryModal.addEventListener("click", (event) => {
+        if (event.target === els.projectHistoryModal) closeProjectHistoryModal();
+      });
+    }
     if (els.trashCloseButton) els.trashCloseButton.addEventListener("click", closeTrashModal);
     if (els.trashModal) {
       els.trashModal.addEventListener("click", (event) => {
@@ -11967,6 +12107,7 @@
       mergeProjectsForTest: mergeProjects,
       payloadFingerprintForTest: payloadFingerprint,
       withProjectHistoryForTest: withProjectHistory,
+      restoreProjectHistoryVersionForTest,
       formatSyncHealthMessageForTest: formatSyncHealthMessage,
       setProjectsForTest: (projects, options) => setProjects(projects, Object.assign({ remote: false }, options || {})),
       getProjectsForTest: () => getProjects(),

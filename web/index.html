@@ -1124,9 +1124,23 @@
         </div>
       </div>
       <button id="projectActionOpenButton" type="button">打开设计</button>
+      <button id="projectActionHistoryButton" type="button">历史版本</button>
       <button id="projectActionRenameButton" type="button">重命名</button>
       <button id="projectActionDuplicateButton" type="button">创建副本</button>
       <button id="projectActionDeleteButton" class="danger" type="button">删除设计</button>
+    </div>
+  </section>
+
+  <section class="project-action-modal hidden" id="projectHistoryModal" aria-label="历史版本">
+    <div class="project-action-card project-history-card">
+      <button class="project-action-close" id="projectHistoryCloseButton" type="button" title="关闭">×</button>
+      <div class="project-action-head project-history-head">
+        <div>
+          <h2 id="projectHistoryTitle">历史版本</h2>
+          <p>预览不会覆盖当前设计，恢复前会自动保留当前版本。</p>
+        </div>
+      </div>
+      <div id="projectHistoryList" class="project-history-list"></div>
     </div>
   </section>
 
