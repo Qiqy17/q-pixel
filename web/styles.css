@@ -3288,6 +3288,42 @@ body[data-mode="beads"] .pixel-only {
     height: auto;
     min-height: 100vh;
     overflow: visible;
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .home-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .home-header-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .home-header-actions .text-button {
+    min-width: 0;
+    padding: 0 8px;
+    white-space: nowrap;
+    font-size: 12px;
+  }
+
+  .home-grid {
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .home-card-head {
+    padding: 16px 14px 12px;
+  }
+
+  .home-project-grid {
+    padding: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
 
   .workspace {
