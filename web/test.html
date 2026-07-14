@@ -622,6 +622,14 @@
         if (aiRequest.target !== "q-pixel-pattern" || aiRequest.palette !== "MARD-221") {
           throw new Error("AI request contract failed");
         }
+        const aiCanvas = document.createElement("canvas");
+        aiCanvas.width = 4;
+        aiCanvas.height = 4;
+        aiCanvas.getContext("2d").fillStyle = "#111111";
+        aiCanvas.getContext("2d").fillRect(0, 0, 4, 4);
+        if (!(await window.QPixelTest.applyAiImageDataUrlForTest(aiCanvas.toDataURL("image/png"), { width: 16, height: 16 }))) {
+          throw new Error("AI image import failed");
+        }
         const restoredHistoryProject = window.QPixelTest.restoreProjectHistoryVersionForTest(
           unchangedHistoryProject,
           unchangedHistoryProject.history[0].id,

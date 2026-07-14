@@ -7,6 +7,8 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+from qpixel_openai import OpenAIConfigError, OpenAIRequestError, generate_image
+
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path.home() / "Documents" / "Q像素"
@@ -55,6 +57,9 @@ class QPixelHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
+        if path == "/api/ai/generate":
+            self.generate_ai_image()
+            return
         project_id = get_project_id_from_path(path)
         if project_id:
             self.write_single_project_request(project_id)
@@ -78,6 +83,26 @@ class QPixelHandler(SimpleHTTPRequestHandler):
         tmp.write_text(json.dumps(payload[:200], ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, PROJECTS_FILE)
         self.send_json({"ok": True, "count": len(payload[:200])})
+
+    def generate_ai_image(self):
+        length = int(self.headers.get("Content-Length") or "0")
+        try:
+            request = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            self.send_json({"error": "请求格式无效"}, status=400)
+            return
+        try:
+            result = generate_image(request)
+        except ValueError as error:
+            self.send_json({"error": str(error)}, status=400)
+            return
+        except OpenAIConfigError as error:
+            self.send_json({"error": str(error)}, status=503)
+            return
+        except OpenAIRequestError as error:
+            self.send_json({"error": str(error)}, status=502)
+            return
+        self.send_json({"ok": True, **result})
 
     def write_single_project_request(self, project_id):
         length = int(self.headers.get("Content-Length") or "0")
@@ -110,9 +135,9 @@ class QPixelHandler(SimpleHTTPRequestHandler):
         except Exception:
             return []
 
-    def send_json(self, payload):
+    def send_json(self, payload, status=200):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()

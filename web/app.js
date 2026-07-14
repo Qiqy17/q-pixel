@@ -2655,10 +2655,7 @@
   function openAiGenerateModal() {
     if (els.aiGenerateModal) els.aiGenerateModal.classList.remove("hidden");
     if (els.aiGenerateStatus) {
-      const endpoint = localStorage.getItem("q-pixel-ai-endpoint-v1") || "";
-      els.aiGenerateStatus.textContent = endpoint
-        ? `已配置生成服务：${endpoint}`
-        : "未配置 AI 生成服务。可先保存提示词，配置服务后直接生成。";
+      els.aiGenerateStatus.textContent = "使用 OpenAI GPT Image 2 生成，密钥由本机服务安全保存。";
     }
   }
 
@@ -2684,27 +2681,57 @@
       if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "请先输入主题描述。";
       return;
     }
-    const endpoint = localStorage.getItem("q-pixel-ai-endpoint-v1") || "";
-    if (!endpoint) {
-      if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "当前未配置 AI 服务。请求格式已准备好，请在本机设置 q-pixel-ai-endpoint-v1 后重试。";
-      return;
-    }
     if (els.aiGenerateButton) els.aiGenerateButton.disabled = true;
     if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "正在生成，请稍候...";
     try {
-      const response = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request) });
-      if (!response.ok) throw new Error(`AI ${response.status}`);
-      const result = await response.json();
-      if (!result || !result.payload || !applyProjectPayload(result.payload, false)) throw new Error("返回内容不是有效 Q像素源文件");
+      const response = await fetch("/api/ai/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || `AI 服务 ${response.status}`);
+      if (!result || !result.imageDataUrl || !(await applyAiImageDataUrl(result.imageDataUrl, request))) throw new Error("返回内容不是有效图片");
       markUnsavedChanges();
       closeAiGenerateModal();
       showEditor();
-      setMessage("AI 像素图已生成，可继续校准和编辑。", false);
+      setMessage("GPT 像素图已生成，可继续校准、优化和编辑。", false);
     } catch (error) {
       if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = `生成失败：${error.message || "服务不可用"}`;
     } finally {
       if (els.aiGenerateButton) els.aiGenerateButton.disabled = false;
     }
+  }
+
+  function applyAiImageDataUrl(dataUrl, request) {
+    return new Promise((resolve) => {
+      if (!String(dataUrl || "").startsWith("data:image/")) {
+        resolve(false);
+        return;
+      }
+      const image = new Image();
+      image.onload = () => {
+        if (state.image && state.image.src && state.image.src.startsWith("blob:")) URL.revokeObjectURL(state.image.src);
+        state.image = image;
+        state.imageName = "GPT生成像素图";
+        state.importCalibration = null;
+        state.beads.width = request.width;
+        state.beads.height = request.height;
+        state.beads.pattern = null;
+        state.beads.layers = [];
+        state.beads.activeLayerId = "";
+        state.beads.pixelSignature = "";
+        state.beads.restorationFingerprint = "";
+        state.beads.sourceCompareEnabled = true;
+        state.beads.lockedColorCodes = [];
+        state.beads.lockedColorRoles = {};
+        state.buildProgress = {};
+        setMode("beads");
+        generateBeadsFromImage(false);
+        state.beads.sourceCompareEnabled = true;
+        renderImportSummary();
+        render();
+        resolve(true);
+      };
+      image.onerror = () => resolve(false);
+      image.src = dataUrl;
+    });
   }
 
   function renderUsage() {
@@ -12471,6 +12498,7 @@
       clearBuildProgressForTest: clearBuildProgress,
       getBuildProgressForTest: () => Object.assign({}, state.buildProgress),
       buildAiGenerationRequestForTest: buildAiGenerationRequest,
+      applyAiImageDataUrlForTest: applyAiImageDataUrl,
       setProjectStorageFailureForTest: (enabled) => {
         state.forceProjectStorageFailureForTest = Boolean(enabled);
         return state.forceProjectStorageFailureForTest;
