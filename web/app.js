@@ -2699,7 +2699,7 @@
     if (els.aiCandidateSummary) els.aiCandidateSummary.textContent = `已生成 ${candidates.length} 个，可选择后再导入`;
     els.aiCandidateGrid.innerHTML = candidates.map((candidate, index) => `
       <button class="ai-candidate-tile${index === aiCandidateState.selectedIndex ? " active" : ""}" type="button" data-ai-candidate-index="${index}">
-        <img src="${candidate.imageDataUrl}" alt="候选方案 ${index + 1}">
+        <span class="ai-candidate-views"><span><em>原图</em><img src="${candidate.sourceDataUrl || candidate.imageDataUrl}" alt="候选方案 ${index + 1} 原图"></span><span><em>像素预览</em><img src="${candidate.imageDataUrl}" alt="候选方案 ${index + 1} 像素预览"></span></span>
         <strong>方案 ${index + 1}${candidate.repaired ? " · 已修复" : ""}</strong>
       </button>`).join("");
     els.aiCandidateGrid.querySelectorAll("[data-ai-candidate-index]").forEach((button) => {
@@ -2920,7 +2920,11 @@
           const result = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(result.error || `AI 服务 ${response.status}`);
           if (!result || !result.imageDataUrl) throw new Error("返回内容不是有效图片");
-          aiCandidateState.candidates.push({ imageDataUrl: result.imageDataUrl, originalDataUrl: result.imageDataUrl, repaired: false });
+          const sourceDataUrl = result.imageDataUrl;
+          const candidateImage = await loadImageFromDataUrl(sourceDataUrl);
+          const pixelPattern = createPatternFromSource(candidateImage, request.width, request.height, "AI候选像素预览", { clean: false });
+          const basePreviewDataUrl = renderAiPatternDataUrl(pixelPattern);
+          aiCandidateState.candidates.push({ imageDataUrl: basePreviewDataUrl, originalDataUrl: sourceDataUrl, basePreviewDataUrl, sourceDataUrl, repaired: false });
           renderAiCandidates();
         } catch (error) {
           failed += 1;
@@ -12467,7 +12471,7 @@
     if (els.aiCandidateUndoButton) els.aiCandidateUndoButton.addEventListener("click", () => {
       const candidate = selectedAiCandidate();
       if (!candidate || !candidate.originalDataUrl) return;
-      candidate.imageDataUrl = candidate.originalDataUrl;
+      candidate.imageDataUrl = candidate.basePreviewDataUrl || candidate.originalDataUrl;
       candidate.repaired = false;
       candidate.selectedPalette = "";
       renderAiCandidates();

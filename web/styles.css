@@ -3325,6 +3325,25 @@ body[data-mode="beads"] #paletteGrid {
   background: #f1f3f7;
 }
 
+.ai-candidate-views {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.ai-candidate-views > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.ai-candidate-views em {
+  color: var(--muted);
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 800;
+}
+
 .ai-candidate-tile strong {
   overflow: hidden;
   font-size: 11px;
