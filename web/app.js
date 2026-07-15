@@ -488,7 +488,7 @@
       "beadHeightNumber", "beadLockRatio", "generateBeadsButton", "recalibrateImageButton", "usePixelButton",
       "showCodesToggle", "showGridToggle", "codeFontScaleRange", "codeFontScaleNumber",
       "importSummary", "importChoiceSummary",
-      "importWizardStep1", "importWizardStep2", "importWizardStep3", "importWizardColorSummary", "importWizardFinalSummary", "importWizardColorLimitInput", "importWizardCalibrationButton", "importWizardSkipCalibrationButton", "importWizardOptimizeButton", "importWizardKeepColorsButton", "importWizardApplyButton", "importWizardRestartButton", "importWizardOriginalCanvas", "importWizardPatternCanvas", "importWizardFinalOriginalCanvas", "importWizardFinalPatternCanvas", "importAiAssistButton", "importAiAssistStatus", "importAiAssistApplyRecommendationButton", "importAiAssistApplySubjectButton", "importAiAssistUndoButton",
+      "importWizardStep1", "importWizardStep2", "importWizardStep3", "importWizardColorSummary", "importWizardFinalSummary", "importWizardColorLimitInput", "importWizardCalibrationButton", "importWizardSkipCalibrationButton", "importWizardOptimizeButton", "importWizardKeepColorsButton", "importWizardApplyButton", "importWizardRestartButton", "importWizardOriginalCanvas", "importWizardPatternCanvas", "importWizardFinalOriginalCanvas", "importWizardFinalPatternCanvas", "importAiAssistButton", "importAiAssistStatus", "importAiAssistApplyRecommendationButton", "importAiAssistApplySubjectButton", "importAiAssistSymmetryButton", "importAiAssistUndoButton",
       "qualitySummary", "qualityCheckButton", "exportMaterialsButton", "buildModeToggle", "buildProgress", "clearBuildProgressButton",
       "paletteSelect", "paletteGrid", "cellTargetPaletteGrid", "selectionColorTargetPaletteGrid",
       "replaceFromSelect", "replaceToSelect", "replaceAllButton", "usageSummary",
@@ -3300,9 +3300,12 @@
         const locked = new Set(roleAnalysis.codes);
         const cleaned = cleanPixelArtPattern(analysisPattern, locked);
         const repaired = protectLockedCells(analysisPattern, cleaned, locked);
+        const symmetry = repairSymmetryGaps(repaired);
         importAiAssist.recommendation = recommendImportPrecision(state.importSession.image, analysisPattern);
         importAiAssist.analysisPattern = analysisPattern;
         importAiAssist.repairedPattern = repaired;
+        importAiAssist.symmetryPattern = symmetry.pattern;
+        importAiAssist.symmetryChanged = symmetry.changed;
         importWizard.pattern = repaired;
         state.beads.lockedColorCodes = roleAnalysis.codes;
         state.beads.lockedColorRoles = roleAnalysis.roles;
@@ -3314,6 +3317,7 @@
         }
         if (els.importAiAssistApplyRecommendationButton) els.importAiAssistApplyRecommendationButton.classList.remove("hidden");
         if (els.importAiAssistApplySubjectButton && subject.dataUrl && subject.confidence >= 0.72) els.importAiAssistApplySubjectButton.classList.remove("hidden");
+        if (els.importAiAssistSymmetryButton && symmetry.changed > 0) els.importAiAssistSymmetryButton.classList.remove("hidden");
         if (els.importAiAssistUndoButton) els.importAiAssistUndoButton.classList.remove("hidden");
         renderImportWizardStep();
       } catch (error) {
@@ -3333,6 +3337,8 @@
     if (els.importAiAssistUndoButton) els.importAiAssistUndoButton.classList.add("hidden");
     if (els.importAiAssistApplyRecommendationButton) els.importAiAssistApplyRecommendationButton.classList.add("hidden");
     if (els.importAiAssistApplySubjectButton) els.importAiAssistApplySubjectButton.classList.add("hidden");
+    if (els.importAiAssistSymmetryButton) els.importAiAssistSymmetryButton.classList.add("hidden");
+    if (els.importAiAssistSymmetryButton) els.importAiAssistSymmetryButton.classList.add("hidden");
     renderImportWizardStep();
   }
 
@@ -3341,6 +3347,36 @@
     importWizard.pattern = importAiAssist.analysisPattern;
     if (els.importAiAssistStatus) els.importAiAssistStatus.textContent = "已应用主体清理结果，可继续进入色号优化。";
     if (els.importAiAssistApplySubjectButton) els.importAiAssistApplySubjectButton.classList.add("hidden");
+    renderImportWizardStep();
+  }
+
+  function repairSymmetryGaps(pattern) {
+    if (!pattern || !Array.isArray(pattern.cells)) return { pattern, changed: 0 };
+    const cells = cloneCells(pattern.cells);
+    let changed = 0;
+    const center = Math.floor(pattern.width / 2);
+    for (let row = 0; row < pattern.height; row += 1) {
+      for (let col = 0; col < center; col += 1) {
+        const mirrorCol = pattern.width - 1 - col;
+        const left = cells[row][col];
+        const right = cells[row][mirrorCol];
+        if (left && !right) {
+          cells[row][mirrorCol] = left;
+          changed += 1;
+        } else if (right && !left) {
+          cells[row][col] = right;
+          changed += 1;
+        }
+      }
+    }
+    return { pattern: Object.assign({}, pattern, { cells }), changed };
+  }
+
+  function applyImportAiSymmetry() {
+    if (!importAiAssist || !importAiAssist.symmetryPattern || !importWizard) return;
+    importWizard.pattern = importAiAssist.symmetryPattern;
+    if (els.importAiAssistStatus) els.importAiAssistStatus.textContent = `已应用智能对称修复，补齐 ${importAiAssist.symmetryChanged || 0} 格。`;
+    if (els.importAiAssistSymmetryButton) els.importAiAssistSymmetryButton.classList.add("hidden");
     renderImportWizardStep();
   }
 
@@ -11775,6 +11811,7 @@
     if (els.importWizardApplyButton) els.importWizardApplyButton.addEventListener("click", applyWizardImport);
     if (els.importAiAssistButton) els.importAiAssistButton.addEventListener("click", runImportAiAssist);
     if (els.importAiAssistApplySubjectButton) els.importAiAssistApplySubjectButton.addEventListener("click", applyImportAiSubject);
+    if (els.importAiAssistSymmetryButton) els.importAiAssistSymmetryButton.addEventListener("click", applyImportAiSymmetry);
     if (els.importAiAssistUndoButton) els.importAiAssistUndoButton.addEventListener("click", undoImportAiAssist);
     if (els.importAiAssistApplyRecommendationButton) els.importAiAssistApplyRecommendationButton.addEventListener("click", applyImportAiRecommendation);
     if (els.importWizardRestartButton) els.importWizardRestartButton.addEventListener("click", () => {
