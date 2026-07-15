@@ -549,7 +549,7 @@
       "projectActionThumb", "projectActionTitle", "projectActionCreated", "projectActionUpdated",
       "projectActionOpenButton", "projectActionHistoryButton", "projectActionTemplateButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
       "projectHistoryModal", "projectHistoryCloseButton", "projectHistoryTitle", "projectHistoryList",
-      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiProviderSelect", "aiStyleSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiProviderBalances", "aiGenerateStatus", "aiJimengPending", "aiJimengPendingName", "aiJimengImportButton", "aiJimengIgnoreButton", "aiPromptCopyButton", "aiJimengWebButton", "aiGenerateButton", "jimengWatermarkModal", "jimengWatermarkCloseButton", "jimengWatermarkCancelButton", "jimengWatermarkConfirmButton", "jimengWatermarkCropEdge",
+      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiProviderSelect", "aiStyleSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiCompositionSelect", "aiPaletteModeSelect", "aiCandidateCountSelect", "aiCreativeBrief", "aiProviderBalances", "aiGenerateStatus", "aiCandidatePanel", "aiCandidateSummary", "aiCandidateGrid", "aiCandidateRepairButton", "aiCandidatePaletteButton", "aiCandidateApplyButton", "aiCandidateAnalysis", "aiJimengPending", "aiJimengPendingName", "aiJimengImportButton", "aiJimengIgnoreButton", "aiPromptCopyButton", "aiJimengWebButton", "aiGenerateButton", "jimengWatermarkModal", "jimengWatermarkCloseButton", "jimengWatermarkCancelButton", "jimengWatermarkConfirmButton", "jimengWatermarkCropEdge",
       "layerImportModal", "layerImportCloseButton", "layerImportImageButton", "layerImportProjectFileButton", "layerImportProjectList",
       "importChoiceModal", "importChoiceCancelButton", "importChoiceFileName",
       "importModeFidelityButton", "importModeBalancedButton", "importModeSimpleButton",
@@ -2666,6 +2666,7 @@
   function openAiGenerateModal() {
     if (els.aiGenerateModal) els.aiGenerateModal.classList.remove("hidden");
     refreshAiProviderStatus();
+    updateAiCreativeBrief();
     if (els.aiGenerateStatus) {
       els.aiGenerateStatus.textContent = "当前使用 Hugging Face 免费额度生成，Token 由本机服务安全保存。";
     }
@@ -2673,6 +2674,106 @@
 
   function closeAiGenerateModal() {
     if (els.aiGenerateModal) els.aiGenerateModal.classList.add("hidden");
+  }
+
+  let aiCandidateState = { request: null, candidates: [], selectedIndex: 0 };
+
+  function buildAiCreativeBrief() {
+    const prompt = (els.aiPromptInput && els.aiPromptInput.value || "").trim() || "未填写主题";
+    const composition = els.aiCompositionSelect ? els.aiCompositionSelect.value : "free";
+    const palette = els.aiPaletteModeSelect ? els.aiPaletteModeSelect.value : "source";
+    const compositionText = { free: "自由构图", symmetric: "左右对称，中心轴清晰", centered: "主体居中，四周留出均匀空间" }[composition] || "自由构图";
+    const paletteText = { source: "贴近主题自然配色", theme: "使用鲜明主题配色", easy: "减少近似色，优先易制作" }[palette] || "贴近主题自然配色";
+    return `主题：${prompt}；构图：${compositionText}；要求：清晰像素块、连续轮廓、保留眼睛和高光等关键细节；配色：${paletteText}。`;
+  }
+
+  function updateAiCreativeBrief() {
+    if (els.aiCreativeBrief) els.aiCreativeBrief.textContent = buildAiCreativeBrief();
+  }
+
+  function renderAiCandidates() {
+    if (!els.aiCandidatePanel || !els.aiCandidateGrid) return;
+    const candidates = aiCandidateState.candidates;
+    els.aiCandidatePanel.classList.toggle("hidden", !candidates.length);
+    if (!candidates.length) return;
+    if (els.aiCandidateSummary) els.aiCandidateSummary.textContent = `已生成 ${candidates.length} 个，可选择后再导入`;
+    els.aiCandidateGrid.innerHTML = candidates.map((candidate, index) => `
+      <button class="ai-candidate-tile${index === aiCandidateState.selectedIndex ? " active" : ""}" type="button" data-ai-candidate-index="${index}">
+        <img src="${candidate.imageDataUrl}" alt="候选方案 ${index + 1}">
+        <strong>方案 ${index + 1}${candidate.repaired ? " · 已修复" : ""}</strong>
+      </button>`).join("");
+    els.aiCandidateGrid.querySelectorAll("[data-ai-candidate-index]").forEach((button) => {
+      button.addEventListener("click", () => {
+        aiCandidateState.selectedIndex = Number(button.dataset.aiCandidateIndex || 0);
+        renderAiCandidates();
+      });
+    });
+  }
+
+  function selectedAiCandidate() {
+    return aiCandidateState.candidates[aiCandidateState.selectedIndex] || null;
+  }
+
+  async function analyzeSelectedAiCandidate() {
+    const candidate = selectedAiCandidate();
+    if (!candidate || !els.aiCandidateAnalysis) return;
+    els.aiCandidateAnalysis.classList.remove("hidden");
+    els.aiCandidateAnalysis.textContent = "正在检查轮廓、孤立格和高光...";
+    const image = await loadImageFromDataUrl(candidate.imageDataUrl);
+    const pattern = createPatternFromSource(image, aiCandidateState.request.width, aiCandidateState.request.height, "AI候选", { clean: false });
+    const roles = analyzeLockedColorRoles(pattern);
+    const locked = new Set(roles.codes);
+    const repaired = repairSymmetryGaps(protectLockedCells(pattern, cleanPixelArtPattern(pattern, locked), locked)).pattern;
+    const before = analyzePatternQuality(pattern);
+    const after = analyzePatternQuality(repaired);
+    const changed = countPatternDifferences(pattern, repaired);
+    candidate.analysis = { before, after, roles, changed };
+    candidate.repairedPattern = repaired;
+    candidate.imageDataUrl = renderAiPatternDataUrl(repaired);
+    candidate.repaired = changed > 0;
+    renderAiCandidates();
+    els.aiCandidateAnalysis.textContent = `结构修复预览：处理 ${changed} 格；孤立格 ${before.isolated} -> ${after.isolated}；低频色 ${before.rareColors} -> ${after.rareColors}；保护 ${roles.codes.length} 个轮廓/高光色。可撤销请重新生成候选。`;
+  }
+
+  function renderAiPatternDataUrl(pattern) {
+    const canvas = document.createElement("canvas");
+    const cell = Math.max(4, Math.floor(320 / Math.max(pattern.width, pattern.height)));
+    canvas.width = pattern.width * cell;
+    canvas.height = pattern.height * cell;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    drawPatternGrid(context, pattern, 0, 0, cell, { showCodes: false, showGrid: false, showCenterLines: false, pixelStyle: "solid-square" });
+    return canvas.toDataURL("image/png");
+  }
+
+  async function updateAiPaletteHint() {
+    const candidate = selectedAiCandidate();
+    if (!candidate || !els.aiCandidateAnalysis) return;
+    const image = await loadImageFromDataUrl(candidate.imageDataUrl);
+    const sourcePattern = createPatternFromSource(image, aiCandidateState.request.width, aiCandidateState.request.height, "AI候选", { clean: false });
+    const roles = analyzeLockedColorRoles(sourcePattern);
+    const locked = new Set(roles.codes);
+    const limit = aiCandidateState.request.colorLimit;
+    const variants = {
+      source: sourcePattern,
+      theme: reducePatternToColorLimit(sourcePattern, Math.min(limit + 4, beadPalette.length), locked),
+      easy: reducePatternToColorLimit(sourcePattern, limit, locked)
+    };
+    candidate.paletteVariants = variants;
+    els.aiCandidateAnalysis.classList.remove("hidden");
+    const labels = { source: "原图色", theme: "主题色", easy: "易制作" };
+    els.aiCandidateAnalysis.innerHTML = `配色方案已生成：${Object.entries(variants).map(([key, pattern]) => `<button type="button" class="ai-palette-choice${key === (els.aiPaletteModeSelect && els.aiPaletteModeSelect.value ? els.aiPaletteModeSelect.value : "source") ? " active" : ""}" data-ai-palette="${key}">${labels[key]} · ${countPatternColors(pattern)} 色</button>`).join(" ")}<br><span>点击方案可将该配色预览设为候选，确认导入后仍可继续调整。</span>`;
+    els.aiCandidateAnalysis.querySelectorAll("[data-ai-palette]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const selected = candidate.paletteVariants[button.dataset.aiPalette];
+        if (!selected) return;
+        candidate.selectedPalette = button.dataset.aiPalette;
+        candidate.imageDataUrl = renderAiPatternDataUrl(selected);
+        renderAiCandidates();
+        els.aiCandidateAnalysis.querySelectorAll("[data-ai-palette]").forEach((item) => item.classList.toggle("active", item === button));
+      });
+    });
   }
 
   function closeJimengWatermarkModal() {
@@ -2764,13 +2865,18 @@
   }
 
   function buildAiGenerationRequest() {
+    const creativeBrief = buildAiCreativeBrief();
     return {
-      prompt: (els.aiPromptInput && els.aiPromptInput.value || "").trim(),
+      prompt: `${(els.aiPromptInput && els.aiPromptInput.value || "").trim()}。${creativeBrief}`.trim(),
       provider: els.aiProviderSelect ? els.aiProviderSelect.value : "huggingface",
       style: els.aiStyleSelect ? els.aiStyleSelect.value : "pixel",
       width: clamp(els.aiWidthInput && els.aiWidthInput.value || 48, 16, 128),
       height: clamp(els.aiHeightInput && els.aiHeightInput.value || 48, 16, 128),
       colorLimit: clamp(els.aiColorLimitInput && els.aiColorLimitInput.value || 20, 2, 64),
+      composition: els.aiCompositionSelect ? els.aiCompositionSelect.value : "free",
+      paletteMode: els.aiPaletteModeSelect ? els.aiPaletteModeSelect.value : "source",
+      candidateCount: clamp(els.aiCandidateCountSelect && els.aiCandidateCountSelect.value || 1, 1, 3),
+      creativeBrief,
       target: "q-pixel-pattern",
       palette: "MARD-221"
     };
@@ -2799,16 +2905,24 @@
       return;
     }
     if (els.aiGenerateButton) els.aiGenerateButton.disabled = true;
-    if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "正在生成，请稍候...";
+    if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = `正在生成 ${request.candidateCount} 个候选方案，请稍候...`;
+    aiCandidateState = { request, candidates: [], selectedIndex: 0 };
+    renderAiCandidates();
     try {
-      const response = await fetch("/api/ai/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request) });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || `AI 服务 ${response.status}`);
-      if (!result || !result.imageDataUrl || !(await applyAiImageDataUrl(result.imageDataUrl, request))) throw new Error("返回内容不是有效图片");
-      markUnsavedChanges();
-      closeAiGenerateModal();
-      showEditor();
-      setMessage("GPT 像素图已生成，可继续校准、优化和编辑。", false);
+      for (let index = 0; index < request.candidateCount; index += 1) {
+        const candidateRequest = Object.assign({}, request, {
+          prompt: `${request.prompt} 这是第${index + 1}个候选方案，请保持主体一致并尝试不同的细节布局。`
+        });
+        const response = await fetch("/api/ai/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(candidateRequest) });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || `AI 服务 ${response.status}`);
+        if (result && result.imageDataUrl) {
+          aiCandidateState.candidates.push({ imageDataUrl: result.imageDataUrl, repaired: false });
+          renderAiCandidates();
+        }
+      }
+      if (!aiCandidateState.candidates.length) throw new Error("没有返回有效候选图片");
+      if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "候选方案已生成，请先比较和检查，再导入当前图纸。";
     } catch (error) {
       if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = `生成失败：${error.message || "服务不可用"}`;
     } finally {
@@ -12338,6 +12452,27 @@
       if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = prompt ? "提示词已复制。" : "请先输入主题描述。";
     });
     if (els.aiGenerateButton) els.aiGenerateButton.addEventListener("click", startAiGeneration);
+    [els.aiPromptInput, els.aiStyleSelect, els.aiWidthInput, els.aiHeightInput, els.aiColorLimitInput, els.aiCompositionSelect, els.aiPaletteModeSelect, els.aiCandidateCountSelect].forEach((element) => {
+      if (element) element.addEventListener("input", updateAiCreativeBrief);
+      if (element && element.tagName === "SELECT") element.addEventListener("change", updateAiCreativeBrief);
+    });
+    if (els.aiCandidateRepairButton) els.aiCandidateRepairButton.addEventListener("click", analyzeSelectedAiCandidate);
+    if (els.aiCandidatePaletteButton) els.aiCandidatePaletteButton.addEventListener("click", updateAiPaletteHint);
+    if (els.aiCandidateApplyButton) els.aiCandidateApplyButton.addEventListener("click", async () => {
+      const candidate = selectedAiCandidate();
+      if (!candidate || !aiCandidateState.request) return;
+      els.aiCandidateApplyButton.disabled = true;
+      const imported = await applyAiImageDataUrl(candidate.imageDataUrl, aiCandidateState.request);
+      els.aiCandidateApplyButton.disabled = false;
+      if (!imported) {
+        if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "候选图片无法读取，请重新生成。";
+        return;
+      }
+      markUnsavedChanges();
+      closeAiGenerateModal();
+      showEditor();
+      setMessage("已导入选中的 AI 方案，可继续结构修复、校准和配色优化。", false);
+    });
     if (els.aiJimengWebButton) els.aiJimengWebButton.addEventListener("click", startJimengWebCollaboration);
     if (els.aiJimengImportButton) els.aiJimengImportButton.addEventListener("click", openJimengWatermarkModal);
     if (els.jimengWatermarkConfirmButton) els.jimengWatermarkConfirmButton.addEventListener("click", importPendingJimengDownload);

@@ -1119,9 +1119,23 @@
         <label>宽度<input id="aiWidthInput" type="number" min="16" max="128" value="48"></label>
         <label>高度<input id="aiHeightInput" type="number" min="16" max="128" value="48"></label>
         <label>最多色号<input id="aiColorLimitInput" type="number" min="2" max="64" value="20"></label>
+        <label>构图<select id="aiCompositionSelect"><option value="free">自由构图</option><option value="symmetric">左右对称</option><option value="centered">主体居中</option></select></label>
+        <label>配色方向<select id="aiPaletteModeSelect"><option value="source">贴近原图</option><option value="theme">主题配色</option><option value="easy">易制作</option></select></label>
+        <label>候选方案<select id="aiCandidateCountSelect"><option value="1">1 个</option><option value="3">3 个对比</option></select></label>
       </div>
+      <div class="ai-creative-brief" id="aiCreativeBrief">创作要求摘要将在这里生成。</div>
       <div id="aiProviderBalances" class="ai-provider-balances" aria-label="接口额度状态">正在读取接口额度状态...</div>
       <div id="aiGenerateStatus" class="ai-status">当前使用 Hugging Face 免费额度生成，Token 由本机服务安全保存。</div>
+      <div id="aiCandidatePanel" class="ai-candidate-panel hidden">
+        <div class="ai-candidate-head"><strong>候选方案</strong><span id="aiCandidateSummary"></span></div>
+        <div id="aiCandidateGrid" class="ai-candidate-grid"></div>
+        <div class="ai-candidate-tools">
+          <button class="text-button secondary" id="aiCandidateRepairButton" type="button">结构修复预览</button>
+          <button class="text-button secondary" id="aiCandidatePaletteButton" type="button">生成配色方案</button>
+          <button class="text-button" id="aiCandidateApplyButton" type="button">导入选中方案</button>
+        </div>
+        <div id="aiCandidateAnalysis" class="ai-status hidden"></div>
+      </div>
       <div id="aiJimengPending" class="ai-pending-download hidden">
         <span id="aiJimengPendingName"></span>
         <div class="split-actions">
