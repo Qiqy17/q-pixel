@@ -754,7 +754,7 @@
     els.showGridToggle.checked = params.showGrid;
     if (els.codeFontScaleRange) els.codeFontScaleRange.value = String(state.beads.codeFontScale);
     if (els.codeFontScaleNumber) els.codeFontScaleNumber.value = String(state.beads.codeFontScale);
-    state.beads.sourceCompareOpacity = clamp(state.beads.sourceCompareOpacity || 38, 10, 85);
+    state.beads.sourceCompareOpacity = clamp(state.beads.sourceCompareOpacity == null ? 38 : state.beads.sourceCompareOpacity, 0, 85);
     if (els.sourceCompareToggle) els.sourceCompareToggle.checked = Boolean(state.beads.sourceCompareEnabled);
     if (els.sourceCompareOpacityRange) els.sourceCompareOpacityRange.value = String(state.beads.sourceCompareOpacity);
     if (els.sourceCompareOpacityLabel) els.sourceCompareOpacityLabel.textContent = `${state.beads.sourceCompareOpacity}%`;
@@ -1916,7 +1916,7 @@
 
   function drawSourceComparisonLayer(ctx, pattern, x, y, cellSize) {
     if (!state.beads.sourceCompareEnabled || !state.image || !pattern) return;
-    const opacity = clamp(state.beads.sourceCompareOpacity || 38, 10, 85) / 100;
+    const opacity = clamp(state.beads.sourceCompareOpacity == null ? 38 : state.beads.sourceCompareOpacity, 0, 85) / 100;
     const image = state.image;
     const imageWidth = image.naturalWidth || image.width;
     const imageHeight = image.naturalHeight || image.height;
@@ -10663,7 +10663,7 @@
       : "fidelity";
     state.beads.sourceCompareEnabled = Boolean(payload.editorSettings && payload.editorSettings.sourceCompareEnabled);
     state.beads.sourceCompareOpacity = payload.editorSettings && payload.editorSettings.sourceCompareOpacity != null
-      ? clamp(payload.editorSettings.sourceCompareOpacity, 10, 85)
+      ? clamp(payload.editorSettings.sourceCompareOpacity, 0, 85)
       : 38;
     state.buildProgress = payload.buildProgress && typeof payload.buildProgress === "object" ? Object.assign({}, payload.buildProgress) : {};
     state.beads.buildMode = false;
@@ -12552,7 +12552,7 @@
     }
     if (els.sourceCompareOpacityRange) {
       els.sourceCompareOpacityRange.addEventListener("input", () => {
-        state.beads.sourceCompareOpacity = clamp(els.sourceCompareOpacityRange.value, 10, 85);
+        state.beads.sourceCompareOpacity = clamp(els.sourceCompareOpacityRange.value, 0, 85);
         syncBeadControls();
         render();
       });
@@ -13314,7 +13314,7 @@
       ].filter(Boolean).map((button) => button.textContent.trim()),
       setSourceCompare: (enabled, opacity) => {
         state.beads.sourceCompareEnabled = Boolean(enabled);
-        if (opacity != null) state.beads.sourceCompareOpacity = clamp(opacity, 10, 85);
+        if (opacity != null) state.beads.sourceCompareOpacity = clamp(opacity, 0, 85);
         syncBeadControls();
         return {
           enabled: state.beads.sourceCompareEnabled,
