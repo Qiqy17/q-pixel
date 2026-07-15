@@ -5,6 +5,7 @@ import shutil
 from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Lock
 from urllib.parse import unquote, urlparse
 
 from qpixel_openai import OpenAIConfigError, OpenAIRequestError, find_latest_download_image, generate_image, get_provider_status
@@ -17,6 +18,7 @@ DATA_DIR = Path.home() / "Documents" / "Q像素"
 PROJECTS_FILE = DATA_DIR / "qpixel-projects.json"
 SETTINGS_FILE = DATA_DIR / "qpixel-settings.json"
 BACKUP_DIR = DATA_DIR / "backups"
+WRITE_LOCK = Lock()
 PROJECT_BACKUP_LIMIT = 100
 SETTINGS_BACKUP_LIMIT = 30
 
@@ -91,12 +93,13 @@ class QPixelHandler(SimpleHTTPRequestHandler):
         if not isinstance(payload, list):
             self.send_error(400, "Expected project list")
             return
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        backup_projects_file()
-        payload = merge_projects(self.read_projects(), payload)
-        tmp = PROJECTS_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(payload[:200], ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, PROJECTS_FILE)
+        with WRITE_LOCK:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            backup_projects_file()
+            payload = merge_projects(self.read_projects(), payload)
+            tmp = PROJECTS_FILE.with_suffix(".tmp")
+            tmp.write_text(json.dumps(payload[:200], ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, PROJECTS_FILE)
         self.send_json({"ok": True, "count": len(payload[:200])})
 
     def generate_ai_image(self):
@@ -133,12 +136,13 @@ class QPixelHandler(SimpleHTTPRequestHandler):
         if str(payload.get("id")) != project_id:
             self.send_error(400, "Project id mismatch")
             return
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        backup_projects_file()
-        projects = merge_projects(self.read_projects(), [payload])
-        tmp = PROJECTS_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(projects[:200], ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, PROJECTS_FILE)
+        with WRITE_LOCK:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            backup_projects_file()
+            projects = merge_projects(self.read_projects(), [payload])
+            tmp = PROJECTS_FILE.with_suffix(".tmp")
+            tmp.write_text(json.dumps(projects[:200], ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, PROJECTS_FILE)
         self.send_json({"ok": True, "id": project_id, "count": len(projects[:200])})
 
     def write_settings_request(self):
@@ -152,12 +156,13 @@ class QPixelHandler(SimpleHTTPRequestHandler):
         if not isinstance(payload, dict):
             self.send_error(400, "Expected settings object")
             return
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        backup_settings_file()
-        merged = merge_settings(self.read_settings(), payload)
-        tmp = SETTINGS_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(merged, ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, SETTINGS_FILE)
+        with WRITE_LOCK:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            backup_settings_file()
+            merged = merge_settings(self.read_settings(), payload)
+            tmp = SETTINGS_FILE.with_suffix(".tmp")
+            tmp.write_text(json.dumps(merged, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, SETTINGS_FILE)
         self.send_json({"ok": True, "updatedAt": merged.get("updatedAt")})
 
     def read_projects(self):
