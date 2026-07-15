@@ -1073,26 +1073,27 @@
       <button class="project-action-close" id="importChoiceCancelButton" type="button" title="关闭">×</button>
       <div class="project-action-head">
         <div>
-          <h2>导入图片</h2>
+          <h2>导入优化向导</h2>
           <p id="importChoiceFileName">选择导入方式</p>
         </div>
       </div>
-      <div class="import-mode-tabs" aria-label="导入模式">
-        <button id="importModeFidelityButton" class="active" type="button" data-import-mode="fidelity">高保真</button>
-        <button id="importModeBalancedButton" type="button" data-import-mode="balanced">均衡</button>
-        <button id="importModeSimpleButton" type="button" data-import-mode="simple">易制作</button>
+      <div class="wizard-steps" aria-label="导入步骤"><span data-wizard-step="1">1 识别</span><span data-wizard-step="2">2 精度</span><span data-wizard-step="3">3 色号</span><span data-wizard-step="4">4 确认</span></div>
+      <div id="importWizardStep1" class="import-wizard-step">
+        <div class="wizard-preview"><div><span>原图</span><canvas id="importWizardOriginalCanvas" width="320" height="220"></canvas></div><div><span>当前图纸</span><canvas id="importWizardPatternCanvas" width="320" height="220"></canvas></div></div>
+        <div class="import-mode-tabs" aria-label="导入模式">
+          <button id="importModeFidelityButton" class="active" type="button" data-import-mode="fidelity">高保真</button>
+          <button id="importModeBalancedButton" type="button" data-import-mode="balanced">均衡</button>
+          <button id="importModeSimpleButton" type="button" data-import-mode="simple">易制作</button>
+        </div>
+        <div class="import-summary import-choice-summary" id="importChoiceSummary">高保真：尽量保留原图色块和高光；均衡：兼顾清晰度与制作难度；易制作：减少杂色。</div>
+        <div class="layer-import-options">
+          <button id="importCalibrateButton" class="recommended-choice" type="button"><strong>进入像素精度调整</strong><span>调整网格列数、单元格大小和网格位置</span></button>
+          <button id="importDirectButton" type="button"><strong>使用自动识别结果</strong><span>跳过校准，直接进入色号优化</span></button>
+        </div>
       </div>
-      <div class="import-summary import-choice-summary" id="importChoiceSummary">高保真：尽量保留原图色块和高光；均衡：兼顾清晰度与制作难度；易制作：减少杂色。</div>
-      <div class="layer-import-options">
-        <button id="importCalibrateButton" class="recommended-choice" type="button">
-          <strong>像素校准后导入</strong>
-          <span>适合已有格子、截图或需要精确对齐的图片</span>
-        </button>
-        <button id="importDirectButton" type="button">
-          <strong>直接导入</strong>
-          <span>适合普通照片或不需要网格校准的图片</span>
-        </button>
-      </div>
+      <div id="importWizardStep2" class="import-wizard-step hidden"><div class="import-summary">先用自动识别结果作为起点，也可以打开像素校准精确对齐图片网格。</div><button id="importWizardCalibrationButton" class="recommended-choice" type="button"><strong>打开像素校准</strong><span>完成后返回向导继续优化</span></button><button id="importWizardSkipCalibrationButton" type="button"><strong>跳过校准</strong><span>使用当前自动精度</span></button></div>
+      <div id="importWizardStep3" class="import-wizard-step hidden"><div class="import-summary" id="importWizardColorSummary">等待生成临时图纸。</div><label class="wizard-limit-field">最多色号<input id="importWizardColorLimitInput" type="number" min="2" max="221" value="20" inputmode="numeric"></label><div class="layer-import-options"><button id="importWizardOptimizeButton" class="recommended-choice" type="button"><strong>识别并优化色号</strong><span>自动保护轮廓和高光，减少杂色</span></button><button id="importWizardKeepColorsButton" type="button"><strong>保留当前颜色</strong><span>不做额外色号合并</span></button></div></div>
+      <div id="importWizardStep4" class="import-wizard-step hidden"><div class="wizard-preview"><div><span>原图</span><canvas id="importWizardFinalOriginalCanvas" width="320" height="220"></canvas></div><div><span>最终图纸</span><canvas id="importWizardFinalPatternCanvas" width="320" height="220"></canvas></div></div><div class="import-summary" id="importWizardFinalSummary">最终图纸预览和统计将在这里显示。</div><div class="layer-import-options"><button id="importWizardApplyButton" class="recommended-choice" type="button"><strong>应用到当前图纸</strong><span>确认后才会替换当前画布</span></button><button id="importWizardRestartButton" type="button"><strong>重新调整</strong><span>返回前面步骤继续修改</span></button></div></div>
     </div>
   </section>
 

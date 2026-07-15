@@ -415,6 +415,7 @@
 
   let recalibrationSession = false;
   let previousCalibrationBeforeRecalibration = null;
+  let importWizard = null;
 
   const storageKey = "q-pixel-local-projects-v1";
   const projectPayloadStoragePrefix = "q-pixel-project-payload-v1:";
@@ -486,6 +487,7 @@
       "beadHeightNumber", "beadLockRatio", "generateBeadsButton", "recalibrateImageButton", "usePixelButton",
       "showCodesToggle", "showGridToggle", "codeFontScaleRange", "codeFontScaleNumber",
       "importSummary", "importChoiceSummary",
+      "importWizardStep1", "importWizardStep2", "importWizardStep3", "importWizardStep4", "importWizardColorSummary", "importWizardFinalSummary", "importWizardColorLimitInput", "importWizardCalibrationButton", "importWizardSkipCalibrationButton", "importWizardOptimizeButton", "importWizardKeepColorsButton", "importWizardApplyButton", "importWizardRestartButton", "importWizardOriginalCanvas", "importWizardPatternCanvas", "importWizardFinalOriginalCanvas", "importWizardFinalPatternCanvas",
       "qualitySummary", "qualityCheckButton", "exportMaterialsButton", "buildModeToggle", "buildProgress", "clearBuildProgressButton",
       "paletteSelect", "paletteGrid", "cellTargetPaletteGrid", "selectionColorTargetPaletteGrid",
       "replaceFromSelect", "replaceToSelect", "replaceAllButton", "usageSummary",
@@ -2304,6 +2306,10 @@
         simple: "易制作：减少色号和局部变化，适合快速制作。"
       }[getImportMode()];
     }
+    if (importWizard && state.importSession) {
+      buildImportWizardPattern();
+      renderImportWizardStep();
+    }
   }
 
   function syncImportModeControls() {
@@ -3156,6 +3162,177 @@
     if (els.calibrationModal) els.calibrationModal.classList.add("hidden");
   }
 
+  function buildImportWizardPattern() {
+    if (!importWizard || !state.importSession) return null;
+    const session = state.importSession;
+    const sourceWidth = session.image.naturalWidth || session.image.width;
+    const sourceHeight = session.image.naturalHeight || session.image.height;
+    const rawPattern = state.importCalibration && state.importCalibration.enabled
+      ? createPatternFromSourceWithCalibration(session.image, state.importCalibration, session.name, { clean: false })
+      : createPatternFromSource(session.image, state.beads.width || 48, state.beads.height || 48, session.name, { clean: false });
+    const pattern = applyImportModeToPattern(rawPattern, getImportMode());
+    importWizard.rawPattern = rawPattern;
+    importWizard.pattern = pattern;
+    importWizard.sourceWidth = sourceWidth;
+    importWizard.sourceHeight = sourceHeight;
+    return pattern;
+  }
+
+  function drawWizardPreviewCanvas(canvas, image, pattern) {
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#fbf7f0";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (image) {
+      const iw = image.naturalWidth || image.width;
+      const ih = image.naturalHeight || image.height;
+      const scale = Math.min(canvas.width / iw, canvas.height / ih);
+      const width = iw * scale;
+      const height = ih * scale;
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(image, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+    }
+    if (pattern) {
+      const cell = Math.max(1, Math.min((canvas.width - 12) / pattern.width, (canvas.height - 12) / pattern.height));
+      const x = (canvas.width - pattern.width * cell) / 2;
+      const y = (canvas.height - pattern.height * cell) / 2;
+      drawPatternGrid(ctx, pattern, x, y, cell, { showCodes: false, showGrid: true, showCenterLines: false, pixelStyle: "solid-square" });
+    }
+  }
+
+  function renderImportWizardStep() {
+    if (!importWizard) return;
+    const step = importWizard.step;
+    [1, 2, 3, 4].forEach((number) => {
+      const panel = els[`importWizardStep${number}`];
+      if (panel) panel.classList.toggle("hidden", step !== number);
+      const indicator = document.querySelector(`[data-wizard-step="${number}"]`);
+      if (indicator) indicator.classList.toggle("active", step === number);
+    });
+    if (step === 3 && els.importWizardColorSummary) {
+      const pattern = importWizard.pattern || buildImportWizardPattern();
+      const colors = pattern ? countPatternColors(pattern) : 0;
+      els.importWizardColorSummary.textContent = pattern
+        ? `当前图纸 ${pattern.width} x ${pattern.height} 格，${colors} 种色号。轮廓和高光会优先保护。`
+        : "等待生成临时图纸。";
+    }
+    const sourceImage = state.importSession && state.importSession.image;
+    const currentPattern = importWizard.pattern || (step === 1 ? buildImportWizardPattern() : null);
+    drawWizardPreviewCanvas(els.importWizardOriginalCanvas, sourceImage, null);
+    drawWizardPreviewCanvas(els.importWizardPatternCanvas, null, currentPattern);
+    drawWizardPreviewCanvas(els.importWizardFinalOriginalCanvas, sourceImage, null);
+    drawWizardPreviewCanvas(els.importWizardFinalPatternCanvas, null, importWizard.pattern);
+    if (step === 4 && els.importWizardFinalSummary) {
+      const pattern = importWizard.pattern;
+      const raw = importWizard.rawPattern;
+      const colors = pattern ? countPatternColors(pattern) : 0;
+      const rawColors = raw ? countPatternColors(raw) : colors;
+      const changed = pattern && raw ? countPatternDifferences(raw, pattern) : 0;
+      els.importWizardFinalSummary.textContent = pattern
+        ? `最终图纸 ${pattern.width} x ${pattern.height} 格 · 色号 ${colors} 种（原始 ${rawColors} 种）· 变化 ${changed} 格 · 可返回调整，确认后才应用。`
+        : "最终图纸预览和统计将在这里显示。";
+    }
+  }
+
+  function countPatternDifferences(left, right) {
+    if (!left || !right) return 0;
+    let changed = 0;
+    const height = Math.max(left.height || 0, right.height || 0);
+    const width = Math.max(left.width || 0, right.width || 0);
+    for (let row = 0; row < height; row += 1) {
+      for (let col = 0; col < width; col += 1) {
+        if ((left.cells[row] && left.cells[row][col]) !== (right.cells[row] && right.cells[row][col])) changed += 1;
+      }
+    }
+    return changed;
+  }
+
+  function startImportWizard() {
+    importWizard = {
+      step: 1,
+      rawPattern: null,
+      pattern: null,
+      previousLockedColorCodes: Array.isArray(state.beads.lockedColorCodes) ? state.beads.lockedColorCodes.slice() : [],
+      previousLockedColorRoles: Object.assign({}, state.beads.lockedColorRoles || {})
+    };
+    state.importCalibration = null;
+    setImportMode(getImportMode());
+    renderImportWizardStep();
+  }
+
+  function wizardOpenCalibration() {
+    if (!state.importSession) return;
+    importWizard.step = 2;
+    const width = state.importSession.image.naturalWidth || state.importSession.image.width;
+    const height = state.importSession.image.naturalHeight || state.importSession.image.height;
+    state.importCalibration = makeDefaultCalibration(width, height, estimatePixelArtGrid(state.importSession.image));
+    renderImportWizardStep();
+    if (els.importChoiceModal) els.importChoiceModal.classList.add("hidden");
+    if (els.calibrationModal) els.calibrationModal.classList.remove("hidden");
+    syncCalibrationInputs();
+    renderCalibrationCanvas();
+  }
+
+  function wizardSkipCalibration() {
+    state.importCalibration = null;
+    buildImportWizardPattern();
+    importWizard.step = 3;
+    renderImportWizardStep();
+  }
+
+  function wizardUseDirect() {
+    wizardSkipCalibration();
+  }
+
+  function wizardOptimizeColors() {
+    const pattern = importWizard && (importWizard.pattern || buildImportWizardPattern());
+    if (!pattern) return;
+    const analysis = analyzeLockedColorRoles(pattern);
+    const locked = new Set(analysis.codes);
+    state.beads.lockedColorCodes = analysis.codes;
+    state.beads.lockedColorRoles = analysis.roles;
+    const limit = clamp(els.importWizardColorLimitInput && els.importWizardColorLimitInput.value, 2, beadPalette.length);
+    importWizard.pattern = reducePatternToColorLimit(pattern, limit, locked);
+    importWizard.step = 4;
+    renderImportWizardStep();
+  }
+
+  function wizardKeepColors() {
+    if (!importWizard || !importWizard.pattern) buildImportWizardPattern();
+    importWizard.step = 4;
+    renderImportWizardStep();
+  }
+
+  function applyWizardImport() {
+    const session = state.importSession;
+    const pattern = importWizard && importWizard.pattern;
+    if (!session || !pattern) return;
+    if (state.image && state.image !== session.image && state.image.src && state.image.src.startsWith("blob:")) URL.revokeObjectURL(state.image.src);
+    state.image = session.image;
+    state.imageName = session.name;
+    state.beads.width = pattern.width;
+    state.beads.height = pattern.height;
+    state.beads.pattern = pattern;
+    state.beads.layers = [];
+    state.beads.activeLayerId = "";
+    state.beads.sourceLabel = session.name;
+    state.beads.pixelSignature = "";
+    state.beads.restorationFingerprint = "";
+    state.beads.sourceCompareEnabled = true;
+    ensureLayers();
+    clearHistory();
+    if (els.imageStatus) els.imageStatus.textContent = session.name;
+    setMode("beads");
+    setMessage(`已应用${getImportModeLabel()}导入结果：${pattern.width} x ${pattern.height} 图纸。`, false);
+    renderImportSummary();
+    markUnsavedChanges();
+    state.importSession = null;
+    importWizard = null;
+    closeImportChoiceModal();
+    closeCalibrationModal();
+  }
+
   function cancelImportSession() {
     if (state.importSession && state.importSession.url) URL.revokeObjectURL(state.importSession.url);
     if (recalibrationSession) {
@@ -3166,14 +3343,22 @@
       state.importCalibration = null;
     }
     state.importSession = null;
+    if (importWizard) {
+      state.beads.lockedColorCodes = importWizard.previousLockedColorCodes || [];
+      state.beads.lockedColorRoles = importWizard.previousLockedColorRoles || {};
+      renderLockedColorSummary();
+    }
+    importWizard = null;
     closeImportChoiceModal();
     closeCalibrationModal();
   }
 
   function openImportChoiceModal() {
     if (!state.importSession) return;
+    if (!importWizard) startImportWizard();
     if (els.importChoiceFileName) els.importChoiceFileName.textContent = state.importSession.name;
     if (els.importChoiceModal) els.importChoiceModal.classList.remove("hidden");
+    renderImportWizardStep();
   }
 
   function importImageElementAsLayer(image, name) {
@@ -3244,7 +3429,9 @@
     closeImportChoiceModal();
     const width = session.image.naturalWidth || session.image.width;
     const height = session.image.naturalHeight || session.image.height;
-    state.importCalibration = makeDefaultCalibration(width, height, estimatePixelArtGrid(session.image));
+    if (!state.importCalibration || !state.importCalibration.enabled) {
+      state.importCalibration = makeDefaultCalibration(width, height, estimatePixelArtGrid(session.image));
+    }
     syncCalibrationInputs();
     if (els.calibrationModal) els.calibrationModal.classList.remove("hidden");
     renderCalibrationCanvas();
@@ -3390,6 +3577,15 @@
     const session = state.importSession;
     if (!session || !state.importCalibration) return;
     const rawPattern = createPatternFromSourceWithCalibration(session.image, state.importCalibration, session.name, { clean: false });
+    if (importWizard) {
+      importWizard.rawPattern = rawPattern;
+      importWizard.pattern = applyImportModeToPattern(rawPattern, getImportMode());
+      closeCalibrationModal();
+      importWizard.step = 3;
+      if (els.importChoiceModal) els.importChoiceModal.classList.remove("hidden");
+      renderImportWizardStep();
+      return;
+    }
     const pattern = session.mode === "layer" ? cleanPixelArtPattern(rawPattern) : applyImportModeToPattern(rawPattern, getImportMode());
     closeCalibrationModal();
     closeImportChoiceModal();
@@ -11382,12 +11578,26 @@
     ].forEach(([id, mode]) => {
       if (els[id]) els[id].addEventListener("click", () => setImportMode(mode));
     });
-    if (els.importDirectButton) els.importDirectButton.addEventListener("click", applyImportedImageDirectly);
-    if (els.importCalibrateButton) els.importCalibrateButton.addEventListener("click", openCalibrationModal);
+    if (els.importDirectButton) els.importDirectButton.addEventListener("click", wizardUseDirect);
+    if (els.importCalibrateButton) els.importCalibrateButton.addEventListener("click", wizardOpenCalibration);
+    if (els.importWizardCalibrationButton) els.importWizardCalibrationButton.addEventListener("click", openCalibrationModal);
+    if (els.importWizardSkipCalibrationButton) els.importWizardSkipCalibrationButton.addEventListener("click", wizardSkipCalibration);
+    if (els.importWizardOptimizeButton) els.importWizardOptimizeButton.addEventListener("click", wizardOptimizeColors);
+    if (els.importWizardKeepColorsButton) els.importWizardKeepColorsButton.addEventListener("click", wizardKeepColors);
+    if (els.importWizardApplyButton) els.importWizardApplyButton.addEventListener("click", applyWizardImport);
+    if (els.importWizardRestartButton) els.importWizardRestartButton.addEventListener("click", () => {
+      if (!importWizard) return;
+      importWizard.step = 1;
+      renderImportWizardStep();
+    });
     if (els.calibrationBackButton) {
       els.calibrationBackButton.addEventListener("click", () => {
         closeCalibrationModal();
-        if (recalibrationSession) {
+        if (importWizard) {
+          importWizard.step = 2;
+          if (els.importChoiceModal) els.importChoiceModal.classList.remove("hidden");
+          renderImportWizardStep();
+        } else if (recalibrationSession) {
           cancelImportSession();
         } else {
           openImportChoiceModal();

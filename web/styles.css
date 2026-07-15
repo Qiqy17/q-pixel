@@ -2885,6 +2885,81 @@ body[data-mode="beads"] #paletteGrid {
   width: min(520px, calc(100vw - 34px));
 }
 
+.wizard-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 4px 0 16px;
+}
+
+.wizard-steps span {
+  padding: 8px 4px;
+  border-radius: 7px;
+  background: #f1f4f8;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  text-align: center;
+}
+
+.wizard-steps span.active {
+  background: #172033;
+  color: #fff;
+}
+
+.import-wizard-step {
+  display: grid;
+  gap: 12px;
+}
+
+.wizard-preview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.wizard-preview > div {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.wizard-preview span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.wizard-preview canvas {
+  display: block;
+  width: 100%;
+  height: 150px;
+  border: 1px solid var(--panel-line);
+  border-radius: 9px;
+  background: #fff;
+  image-rendering: pixelated;
+}
+
+.wizard-limit-field {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.wizard-limit-field input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--panel-line);
+  border-radius: 9px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+}
+
 .layer-import-options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
