@@ -1080,6 +1080,10 @@
       <div class="wizard-steps" aria-label="导入步骤"><span data-wizard-step="1">1 识别</span><span data-wizard-step="2">2 精度</span><span data-wizard-step="3">3 色号</span><span data-wizard-step="4">4 确认</span></div>
       <div id="importWizardStep1" class="import-wizard-step">
         <div class="wizard-preview"><div><span>原图</span><canvas id="importWizardOriginalCanvas" width="320" height="220"></canvas></div><div><span>当前图纸</span><canvas id="importWizardPatternCanvas" width="320" height="220"></canvas></div></div>
+        <button id="importAiAssistButton" class="recommended-choice wizard-ai-button" type="button"><strong>AI还原助手</strong><span>点击后分析主体、推荐像素精度并修复高置信度断线</span></button>
+        <div id="importAiAssistStatus" class="import-summary hidden">AI还原助手尚未运行。</div>
+        <button id="importAiAssistApplyRecommendationButton" class="text-button secondary hidden" type="button">应用推荐精度</button>
+        <button id="importAiAssistUndoButton" class="text-button secondary hidden" type="button">放弃 AI 还原结果</button>
         <div class="import-mode-tabs" aria-label="导入模式">
           <button id="importModeFidelityButton" class="active" type="button" data-import-mode="fidelity">高保真</button>
           <button id="importModeBalancedButton" type="button" data-import-mode="balanced">均衡</button>

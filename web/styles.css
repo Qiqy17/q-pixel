@@ -2960,6 +2960,16 @@ body[data-mode="beads"] #paletteGrid {
   font: inherit;
 }
 
+.wizard-ai-button {
+  border-color: rgba(63, 131, 248, .42) !important;
+  background: #f4f7ff !important;
+}
+
+.wizard-ai-button strong::before {
+  content: "✦ ";
+  color: #477bf0;
+}
+
 .layer-import-options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

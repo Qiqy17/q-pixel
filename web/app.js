@@ -416,6 +416,7 @@
   let recalibrationSession = false;
   let previousCalibrationBeforeRecalibration = null;
   let importWizard = null;
+  let importAiAssist = null;
 
   const storageKey = "q-pixel-local-projects-v1";
   const projectPayloadStoragePrefix = "q-pixel-project-payload-v1:";
@@ -487,7 +488,7 @@
       "beadHeightNumber", "beadLockRatio", "generateBeadsButton", "recalibrateImageButton", "usePixelButton",
       "showCodesToggle", "showGridToggle", "codeFontScaleRange", "codeFontScaleNumber",
       "importSummary", "importChoiceSummary",
-      "importWizardStep1", "importWizardStep2", "importWizardStep3", "importWizardStep4", "importWizardColorSummary", "importWizardFinalSummary", "importWizardColorLimitInput", "importWizardCalibrationButton", "importWizardSkipCalibrationButton", "importWizardOptimizeButton", "importWizardKeepColorsButton", "importWizardApplyButton", "importWizardRestartButton", "importWizardOriginalCanvas", "importWizardPatternCanvas", "importWizardFinalOriginalCanvas", "importWizardFinalPatternCanvas",
+      "importWizardStep1", "importWizardStep2", "importWizardStep3", "importWizardColorSummary", "importWizardFinalSummary", "importWizardColorLimitInput", "importWizardCalibrationButton", "importWizardSkipCalibrationButton", "importWizardOptimizeButton", "importWizardKeepColorsButton", "importWizardApplyButton", "importWizardRestartButton", "importWizardOriginalCanvas", "importWizardPatternCanvas", "importWizardFinalOriginalCanvas", "importWizardFinalPatternCanvas", "importAiAssistButton", "importAiAssistStatus", "importAiAssistApplyRecommendationButton", "importAiAssistUndoButton",
       "qualitySummary", "qualityCheckButton", "exportMaterialsButton", "buildModeToggle", "buildProgress", "clearBuildProgressButton",
       "paletteSelect", "paletteGrid", "cellTargetPaletteGrid", "selectionColorTargetPaletteGrid",
       "replaceFromSelect", "replaceToSelect", "replaceAllButton", "usageSummary",
@@ -3178,6 +3179,92 @@
     return pattern;
   }
 
+  function recommendImportPrecision(image, pattern) {
+    const estimated = image ? estimatePixelArtGrid(image) : null;
+    const quality = analyzePatternQuality(pattern);
+    const isolatedRate = quality.total ? quality.isolated / quality.total : 0;
+    const score = Math.round(clamp(100 - isolatedRate * 180 - quality.rareColors * 1.8, 42, 98));
+    return {
+      width: estimated && estimated.width ? estimated.width : pattern.width,
+      height: estimated && estimated.height ? estimated.height : pattern.height,
+      cellSize: estimated && estimated.cellSize ? estimated.cellSize : null,
+      confidence: estimated && estimated.confidence ? Math.round(estimated.confidence * 100) : score,
+      outlineScore: Math.round(clamp(100 - isolatedRate * 220, 35, 99)),
+      highlightScore: Math.round(clamp(100 - quality.rareColors * 1.5, 40, 99)),
+      colorDifficulty: quality.colors
+    };
+  }
+
+  function runImportAiAssist() {
+    if (!importWizard || !state.importSession || (importAiAssist && importAiAssist.running)) return;
+    const basePattern = importWizard.pattern || buildImportWizardPattern();
+    if (!basePattern) return;
+    importAiAssist = {
+      running: true,
+      previousPattern: Object.assign({}, basePattern, { cells: cloneCells(basePattern.cells) }),
+      recommendation: null,
+      repairedPattern: null,
+      error: ""
+    };
+    if (els.importAiAssistButton) els.importAiAssistButton.disabled = true;
+    if (els.importAiAssistStatus) {
+      els.importAiAssistStatus.classList.remove("hidden");
+      els.importAiAssistStatus.textContent = "AI还原助手正在分析主体、精度和轮廓...";
+    }
+    window.setTimeout(() => {
+      try {
+        const roleAnalysis = analyzeLockedColorRoles(basePattern);
+        const locked = new Set(roleAnalysis.codes);
+        const cleaned = cleanPixelArtPattern(basePattern, locked);
+        const repaired = protectLockedCells(basePattern, cleaned, locked);
+        importAiAssist.recommendation = recommendImportPrecision(state.importSession.image, basePattern);
+        importAiAssist.repairedPattern = repaired;
+        importWizard.pattern = repaired;
+        state.beads.lockedColorCodes = roleAnalysis.codes;
+        state.beads.lockedColorRoles = roleAnalysis.roles;
+        const changed = countPatternDifferences(basePattern, repaired);
+        const recommendation = importAiAssist.recommendation;
+        if (els.importAiAssistStatus) {
+          els.importAiAssistStatus.textContent = `分析完成：推荐 ${recommendation.width} x ${recommendation.height} · 轮廓 ${recommendation.outlineScore}% · 高光 ${recommendation.highlightScore}% · 修复 ${changed} 格 · 色号难度 ${recommendation.colorDifficulty} 种。`;
+        }
+        if (els.importAiAssistApplyRecommendationButton) els.importAiAssistApplyRecommendationButton.classList.remove("hidden");
+        if (els.importAiAssistUndoButton) els.importAiAssistUndoButton.classList.remove("hidden");
+        renderImportWizardStep();
+      } catch (error) {
+        importAiAssist.error = error && error.message ? error.message : "分析失败";
+        if (els.importAiAssistStatus) els.importAiAssistStatus.textContent = `AI还原助手失败：${importAiAssist.error}，当前图纸未改变。`;
+      } finally {
+        importAiAssist.running = false;
+        if (els.importAiAssistButton) els.importAiAssistButton.disabled = false;
+      }
+    }, 40);
+  }
+
+  function undoImportAiAssist() {
+    if (!importAiAssist || !importAiAssist.previousPattern || !importWizard) return;
+    importWizard.pattern = Object.assign({}, importAiAssist.previousPattern, { cells: cloneCells(importAiAssist.previousPattern.cells) });
+    if (els.importAiAssistStatus) els.importAiAssistStatus.textContent = "已放弃 AI还原结果，恢复当前导入结果。";
+    if (els.importAiAssistUndoButton) els.importAiAssistUndoButton.classList.add("hidden");
+    if (els.importAiAssistApplyRecommendationButton) els.importAiAssistApplyRecommendationButton.classList.add("hidden");
+    renderImportWizardStep();
+  }
+
+  function applyImportAiRecommendation() {
+    if (!importAiAssist || !importAiAssist.recommendation || !state.importSession || !importWizard) return;
+    const recommendation = importAiAssist.recommendation;
+    state.beads.width = recommendation.width;
+    state.beads.height = recommendation.height;
+    state.importCalibration = null;
+    buildImportWizardPattern();
+    if (importAiAssist.repairedPattern) {
+      const locked = getLockedColorSet();
+      importWizard.pattern = protectLockedCells(importWizard.pattern, importAiAssist.repairedPattern, locked);
+    }
+    if (els.importAiAssistStatus) els.importAiAssistStatus.textContent = `已应用推荐精度 ${recommendation.width} x ${recommendation.height}，可继续进入色号优化。`;
+    if (els.importAiAssistApplyRecommendationButton) els.importAiAssistApplyRecommendationButton.classList.add("hidden");
+    renderImportWizardStep();
+  }
+
   function drawWizardPreviewCanvas(canvas, image, pattern) {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -3256,6 +3343,10 @@
       previousLockedColorCodes: Array.isArray(state.beads.lockedColorCodes) ? state.beads.lockedColorCodes.slice() : [],
       previousLockedColorRoles: Object.assign({}, state.beads.lockedColorRoles || {})
     };
+    importAiAssist = null;
+    if (els.importAiAssistStatus) els.importAiAssistStatus.classList.add("hidden");
+    if (els.importAiAssistUndoButton) els.importAiAssistUndoButton.classList.add("hidden");
+    if (els.importAiAssistApplyRecommendationButton) els.importAiAssistApplyRecommendationButton.classList.add("hidden");
     state.importCalibration = null;
     setImportMode(getImportMode());
     renderImportWizardStep();
@@ -3328,6 +3419,7 @@
     renderImportSummary();
     markUnsavedChanges();
     state.importSession = null;
+    importAiAssist = null;
     importWizard = null;
     closeImportChoiceModal();
     closeCalibrationModal();
@@ -11585,6 +11677,9 @@
     if (els.importWizardOptimizeButton) els.importWizardOptimizeButton.addEventListener("click", wizardOptimizeColors);
     if (els.importWizardKeepColorsButton) els.importWizardKeepColorsButton.addEventListener("click", wizardKeepColors);
     if (els.importWizardApplyButton) els.importWizardApplyButton.addEventListener("click", applyWizardImport);
+    if (els.importAiAssistButton) els.importAiAssistButton.addEventListener("click", runImportAiAssist);
+    if (els.importAiAssistUndoButton) els.importAiAssistUndoButton.addEventListener("click", undoImportAiAssist);
+    if (els.importAiAssistApplyRecommendationButton) els.importAiAssistApplyRecommendationButton.addEventListener("click", applyImportAiRecommendation);
     if (els.importWizardRestartButton) els.importWizardRestartButton.addEventListener("click", () => {
       if (!importWizard) return;
       importWizard.step = 1;
