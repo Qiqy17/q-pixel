@@ -91,6 +91,7 @@ def _api_size(width, height):
 
 
 SUBJECT_TRANSLATIONS = {
+    "蝴蝶结": "a centered symmetrical ribbon bow",
     "小蝴蝶": "a small butterfly",
     "蝴蝶": "a butterfly",
     "小猪": "a small piglet",
@@ -113,8 +114,27 @@ SUBJECT_TRANSLATIONS = {
 def _subject_hint(prompt):
     for phrase, translation in sorted(SUBJECT_TRANSLATIONS.items(), key=lambda item: len(item[0]), reverse=True):
         if phrase in prompt:
-            return translation, f"Do not replace it with a tiger, cat, dog, pig, beetle, or any other subject."
+            blocked = "butterfly" if phrase == "蝴蝶结" else "tiger, cat, dog, pig, beetle"
+            return translation, f"Do not replace it with {blocked} or any other subject."
     return prompt, "Follow the requested subject exactly; do not substitute another animal or object."
+
+
+def _composition_hint(prompt):
+    hints = []
+    if "左右对称" in prompt or "对称" in prompt:
+        hints.append("perfect bilateral left-right symmetry, mirrored left and right halves")
+    if "蓝黑" in prompt or "蓝黑色" in prompt:
+        hints.append("a restricted navy blue, royal blue, and black palette with no pink, orange, green, or purple")
+    if "居中" in prompt or "正面" in prompt:
+        hints.append("front-facing, centered, isolated composition")
+    if "蝴蝶结" in prompt:
+        hints.append("two matching loops, two matching tails, and a small central knot")
+    return "; ".join(hints)
+
+
+def _negative_prompt(prompt):
+    wrong_subjects = "butterfly" if "蝴蝶结" in prompt else "tiger, cat, dog, pig, beetle"
+    return f"wrong subject, {wrong_subjects}, asymmetry, tilted view, extra loops, blur, gradients, anti-aliasing, noise, tiny details, watermark, text"
 
 
 def _build_prompt(prompt, style, width, height, color_limit):
@@ -124,9 +144,11 @@ def _build_prompt(prompt, style, width, height, color_limit):
         "pixel": "清晰现代像素画",
     }.get(style, "清晰现代像素画")
     subject, subject_guard = _subject_hint(prompt)
+    composition = _composition_hint(prompt)
     return (
         f"Create a {style_text} for a fuse-bead and pixel-grid pattern. "
         f"The ONLY main subject must be {subject}. Original user request: {prompt}. {subject_guard} "
+        f"{composition}. "
         f"Target composition is a {width} by {height} grid with at most {color_limit} dominant colors. "
         "Use a clean light background, strong continuous dark outlines, "
         "large flat solid color regions, intentional 1-pixel highlights and facial details, "
@@ -193,7 +215,7 @@ def _generate_huggingface(request):
             "width": image_width,
             "height": image_height,
             "num_inference_steps": 4,
-            "negative_prompt": "wrong subject, tiger, cat, dog, pig, beetle, blur, gradients, anti-aliasing, noise, tiny details, watermark, text",
+            "negative_prompt": _negative_prompt(prompt),
         },
     }).encode("utf-8")
     request_obj = Request(
