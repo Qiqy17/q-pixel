@@ -12,7 +12,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from qpixel_openai import OpenAIConfigError, OpenAIRequestError, generate_image
+from qpixel_openai import OpenAIConfigError, OpenAIRequestError, generate_image, get_provider_status
 
 
 ROOT = Path(__file__).resolve().parent
@@ -49,6 +49,9 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        if path == "/api/ai/status":
+            self.send_json({"providers": get_provider_status()})
+            return
         if path == "/api/health":
             self.send_json(health_payload(self.read_projects(), self.read_settings()))
             return

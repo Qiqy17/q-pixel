@@ -1106,11 +1106,13 @@
       </div>
       <label class="ai-field">主题描述<textarea id="aiPromptInput" rows="3" placeholder="例如：一只戴红围巾的小猫，黑色轮廓，暖色背景"></textarea></label>
       <div class="ai-options">
+        <label>生图接口<select id="aiProviderSelect"><option value="huggingface">Hugging Face 免费额度</option><option value="jimeng">即梦 AI（火山引擎）</option><option value="openai">OpenAI GPT</option></select></label>
         <label>风格<select id="aiStyleSelect"><option value="pixel">清晰像素画</option><option value="cute">可爱卡通</option><option value="retro">复古游戏</option></select></label>
         <label>宽度<input id="aiWidthInput" type="number" min="16" max="128" value="48"></label>
         <label>高度<input id="aiHeightInput" type="number" min="16" max="128" value="48"></label>
         <label>最多色号<input id="aiColorLimitInput" type="number" min="2" max="64" value="20"></label>
       </div>
+      <div id="aiProviderBalances" class="ai-provider-balances" aria-label="接口额度状态">正在读取接口额度状态...</div>
       <div id="aiGenerateStatus" class="ai-status">当前使用 Hugging Face 免费额度生成，Token 由本机服务安全保存。</div>
       <div class="split-actions">
         <button class="text-button secondary" id="aiPromptCopyButton" type="button">复制提示词</button>

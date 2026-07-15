@@ -542,7 +542,7 @@
       "projectActionThumb", "projectActionTitle", "projectActionCreated", "projectActionUpdated",
       "projectActionOpenButton", "projectActionHistoryButton", "projectActionTemplateButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
       "projectHistoryModal", "projectHistoryCloseButton", "projectHistoryTitle", "projectHistoryList",
-      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiStyleSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiGenerateStatus", "aiPromptCopyButton", "aiGenerateButton",
+      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiProviderSelect", "aiStyleSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiProviderBalances", "aiGenerateStatus", "aiPromptCopyButton", "aiGenerateButton",
       "layerImportModal", "layerImportCloseButton", "layerImportImageButton", "layerImportProjectFileButton", "layerImportProjectList",
       "importChoiceModal", "importChoiceCancelButton", "importChoiceFileName",
       "importModeFidelityButton", "importModeBalancedButton", "importModeSimpleButton",
@@ -2654,6 +2654,7 @@
 
   function openAiGenerateModal() {
     if (els.aiGenerateModal) els.aiGenerateModal.classList.remove("hidden");
+    refreshAiProviderStatus();
     if (els.aiGenerateStatus) {
       els.aiGenerateStatus.textContent = "当前使用 Hugging Face 免费额度生成，Token 由本机服务安全保存。";
     }
@@ -2666,6 +2667,7 @@
   function buildAiGenerationRequest() {
     return {
       prompt: (els.aiPromptInput && els.aiPromptInput.value || "").trim(),
+      provider: els.aiProviderSelect ? els.aiProviderSelect.value : "huggingface",
       style: els.aiStyleSelect ? els.aiStyleSelect.value : "pixel",
       width: clamp(els.aiWidthInput && els.aiWidthInput.value || 48, 16, 128),
       height: clamp(els.aiHeightInput && els.aiHeightInput.value || 48, 16, 128),
@@ -2673,6 +2675,22 @@
       target: "q-pixel-pattern",
       palette: "MARD-221"
     };
+  }
+
+  async function refreshAiProviderStatus() {
+    if (!els.aiProviderBalances) return;
+    const escapeHtml = (value) => String(value).replace(/[&<>\"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[char]));
+    try {
+      const response = await fetch("/api/ai/status", { cache: "no-store" });
+      const result = await response.json();
+      const providers = result.providers || {};
+      els.aiProviderBalances.innerHTML = Object.entries(providers).map(([key, item]) => {
+        const active = els.aiProviderSelect && els.aiProviderSelect.value === key ? " active" : "";
+        return `<div class="ai-provider-balance${active}"><strong>${escapeHtml(item.name || key)}</strong><span>${escapeHtml(item.balanceLabel || "额度状态未知")}</span><em class="${item.configured ? "ok" : "warn"}">${escapeHtml(item.configured ? "已配置" : "未配置")}</em></div>`;
+      }).join("");
+    } catch (error) {
+      els.aiProviderBalances.textContent = "额度状态暂时无法读取，请检查本机服务。";
+    }
   }
 
   async function startAiGeneration() {
@@ -11666,6 +11684,7 @@
       if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = prompt ? "提示词已复制。" : "请先输入主题描述。";
     });
     if (els.aiGenerateButton) els.aiGenerateButton.addEventListener("click", startAiGeneration);
+    if (els.aiProviderSelect) els.aiProviderSelect.addEventListener("change", refreshAiProviderStatus);
     if (els.aiGenerateModal) els.aiGenerateModal.addEventListener("click", (event) => {
       if (event.target === els.aiGenerateModal) closeAiGenerateModal();
     });

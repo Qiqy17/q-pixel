@@ -4,6 +4,16 @@ Q像素的“AI灵感”使用 OpenAI GPT Image 2。API key 只由本机 Python 
 
 当前默认已切换为 Hugging Face 免费额度，使用 `black-forest-labs/FLUX.1-schnell` 进行快速测试。GPT 仍保留为备用方案，可通过设置 `QPIXEL_AI_PROVIDER=openai` 切回。
 
+AI 生图窗口现在可以直接选择 Hugging Face、即梦 AI（火山引擎）或 OpenAI，并查看每个接口的凭证状态和余额查询入口。即梦网页端的每日免费积分属于 C 端账户权益，官方 API 使用的是火山引擎 API 账户，二者不等价；Q像素会明确分开显示，避免误报余额。
+
+配置即梦 API：
+
+```text
+/Users/mac/GitHub/q-pixel/scripts/配置即梦API.command
+```
+
+该脚本保存火山引擎 Access Key 和 Secret Access Key 到 macOS 钥匙串。即梦文生图 API 需要火山引擎 API 凭证，不要把即梦网页登录密码输入到这里。
+
 ## 推荐的免费测试配置
 
 在 Hugging Face 创建具有 Inference Providers 权限的 Token 后，双击运行：

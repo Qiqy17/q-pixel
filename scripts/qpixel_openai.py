@@ -2,10 +2,15 @@
 """Small, dependency-free OpenAI Images API client for the local QPixel service."""
 
 import base64
+import datetime
+import hashlib
+import hmac
 import json
 import os
 import ssl
 import subprocess
+import time
+from urllib.parse import quote
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -28,6 +33,8 @@ class OpenAIRequestError(Exception):
 
 OPENAI_KEYCHAIN_SERVICE = "qpixel-openai-api-key"
 HF_KEYCHAIN_SERVICE = "qpixel-hf-token"
+VOLC_ACCESS_KEY_SERVICE = "qpixel-volcengine-access-key"
+VOLC_SECRET_KEY_SERVICE = "qpixel-volcengine-secret-key"
 
 
 def _friendly_error(detail, status):
@@ -244,6 +251,122 @@ def _generate_huggingface(request):
     return {"imageDataUrl": f"data:{content_type};base64,{encoded}", "model": model, "provider": "huggingface"}
 
 
+def _hmac_sha256(key, message):
+    return hmac.new(key, message.encode("utf-8"), hashlib.sha256).digest()
+
+
+def _volcengine_request(action, body, access_key, secret_key):
+    endpoint = "https://visual.volcengineapi.com/"
+    host = "visual.volcengineapi.com"
+    region = "cn-north-1"
+    service = "cv"
+    body_bytes = json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    request_date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    short_date = request_date[:8]
+    query = f"Action={quote(action, safe='-_.~')}&Version=2024-06-06"
+    payload_hash = hashlib.sha256(body_bytes).hexdigest()
+    signed_headers = "content-type;host;x-content-sha256;x-date"
+    canonical_headers = (
+        "content-type:application/json\n"
+        f"host:{host}\n"
+        f"x-content-sha256:{payload_hash}\n"
+        f"x-date:{request_date}\n"
+    )
+    canonical_request = f"POST\n/\n{query}\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
+    credential_scope = f"{short_date}/{region}/{service}/request"
+    string_to_sign = "HMAC-SHA256\n" + request_date + "\n" + credential_scope + "\n" + hashlib.sha256(canonical_request.encode("utf-8")).hexdigest()
+    signing_key = _hmac_sha256(_hmac_sha256(_hmac_sha256(secret_key.encode("utf-8"), short_date), region), service)
+    signing_key = _hmac_sha256(signing_key, "request")
+    signature = hmac.new(signing_key, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+    authorization = f"HMAC-SHA256 Credential={access_key}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}"
+    request_obj = Request(
+        f"{endpoint}?{query}",
+        data=body_bytes,
+        headers={
+            "Content-Type": "application/json",
+            "Host": host,
+            "X-Date": request_date,
+            "X-Content-Sha256": payload_hash,
+            "Authorization": authorization,
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request_obj, timeout=60, context=_ssl_context()) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+        try:
+            detail = error.read().decode("utf-8", errors="replace")
+        except Exception:
+            detail = ""
+        raise OpenAIRequestError(f"即梦 API 返回 HTTP {error.code}: {detail[:300]}") from error
+    except (URLError, TimeoutError, OSError) as error:
+        raise OpenAIRequestError("无法连接即梦 API，请检查网络或火山引擎代理设置") from error
+    if not isinstance(result, dict) or result.get("code") not in (None, 10000) and result.get("status") != 10000:
+        raise OpenAIRequestError(f"即梦 API 请求失败：{result.get('message') or result.get('code') or '未知错误'}")
+    return result
+
+
+def _generate_jimeng(request):
+    prompt, width, height, color_limit, style = validate_request(request)
+    access_key = os.environ.get("VOLCENGINE_ACCESS_KEY", "").strip() or _read_keychain_key(VOLC_ACCESS_KEY_SERVICE)
+    secret_key = os.environ.get("VOLCENGINE_SECRET_KEY", "").strip() or _read_keychain_key(VOLC_SECRET_KEY_SERVICE)
+    if not access_key or not secret_key:
+        raise OpenAIConfigError("未配置即梦 API 凭证，请先运行“配置即梦API.command”")
+    prompt = f"{prompt}。用于拼豆像素图：主体居中，轮廓清晰，色块平涂，最多{color_limit}种主色，不要文字和水印。"
+    if style == "cute":
+        prompt += " 可爱卡通风格。"
+    elif style == "retro":
+        prompt += " 复古游戏像素风格。"
+    submit = _volcengine_request("JimengT2IV40SubmitTask", {
+        "req_key": "jimeng_t2i_v40",
+        "prompt": prompt[:800],
+        "seed": -1,
+        "width": 1024,
+        "height": 1024,
+        "force_single": True,
+    }, access_key, secret_key)
+    task_id = ((submit.get("data") or {}).get("task_id"))
+    if not task_id:
+        raise OpenAIRequestError("即梦 API 没有返回任务编号")
+    for _ in range(40):
+        time.sleep(2)
+        result = _volcengine_request("JimengT2IV40GetResult", {
+            "req_key": "jimeng_t2i_v40",
+            "task_id": str(task_id),
+            "req_json": json.dumps({"return_url": True}, ensure_ascii=False, separators=(",", ":")),
+        }, access_key, secret_key)
+        data = result.get("data") or {}
+        if data.get("status") in ("submitted", "running", "processing"):
+            continue
+        encoded = (data.get("binary_data_base64") or [""])[0] if isinstance(data.get("binary_data_base64"), list) else data.get("binary_data_base64") or ""
+        if encoded:
+            return {"imageDataUrl": f"data:image/png;base64,{encoded}", "model": "jimeng_t2i_v40", "provider": "jimeng"}
+        urls = data.get("image_urls") or []
+        if urls:
+            try:
+                with urlopen(urls[0], timeout=30, context=_ssl_context()) as image_response:
+                    image_bytes = image_response.read()
+                return {"imageDataUrl": "data:image/png;base64," + base64.b64encode(image_bytes).decode("ascii"), "model": "jimeng_t2i_v40", "provider": "jimeng"}
+            except (URLError, TimeoutError, OSError) as error:
+                raise OpenAIRequestError("即梦图片结果下载失败") from error
+        if data.get("status") in ("failed", "error"):
+            raise OpenAIRequestError(f"即梦生成失败：{result.get('message') or '任务失败'}")
+    raise OpenAIRequestError("即梦生成超时，请稍后查看任务状态或重试")
+
+
+def get_provider_status():
+    return {
+        "huggingface": {"name": "Hugging Face 免费额度", "configured": bool(os.environ.get("HF_TOKEN", "").strip() or _read_keychain_key(HF_KEYCHAIN_SERVICE)), "balanceLabel": "免费额度请在 Hugging Face 控制台查看"},
+        "jimeng": {"name": "即梦 AI（火山引擎）", "configured": bool((os.environ.get("VOLCENGINE_ACCESS_KEY", "").strip() or _read_keychain_key(VOLC_ACCESS_KEY_SERVICE)) and (os.environ.get("VOLCENGINE_SECRET_KEY", "").strip() or _read_keychain_key(VOLC_SECRET_KEY_SERVICE))), "balanceLabel": "API余额请在火山引擎控制台查看；即梦网页积分不适用于API"},
+        "openai": {"name": "OpenAI GPT", "configured": bool(os.environ.get("OPENAI_API_KEY", "").strip() or _read_keychain_key(OPENAI_KEYCHAIN_SERVICE)), "balanceLabel": "余额/额度请在 OpenAI API 控制台查看"},
+    }
+
+
 def generate_image(request):
-    provider = os.environ.get("QPIXEL_AI_PROVIDER", "huggingface").strip().lower()
-    return _generate_openai(request) if provider == "openai" else _generate_huggingface(request)
+    provider = str(request.get("provider") or os.environ.get("QPIXEL_AI_PROVIDER", "huggingface")).strip().lower()
+    if provider == "openai":
+        return _generate_openai(request)
+    if provider == "jimeng":
+        return _generate_jimeng(request)
+    return _generate_huggingface(request)
