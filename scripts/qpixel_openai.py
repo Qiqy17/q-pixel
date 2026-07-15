@@ -90,16 +90,45 @@ def _api_size(width, height):
     return "1024x1024"
 
 
+SUBJECT_TRANSLATIONS = {
+    "小蝴蝶": "a small butterfly",
+    "蝴蝶": "a butterfly",
+    "小猪": "a small piglet",
+    "猪": "a pig",
+    "小猫": "a small kitten",
+    "猫": "a cat",
+    "小狗": "a small puppy",
+    "狗": "a dog",
+    "老虎": "a tiger",
+    "兔子": "a rabbit",
+    "小兔": "a small rabbit",
+    "熊猫": "a panda",
+    "小鸟": "a small bird",
+    "鸟": "a bird",
+    "花": "a flower",
+    "蘑菇": "a mushroom",
+}
+
+
+def _subject_hint(prompt):
+    for phrase, translation in sorted(SUBJECT_TRANSLATIONS.items(), key=lambda item: len(item[0]), reverse=True):
+        if phrase in prompt:
+            return translation, f"Do not replace it with a tiger, cat, dog, pig, beetle, or any other subject."
+    return prompt, "Follow the requested subject exactly; do not substitute another animal or object."
+
+
 def _build_prompt(prompt, style, width, height, color_limit):
     style_text = {
         "cute": "可爱卡通像素画",
         "retro": "复古掌机游戏像素画",
         "pixel": "清晰现代像素画",
     }.get(style, "清晰现代像素画")
+    subject, subject_guard = _subject_hint(prompt)
     return (
-        f"Create a {style_text} for a fuse-bead and pixel-grid pattern. Subject: {prompt}. "
+        f"Create a {style_text} for a fuse-bead and pixel-grid pattern. "
+        f"The ONLY main subject must be {subject}. Original user request: {prompt}. {subject_guard} "
         f"Target composition is a {width} by {height} grid with at most {color_limit} dominant colors. "
-        "Use a clean light or transparent-looking background, strong continuous dark outlines, "
+        "Use a clean light background, strong continuous dark outlines, "
         "large flat solid color regions, intentional 1-pixel highlights and facial details, "
         "crisp block edges, and a centered full subject. Avoid gradients, blur, anti-aliasing, "
         "photorealistic texture, noise, tiny speckles, soft shadows, text, watermark, and broken outlines. "
@@ -164,7 +193,7 @@ def _generate_huggingface(request):
             "width": image_width,
             "height": image_height,
             "num_inference_steps": 4,
-            "negative_prompt": "blur, gradients, anti-aliasing, noise, tiny details, watermark, text",
+            "negative_prompt": "wrong subject, tiger, cat, dog, pig, beetle, blur, gradients, anti-aliasing, noise, tiny details, watermark, text",
         },
     }).encode("utf-8")
     request_obj = Request(
