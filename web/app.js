@@ -247,6 +247,18 @@
     group.items.map((item) => Object.assign({ group: group.label }, item))
   );
 
+  const styleMaterialBitmapSources = {
+    felt: "/assets/materials/poly_wool_herringbone_diff_4k.jpg",
+    "linen-bg": "/assets/materials/poly_wool_herringbone_diff_4k.jpg",
+    "fabric-denim": "/assets/materials/poly_wool_herringbone_diff_4k.jpg",
+    "paper-cotton": "/assets/materials/poly_wool_herringbone_diff_4k.jpg",
+    wood: "/assets/materials/synthetic_wood_diff_4k.jpg",
+    "bamboo-board": "/assets/materials/synthetic_wood_diff_4k.jpg",
+    marble: "/assets/materials/marble_01_diff_4k.jpg",
+    "concrete-studio": "/assets/materials/concrete_diff_4k.jpg",
+    "slate-board": "/assets/materials/concrete_diff_4k.jpg"
+  };
+
   const state = {
     mode: "pixel",
     image: null,
@@ -336,6 +348,7 @@
       styleBackgroundImage: null,
       styleBackgroundImageData: "",
       styleBackgroundImageName: "",
+      styleMaterialImages: new Map(),
       styleStickerLibrary: [],
       styleStickerImages: new Map(),
       styleOverlays: [],
@@ -9206,6 +9219,12 @@
     if (type === "plain") return;
     ctx.save();
     const material = getStyleBackgroundMaterial(type);
+    const bitmapMaterial = ensureStyleMaterialBitmap(type);
+    if (bitmapMaterial && bitmapMaterial.image && bitmapMaterial.image.complete && bitmapMaterial.image.naturalWidth > 0) {
+      drawBitmapStyleBackground(ctx, width, height, bitmapMaterial, color, alpha);
+      ctx.restore();
+      return;
+    }
     if (material) {
       drawTexturedStyleBackground(ctx, width, height, material);
       ctx.restore();
@@ -9318,6 +9337,109 @@
         ctx.fillRect((i * 31) % width, (i * 53) % height, 1, 1);
       }
     }
+    ctx.restore();
+  }
+
+  function ensureStyleMaterialBitmap(type) {
+    const source = styleMaterialBitmapSources[type];
+    if (!source) return null;
+    const cached = state.beads.styleMaterialImages.get(type);
+    if (cached) return cached;
+    const image = new Image();
+    const pending = { image, loading: true, relief: null };
+    state.beads.styleMaterialImages.set(type, pending);
+    image.onload = () => {
+      pending.loading = false;
+      pending.relief = buildMaterialReliefMap(image);
+      if (els.materialBackgroundSelect && els.materialBackgroundSelect.value === type) drawMaterialPreview();
+    };
+    image.onerror = () => {
+      state.beads.styleMaterialImages.delete(type);
+    };
+    image.src = source;
+    return null;
+  }
+
+  function buildMaterialReliefMap(image) {
+    const size = 512;
+    const source = document.createElement("canvas");
+    source.width = size;
+    source.height = size;
+    const sourceContext = source.getContext("2d", { willReadFrequently: true });
+    sourceContext.drawImage(image, 0, 0, size, size);
+    const input = sourceContext.getImageData(0, 0, size, size).data;
+    const output = sourceContext.createImageData(size, size);
+    const luminanceAt = (x, y) => {
+      const safeX = Math.max(0, Math.min(size - 1, x));
+      const safeY = Math.max(0, Math.min(size - 1, y));
+      const index = (safeY * size + safeX) * 4;
+      return (input[index] * 0.2126 + input[index + 1] * 0.7152 + input[index + 2] * 0.0722) / 255;
+    };
+    for (let y = 0; y < size; y += 1) {
+      for (let x = 0; x < size; x += 1) {
+        const dx = luminanceAt(x + 1, y) - luminanceAt(x - 1, y);
+        const dy = luminanceAt(x, y + 1) - luminanceAt(x, y - 1);
+        const nx = -dx * 2.2;
+        const ny = -dy * 2.2;
+        const nz = 1;
+        const length = Math.hypot(nx, ny, nz) || 1;
+        const normalX = nx / length;
+        const normalY = ny / length;
+        const normalZ = nz / length;
+        const light = Math.max(0, normalX * -0.42 + normalY * -0.58 + normalZ * 0.72);
+        const shade = Math.round(88 + light * 125);
+        const index = (y * size + x) * 4;
+        output.data[index] = shade;
+        output.data[index + 1] = shade;
+        output.data[index + 2] = shade;
+        output.data[index + 3] = 86;
+      }
+    }
+    sourceContext.putImageData(output, 0, 0);
+    return source;
+  }
+
+  function drawBitmapStyleBackground(ctx, width, height, asset, color, alpha) {
+    const profile = {
+      concrete: { roughness: 0.88, specular: 0.08, relief: 0.66 },
+      marble: { roughness: 0.32, specular: 0.52, relief: 0.5 },
+      wood: { roughness: 0.58, specular: 0.24, relief: 0.56 },
+      fabric: { roughness: 0.94, specular: 0.08, relief: 0.82 }
+    }[asset.image.src.includes("concrete") ? "concrete" : asset.image.src.includes("marble") ? "marble" : asset.image.src.includes("wood") ? "wood" : "fabric"];
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    drawCoverImage(ctx, asset.image, 0, 0, width, height);
+    ctx.globalAlpha = 1;
+    if (asset.relief) {
+      ctx.globalCompositeOperation = "soft-light";
+      ctx.globalAlpha = profile.relief;
+      drawCoverImage(ctx, asset.relief, 0, 0, width, height);
+    }
+    const tint = ctx.createLinearGradient(0, 0, width, height);
+    tint.addColorStop(0, rgbaFromHex(color, 0.14));
+    tint.addColorStop(0.5, "rgba(255,255,255,0)");
+    tint.addColorStop(1, "rgba(0,0,0,.16)");
+    ctx.globalCompositeOperation = "soft-light";
+    ctx.globalAlpha = 0.62;
+    ctx.fillStyle = tint;
+    ctx.fillRect(0, 0, width, height);
+    const specular = ctx.createLinearGradient(width * 0.05, 0, width * 0.88, height);
+    specular.addColorStop(0, `rgba(255,255,255,${0.04 + profile.specular * 0.25})`);
+    specular.addColorStop(0.44, "rgba(255,255,255,0)");
+    specular.addColorStop(0.64, `rgba(255,255,255,${profile.specular * 0.24})`);
+    specular.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.globalCompositeOperation = "screen";
+    ctx.globalAlpha = 0.78;
+    ctx.fillStyle = specular;
+    ctx.fillRect(0, 0, width, height);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+    const edge = ctx.createRadialGradient(width * 0.48, height * 0.42, Math.min(width, height) * 0.18, width * 0.5, height * 0.5, Math.max(width, height) * 0.78);
+    edge.addColorStop(0, "rgba(255,255,255,0)");
+    edge.addColorStop(0.72, "rgba(0,0,0,0)");
+    edge.addColorStop(1, `rgba(0,0,0,${0.08 + profile.roughness * 0.12})`);
+    ctx.fillStyle = edge;
+    ctx.fillRect(0, 0, width, height);
     ctx.restore();
   }
 
