@@ -4,6 +4,7 @@
 import base64
 import json
 import os
+import subprocess
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -14,6 +15,25 @@ class OpenAIConfigError(Exception):
 
 class OpenAIRequestError(Exception):
     pass
+
+
+KEYCHAIN_SERVICE = "qpixel-openai-api-key"
+
+
+def _read_keychain_key():
+    if os.name != "posix" or not os.path.exists("/usr/bin/security"):
+        return ""
+    try:
+        result = subprocess.run(
+            ["/usr/bin/security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
 
 
 def _number(value, fallback):
@@ -67,9 +87,9 @@ def _build_prompt(prompt, style, width, height, color_limit):
 
 def generate_image(request):
     prompt, width, height, color_limit, style = validate_request(request)
-    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip() or _read_keychain_key()
     if not api_key:
-        raise OpenAIConfigError("未配置 OpenAI API Key")
+        raise OpenAIConfigError("未配置 OpenAI API Key，请先运行“配置OpenAI密钥.command”")
     base_url = os.environ.get("OPENAI_API_BASE_URL", "https://api.openai.com/v1").rstrip("/")
     model = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-2").strip() or "gpt-image-2"
     body = json.dumps({

@@ -2,6 +2,16 @@
 
 Q像素的“AI灵感”使用 OpenAI GPT Image 2。API key 只由本机 Python 服务读取，网页、桌面资源和 GitHub 仓库都不应保存真实 key。
 
+## 推荐配置：保存到 macOS 钥匙串
+
+双击运行：
+
+```text
+/Users/mac/GitHub/q-pixel/scripts/配置OpenAI密钥.command
+```
+
+输入一次 OpenAI API Key 后，Q像素本机服务会从 macOS 钥匙串读取，不需要每次重新设置环境变量。桌面包中也同步提供了同名配置脚本。
+
 ## macOS 临时配置
 
 在启动 Q像素服务的同一个终端执行：
