@@ -549,7 +549,7 @@
       "projectActionThumb", "projectActionTitle", "projectActionCreated", "projectActionUpdated",
       "projectActionOpenButton", "projectActionHistoryButton", "projectActionTemplateButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
       "projectHistoryModal", "projectHistoryCloseButton", "projectHistoryTitle", "projectHistoryList",
-      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiProviderSelect", "aiStyleSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiProviderBalances", "aiGenerateStatus", "aiJimengPending", "aiJimengPendingName", "aiJimengImportButton", "aiJimengIgnoreButton", "aiPromptCopyButton", "aiJimengWebButton", "aiGenerateButton",
+      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiProviderSelect", "aiStyleSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiProviderBalances", "aiGenerateStatus", "aiJimengPending", "aiJimengPendingName", "aiJimengImportButton", "aiJimengIgnoreButton", "aiPromptCopyButton", "aiJimengWebButton", "aiGenerateButton", "jimengWatermarkModal", "jimengWatermarkCloseButton", "jimengWatermarkCancelButton", "jimengWatermarkConfirmButton",
       "layerImportModal", "layerImportCloseButton", "layerImportImageButton", "layerImportProjectFileButton", "layerImportProjectList",
       "importChoiceModal", "importChoiceCancelButton", "importChoiceFileName",
       "importModeFidelityButton", "importModeBalancedButton", "importModeSimpleButton",
@@ -2675,6 +2675,10 @@
     if (els.aiGenerateModal) els.aiGenerateModal.classList.add("hidden");
   }
 
+  function closeJimengWatermarkModal() {
+    if (els.jimengWatermarkModal) els.jimengWatermarkModal.classList.add("hidden");
+  }
+
   let pendingJimengDownload = null;
   let jimengDownloadPollTimer = 0;
 
@@ -2684,10 +2688,64 @@
     if (els.aiJimengPendingName) els.aiJimengPendingName.textContent = "";
   }
 
+  function getJimengWatermarkMode() {
+    const selected = document.querySelector('input[name="jimengWatermarkMode"]:checked');
+    return selected ? selected.value : "keep";
+  }
+
+  function cropJimengEdgeDataUrl(dataUrl) {
+    return new Promise((resolve) => {
+      const image = new Image();
+      image.onload = () => {
+        const width = image.naturalWidth || image.width;
+        const height = image.naturalHeight || image.height;
+        const crop = Math.max(1, Math.round(Math.min(width, height) * 0.07));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, width - crop);
+        canvas.height = Math.max(1, height - crop);
+        const context = canvas.getContext("2d");
+        context.drawImage(image, 0, 0, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/png"));
+      };
+      image.onerror = () => resolve(dataUrl);
+      image.src = dataUrl;
+    });
+  }
+
+  async function cleanAuthorizedJimengImage(dataUrl) {
+    const image = await new Promise((resolve) => {
+      const loaded = new Image();
+      loaded.onload = () => resolve(loaded);
+      loaded.onerror = () => resolve(null);
+      loaded.src = dataUrl;
+    });
+    if (!image) return { dataUrl, cleaned: false };
+    const cleanup = extractSubjectFromImage(image);
+    if (!cleanup.dataUrl || cleanup.confidence < 0.72) return { dataUrl, cleaned: false };
+    return { dataUrl: cleanup.dataUrl, cleaned: true };
+  }
+
+  function openJimengWatermarkModal() {
+    if (!pendingJimengDownload || !els.jimengWatermarkModal) return;
+    els.jimengWatermarkModal.classList.remove("hidden");
+  }
+
   async function importPendingJimengDownload() {
     if (!pendingJimengDownload) return;
+    closeJimengWatermarkModal();
     const pending = pendingJimengDownload;
-    const imported = await applyAiImageDataUrl(pending.imageDataUrl, pending.request);
+    const mode = getJimengWatermarkMode();
+    let dataUrl = pending.imageDataUrl;
+    let note = "";
+    if (mode === "crop") {
+      dataUrl = await cropJimengEdgeDataUrl(dataUrl);
+      note = "已裁切边缘标识";
+    } else if (mode === "authorized") {
+      const cleaned = await cleanAuthorizedJimengImage(dataUrl);
+      dataUrl = cleaned.dataUrl;
+      note = cleaned.cleaned ? "已完成授权图片的背景清理" : "未检测到适合安全清理的平坦背景，已保留原图";
+    }
+    const imported = await applyAiImageDataUrl(dataUrl, pending.request);
     if (!imported) {
       if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "这张下载图片无法读取，请换一张图片。";
       return;
@@ -2696,7 +2754,7 @@
     markUnsavedChanges();
     closeAiGenerateModal();
     showEditor();
-    setMessage(`已导入即梦图片：${pending.name || "下载图片"}`, false);
+    setMessage(`已导入即梦图片：${pending.name || "下载图片"}${note ? `（${note}）` : ""}`, false);
   }
 
   function buildAiGenerationRequest() {
@@ -12275,7 +12333,13 @@
     });
     if (els.aiGenerateButton) els.aiGenerateButton.addEventListener("click", startAiGeneration);
     if (els.aiJimengWebButton) els.aiJimengWebButton.addEventListener("click", startJimengWebCollaboration);
-    if (els.aiJimengImportButton) els.aiJimengImportButton.addEventListener("click", importPendingJimengDownload);
+    if (els.aiJimengImportButton) els.aiJimengImportButton.addEventListener("click", openJimengWatermarkModal);
+    if (els.jimengWatermarkConfirmButton) els.jimengWatermarkConfirmButton.addEventListener("click", importPendingJimengDownload);
+    if (els.jimengWatermarkCloseButton) els.jimengWatermarkCloseButton.addEventListener("click", closeJimengWatermarkModal);
+    if (els.jimengWatermarkCancelButton) els.jimengWatermarkCancelButton.addEventListener("click", closeJimengWatermarkModal);
+    if (els.jimengWatermarkModal) els.jimengWatermarkModal.addEventListener("click", (event) => {
+      if (event.target === els.jimengWatermarkModal) closeJimengWatermarkModal();
+    });
     if (els.aiJimengIgnoreButton) els.aiJimengIgnoreButton.addEventListener("click", () => {
       clearPendingJimengDownload();
       if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "已忽略这次下载图片，可以继续生成或重新协同。";

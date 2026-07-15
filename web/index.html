@@ -1125,7 +1125,7 @@
       <div id="aiJimengPending" class="ai-pending-download hidden">
         <span id="aiJimengPendingName"></span>
         <div class="split-actions">
-          <button class="text-button" id="aiJimengImportButton" type="button">导入这张图片</button>
+          <button class="text-button" id="aiJimengImportButton" type="button">选择处理后导入</button>
           <button class="text-button secondary" id="aiJimengIgnoreButton" type="button">忽略本次</button>
         </div>
       </div>
@@ -1133,6 +1133,37 @@
         <button class="text-button secondary" id="aiPromptCopyButton" type="button">复制提示词</button>
         <button class="text-button secondary" id="aiJimengWebButton" type="button">即梦网页一键协同</button>
         <button class="text-button" id="aiGenerateButton" type="button">开始生成</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="project-action-modal hidden" id="jimengWatermarkModal" aria-label="即梦图片导入处理">
+    <div class="project-action-card jimeng-watermark-card">
+      <button class="project-action-close" id="jimengWatermarkCloseButton" type="button" title="关闭">×</button>
+      <div class="project-action-head">
+        <div>
+          <h2>导入前处理</h2>
+          <p>即梦网页下载的图片可能带有平台标识，请先选择处理方式，再进入像素校准。</p>
+        </div>
+      </div>
+      <div class="jimeng-watermark-options">
+        <label class="jimeng-watermark-option selected">
+          <input type="radio" name="jimengWatermarkMode" value="keep" checked>
+          <span><strong>保留原图</strong><em>最完整地保留主体和细节，推荐用于先看识别效果。</em></span>
+        </label>
+        <label class="jimeng-watermark-option">
+          <input type="radio" name="jimengWatermarkMode" value="crop">
+          <span><strong>裁切边缘标识</strong><em>仅裁掉边缘区域，再进入像素校准；适合标识位于画面边缘的图片。</em></span>
+        </label>
+        <label class="jimeng-watermark-option">
+          <input type="radio" name="jimengWatermarkMode" value="authorized">
+          <span><strong>授权图片清理（实验）</strong><em>仅用于你有权处理的图片，尝试清理平坦背景上的浅色标识；复杂背景会保留原图。</em></span>
+        </label>
+      </div>
+      <div class="ai-status">Q像素不会自动替第三方图片去除平台标识。无论选择哪种方式，后续都可以在像素校准和导入优化中继续调整。</div>
+      <div class="split-actions">
+        <button class="text-button secondary" id="jimengWatermarkCancelButton" type="button">取消</button>
+        <button class="text-button" id="jimengWatermarkConfirmButton" type="button">处理并进入导入</button>
       </div>
     </div>
   </section>

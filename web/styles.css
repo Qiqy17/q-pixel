@@ -3302,6 +3302,55 @@ body[data-mode="beads"] #paletteGrid {
   font-size: 12px;
 }
 
+.jimeng-watermark-card {
+  width: min(560px, 100%);
+}
+
+.jimeng-watermark-options {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+
+.jimeng-watermark-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 11px 12px;
+  border: 1px solid var(--panel-line);
+  border-radius: 9px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.jimeng-watermark-option:has(input:checked) {
+  border-color: #4f7ff0;
+  background: #f4f7ff;
+}
+
+.jimeng-watermark-option input {
+  margin-top: 3px;
+  accent-color: #4f7ff0;
+}
+
+.jimeng-watermark-option span {
+  display: grid;
+  gap: 3px;
+}
+
+.jimeng-watermark-option strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.jimeng-watermark-option em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.45;
+}
+
 .restore-actions {
   display: grid;
   grid-template-columns: auto repeat(3, minmax(0, 1fr));
