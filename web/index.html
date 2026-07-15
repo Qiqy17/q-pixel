@@ -661,14 +661,36 @@
               <input id="styleCustomHeightInput" type="number" min="320" max="2400" value="1080">
             </label>
           </div>
-          <label>背景颜色
-            <input id="styleBackgroundColorInput" type="color" value="#f4f0e8">
-          </label>
+          <div class="material-color-legacy" aria-hidden="true">
+            <label>背景颜色
+              <input id="styleBackgroundColorInput" type="color" value="#f4f0e8">
+            </label>
+          </div>
           <label>背景透明度 <strong id="styleBackgroundAlphaLabel">100</strong>
             <input id="styleBackgroundAlphaRange" type="range" min="0" max="100" value="100">
           </label>
-          <label>背景材质
-            <select id="materialBackgroundSelect">
+          <div class="material-picker" id="materialPicker">
+            <div class="material-picker-heading">
+              <span>背景材质</span>
+              <strong id="materialPickerSummary">毛毡板 · 自然</strong>
+            </div>
+            <div class="material-picker-section">
+              <span class="material-picker-label">材质分类</span>
+              <div id="materialCategoryList" class="material-picker-chips" role="tablist" aria-label="材质分类"></div>
+            </div>
+            <div class="material-picker-section">
+              <span class="material-picker-label">分类内材质</span>
+              <div id="materialOptionList" class="material-picker-options" role="listbox" aria-label="分类内材质"></div>
+            </div>
+            <div class="material-picker-section">
+              <span class="material-picker-label">色彩预设</span>
+              <div id="materialColorPresetList" class="material-color-presets" role="listbox" aria-label="色彩预设"></div>
+              <div class="material-custom-color">
+                <input id="materialCustomColorInput" type="color" value="#f4f0e8" aria-label="自定义材质颜色">
+                <span>自定义颜色，保留材质纹理与光影</span>
+              </div>
+            </div>
+            <select id="materialBackgroundSelect" class="material-legacy-select" aria-hidden="true" tabindex="-1">
               <option value="felt">毛毡板</option>
               <option value="glass">玻璃板</option>
               <option value="wood">木纹板</option>
@@ -682,7 +704,7 @@
               <option value="plain">纯色</option>
               <option value="custom">自定义图片</option>
             </select>
-          </label>
+          </div>
           <div class="style-file-row">
             <button class="mini-button" id="styleBackgroundImageButton" type="button">选择背景图</button>
             <span id="styleBackgroundImageName">未选择</span>

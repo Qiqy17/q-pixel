@@ -259,6 +259,15 @@
     "slate-board": "/assets/materials/concrete_diff_4k.jpg"
   };
 
+  const styleMaterialColorPresets = [
+    { key: "natural", label: "自然", color: "#f4f0e8" },
+    { key: "warm", label: "暖色", color: "#d9b58a" },
+    { key: "cool", label: "冷色", color: "#b9d2e5" },
+    { key: "dark", label: "深色", color: "#35404b" },
+    { key: "muted", label: "低饱和", color: "#b7b5ae" },
+    { key: "light", label: "浅色", color: "#fbfaf5" }
+  ];
+
   const state = {
     mode: "pixel",
     image: null,
@@ -349,6 +358,8 @@
       styleBackgroundImageData: "",
       styleBackgroundImageName: "",
       styleMaterialImages: new Map(),
+      styleMaterialPickerCategory: "",
+      styleMaterialColorPreset: "natural",
       styleStickerLibrary: [],
       styleStickerImages: new Map(),
       styleOverlays: [],
@@ -549,7 +560,7 @@
       "exportPreviewPdfButton", "exportPreviewMirrorButton", "exportPreviewOpenButton", "materialPreviewButton", "charmPreviewButton",
       "exportPreviewZoomOutButton", "exportPreviewZoomFitButton", "exportPreviewZoomInButton",
       "materialPreviewModal", "materialPreviewCloseButton", "materialPreviewCanvas", "materialModeSelect",
-      "materialBaseSelect", "materialIntensityRange", "materialIntensityLabel", "materialBackgroundSelect", "materialLightSelect", "materialDecorSelect", "materialQualityCheckButton", "materialQualitySummary", "materialExportButton",
+      "materialBaseSelect", "materialIntensityRange", "materialIntensityLabel", "materialBackgroundSelect", "materialCategoryList", "materialOptionList", "materialColorPresetList", "materialCustomColorInput", "materialPickerSummary", "materialLightSelect", "materialDecorSelect", "materialQualityCheckButton", "materialQualitySummary", "materialExportButton",
       "styleRatioSelect", "styleBackgroundColorInput", "styleBackgroundAlphaRange", "styleBackgroundAlphaLabel", "styleBackgroundImageInput",
       "styleOrientationSelect", "styleCustomWidthInput", "styleCustomHeightInput", "styleBackgroundImageButton", "styleBackgroundImageName",
       "styleBorderSizeRange", "styleBorderSizeLabel", "styleBorderColorInput", "styleShadowColorInput", "styleShadowBlurRange",
@@ -3164,6 +3175,88 @@
     els.materialBackgroundSelect.appendChild(customGroup);
     const available = new Set([...styleBackgroundMaterials.map((item) => item.value), "plain", "custom"]);
     els.materialBackgroundSelect.value = available.has(previous) ? previous : "felt";
+  }
+
+  function getMaterialColorPreset(key) {
+    return styleMaterialColorPresets.find((item) => item.key === key) || styleMaterialColorPresets[0];
+  }
+
+  function renderMaterialPicker() {
+    if (!els.materialCategoryList || !els.materialOptionList || !els.materialColorPresetList) return;
+    const selectedValue = els.materialBackgroundSelect ? els.materialBackgroundSelect.value : "felt";
+    const selectedMaterial = getStyleBackgroundMaterial(selectedValue);
+    const groups = styleBackgroundMaterialGroups.map((group) => ({ label: group.label, items: group.items }));
+    groups.push({ label: "纯色/自定义", items: [{ value: "plain", label: "纯色" }, { value: "custom", label: "自定义图片" }] });
+    let category = state.beads.styleMaterialPickerCategory;
+    if (!category || !groups.some((group) => group.label === category)) category = selectedMaterial ? selectedMaterial.group : "纯色/自定义";
+    if (!groups.some((group) => group.label === category)) category = groups[0].label;
+    state.beads.styleMaterialPickerCategory = category;
+
+    els.materialCategoryList.innerHTML = "";
+    groups.forEach((group) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `material-picker-chip${group.label === category ? " active" : ""}`;
+      button.textContent = group.label;
+      button.addEventListener("click", () => {
+        state.beads.styleMaterialPickerCategory = group.label;
+        renderMaterialPicker();
+      });
+      els.materialCategoryList.appendChild(button);
+    });
+
+    const currentGroup = groups.find((group) => group.label === category) || groups[0];
+    els.materialOptionList.innerHTML = "";
+    currentGroup.items.forEach((material) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `material-picker-option${material.value === selectedValue ? " active" : ""}${material.value === "custom" ? " custom-option" : ""}`;
+      button.textContent = material.label;
+      button.setAttribute("aria-selected", material.value === selectedValue ? "true" : "false");
+      button.addEventListener("click", () => selectMaterialPickerValue(material.value));
+      els.materialOptionList.appendChild(button);
+    });
+
+    els.materialColorPresetList.innerHTML = "";
+    styleMaterialColorPresets.forEach((preset) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `material-color-preset${state.beads.styleMaterialColorPreset === preset.key ? " active" : ""}`;
+      button.innerHTML = `<span class="material-color-dot" style="background:${preset.color}"></span><span>${preset.label}</span>`;
+      button.addEventListener("click", () => selectMaterialColorPreset(preset.key));
+      els.materialColorPresetList.appendChild(button);
+    });
+    if (els.materialCustomColorInput && els.styleBackgroundColorInput) els.materialCustomColorInput.value = els.styleBackgroundColorInput.value;
+    if (els.materialPickerSummary) {
+      const materialLabel = selectedMaterial ? selectedMaterial.label : selectedValue === "custom" ? "自定义图片" : "纯色";
+      const colorLabel = getMaterialColorPreset(state.beads.styleMaterialColorPreset).label;
+      els.materialPickerSummary.textContent = `${materialLabel} · ${state.beads.styleMaterialColorPreset === "custom" ? "自定义" : colorLabel}`;
+    }
+  }
+
+  function selectMaterialPickerValue(value) {
+    if (!els.materialBackgroundSelect) return;
+    els.materialBackgroundSelect.value = value;
+    const material = getStyleBackgroundMaterial(value);
+    if (material) state.beads.styleMaterialPickerCategory = material.group;
+    else state.beads.styleMaterialPickerCategory = "纯色/自定义";
+    renderMaterialPicker();
+    drawMaterialPreview();
+  }
+
+  function selectMaterialColorPreset(key) {
+    const preset = getMaterialColorPreset(key);
+    state.beads.styleMaterialColorPreset = preset.key;
+    if (els.styleBackgroundColorInput) els.styleBackgroundColorInput.value = preset.color;
+    renderMaterialPicker();
+    drawMaterialPreview();
+  }
+
+  function syncMaterialPickerFromControls() {
+    if (!els.materialBackgroundSelect) return;
+    const material = getStyleBackgroundMaterial(els.materialBackgroundSelect.value);
+    state.beads.styleMaterialPickerCategory = material ? material.group : "纯色/自定义";
+    renderMaterialPicker();
   }
 
   function selectBeadColor(code, options = {}) {
@@ -8787,6 +8880,8 @@
       customWidth: els.styleCustomWidthInput && els.styleCustomWidthInput.value,
       customHeight: els.styleCustomHeightInput && els.styleCustomHeightInput.value,
       backgroundColor: els.styleBackgroundColorInput && els.styleBackgroundColorInput.value,
+      materialColorPreset: state.beads.styleMaterialColorPreset || "natural",
+      materialColorHex: els.styleBackgroundColorInput && els.styleBackgroundColorInput.value,
       backgroundAlpha: els.styleBackgroundAlphaRange && els.styleBackgroundAlphaRange.value,
       backgroundType: els.materialBackgroundSelect && els.materialBackgroundSelect.value,
       backgroundImageData: state.beads.styleBackgroundImageData || "",
@@ -8819,8 +8914,13 @@
     setValue(els.styleCustomWidthInput, settings.customWidth);
     setValue(els.styleCustomHeightInput, settings.customHeight);
     setValue(els.styleBackgroundColorInput, settings.backgroundColor);
+    state.beads.styleMaterialColorPreset = settings.materialColorPreset === "custom" || styleMaterialColorPresets.some((item) => item.key === settings.materialColorPreset)
+      ? settings.materialColorPreset
+      : "natural";
+    setValue(els.styleBackgroundColorInput, settings.materialColorHex || settings.backgroundColor);
     setValue(els.styleBackgroundAlphaRange, settings.backgroundAlpha);
     setValue(els.materialBackgroundSelect, settings.backgroundType);
+    syncMaterialPickerFromControls();
     setValue(els.materialModeSelect, settings.materialMode);
     setValue(els.materialBaseSelect, settings.frameType);
     setValue(els.styleBorderSizeRange, settings.borderSize);
@@ -12324,7 +12424,16 @@
     if (els.materialBaseSelect) els.materialBaseSelect.addEventListener("change", drawMaterialPreview);
     if (els.materialQualityCheckButton) els.materialQualityCheckButton.addEventListener("click", auditMaterialPreview);
     if (els.materialIntensityRange) els.materialIntensityRange.addEventListener("input", drawMaterialPreview);
-    if (els.materialBackgroundSelect) els.materialBackgroundSelect.addEventListener("change", drawMaterialPreview);
+    if (els.materialBackgroundSelect) els.materialBackgroundSelect.addEventListener("change", () => {
+      syncMaterialPickerFromControls();
+      drawMaterialPreview();
+    });
+    if (els.materialCustomColorInput) els.materialCustomColorInput.addEventListener("input", () => {
+      state.beads.styleMaterialColorPreset = "custom";
+      if (els.styleBackgroundColorInput) els.styleBackgroundColorInput.value = els.materialCustomColorInput.value;
+      renderMaterialPicker();
+      drawMaterialPreview();
+    });
     if (els.materialLightSelect) els.materialLightSelect.addEventListener("change", drawMaterialPreview);
     if (els.materialDecorSelect) els.materialDecorSelect.addEventListener("change", drawMaterialPreview);
     if (els.exportPreviewZoomOutButton) els.exportPreviewZoomOutButton.addEventListener("click", () => updatePreviewZoom("export", "out"));
@@ -12354,6 +12463,13 @@
     });
     if (els.styleBackgroundImageButton && els.styleBackgroundImageInput) {
       els.styleBackgroundImageButton.addEventListener("click", () => els.styleBackgroundImageInput.click());
+    }
+    if (els.styleBackgroundColorInput) {
+      els.styleBackgroundColorInput.addEventListener("input", () => {
+        state.beads.styleMaterialColorPreset = "custom";
+        if (els.materialCustomColorInput) els.materialCustomColorInput.value = els.styleBackgroundColorInput.value;
+        renderMaterialPicker();
+      });
     }
     if (els.styleBackgroundImageInput) {
       els.styleBackgroundImageInput.addEventListener("change", async () => {
@@ -13794,6 +13910,7 @@
     registerOfflineApp();
     populatePaletteControls();
     populateMaterialBackgroundSelect();
+    renderMaterialPicker();
     syncControls();
     wireEvents();
     setMode("pixel");
