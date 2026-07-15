@@ -549,7 +549,7 @@
       "projectActionThumb", "projectActionTitle", "projectActionCreated", "projectActionUpdated",
       "projectActionOpenButton", "projectActionHistoryButton", "projectActionTemplateButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
       "projectHistoryModal", "projectHistoryCloseButton", "projectHistoryTitle", "projectHistoryList",
-      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiProviderSelect", "aiStyleSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiCompositionSelect", "aiPaletteModeSelect", "aiCandidateCountSelect", "aiCreativeBrief", "aiProviderBalances", "aiGenerateStatus", "aiCandidatePanel", "aiCandidateSummary", "aiCandidateGrid", "aiCandidateRepairButton", "aiCandidatePaletteButton", "aiCandidateApplyButton", "aiCandidateAnalysis", "aiJimengPending", "aiJimengPendingName", "aiJimengImportButton", "aiJimengIgnoreButton", "aiPromptCopyButton", "aiJimengWebButton", "aiGenerateButton", "jimengWatermarkModal", "jimengWatermarkCloseButton", "jimengWatermarkCancelButton", "jimengWatermarkConfirmButton", "jimengWatermarkCropEdge",
+      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiProviderSelect", "aiStyleSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiCompositionSelect", "aiPaletteModeSelect", "aiCandidateCountSelect", "aiCreativeBrief", "aiProviderBalances", "aiGenerateStatus", "aiCandidatePanel", "aiCandidateSummary", "aiCandidateGrid", "aiCandidateRepairButton", "aiCandidatePaletteButton", "aiCandidateUndoButton", "aiCandidateApplyButton", "aiCandidateAnalysis", "aiJimengPending", "aiJimengPendingName", "aiJimengImportButton", "aiJimengIgnoreButton", "aiPromptCopyButton", "aiJimengWebButton", "aiGenerateButton", "jimengWatermarkModal", "jimengWatermarkCloseButton", "jimengWatermarkCancelButton", "jimengWatermarkConfirmButton", "jimengWatermarkCropEdge",
       "layerImportModal", "layerImportCloseButton", "layerImportImageButton", "layerImportProjectFileButton", "layerImportProjectList",
       "importChoiceModal", "importChoiceCancelButton", "importChoiceFileName",
       "importModeFidelityButton", "importModeBalancedButton", "importModeSimpleButton",
@@ -2909,20 +2909,26 @@
     aiCandidateState = { request, candidates: [], selectedIndex: 0 };
     renderAiCandidates();
     try {
+      let failed = 0;
+      let lastError = "";
       for (let index = 0; index < request.candidateCount; index += 1) {
-        const candidateRequest = Object.assign({}, request, {
-          prompt: `${request.prompt} 这是第${index + 1}个候选方案，请保持主体一致并尝试不同的细节布局。`
-        });
-        const response = await fetch("/api/ai/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(candidateRequest) });
-        const result = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(result.error || `AI 服务 ${response.status}`);
-        if (result && result.imageDataUrl) {
-          aiCandidateState.candidates.push({ imageDataUrl: result.imageDataUrl, repaired: false });
+        try {
+          const candidateRequest = Object.assign({}, request, {
+            prompt: `${request.prompt} 这是第${index + 1}个候选方案，请保持主体一致并尝试不同的细节布局。`
+          });
+          const response = await fetch("/api/ai/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(candidateRequest) });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(result.error || `AI 服务 ${response.status}`);
+          if (!result || !result.imageDataUrl) throw new Error("返回内容不是有效图片");
+          aiCandidateState.candidates.push({ imageDataUrl: result.imageDataUrl, originalDataUrl: result.imageDataUrl, repaired: false });
           renderAiCandidates();
+        } catch (error) {
+          failed += 1;
+          lastError = error.message || "服务不可用";
         }
       }
       if (!aiCandidateState.candidates.length) throw new Error("没有返回有效候选图片");
-      if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "候选方案已生成，请先比较和检查，再导入当前图纸。";
+      if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = failed ? `已生成 ${aiCandidateState.candidates.length} 个候选，${failed} 个失败${lastError ? `：${lastError}` : ""}。` : `候选方案已生成 ${aiCandidateState.candidates.length} 个，请先比较和检查，再导入当前图纸。`;
     } catch (error) {
       if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = `生成失败：${error.message || "服务不可用"}`;
     } finally {
@@ -12458,6 +12464,18 @@
     });
     if (els.aiCandidateRepairButton) els.aiCandidateRepairButton.addEventListener("click", analyzeSelectedAiCandidate);
     if (els.aiCandidatePaletteButton) els.aiCandidatePaletteButton.addEventListener("click", updateAiPaletteHint);
+    if (els.aiCandidateUndoButton) els.aiCandidateUndoButton.addEventListener("click", () => {
+      const candidate = selectedAiCandidate();
+      if (!candidate || !candidate.originalDataUrl) return;
+      candidate.imageDataUrl = candidate.originalDataUrl;
+      candidate.repaired = false;
+      candidate.selectedPalette = "";
+      renderAiCandidates();
+      if (els.aiCandidateAnalysis) {
+        els.aiCandidateAnalysis.classList.remove("hidden");
+        els.aiCandidateAnalysis.textContent = "已撤销当前候选的临时结构和配色优化。";
+      }
+    });
     if (els.aiCandidateApplyButton) els.aiCandidateApplyButton.addEventListener("click", async () => {
       const candidate = selectedAiCandidate();
       if (!candidate || !aiCandidateState.request) return;
