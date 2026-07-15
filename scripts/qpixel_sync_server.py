@@ -45,13 +45,16 @@ class QPixelHandler(SimpleHTTPRequestHandler):
             self.send_json(find_latest_download_image(parse_query(self.path).get("since", ["0"])[0]) or {"found": False})
             return
         if path == "/api/health":
-            self.send_json(health_payload(self.read_projects()))
+            self.send_json(health_payload(self.read_projects(), self.read_settings()))
             return
         if path == "/api/projects/index":
             self.send_json([summary for summary in (project_summary(project) for project in self.read_projects()) if summary])
             return
         if path == "/api/projects":
             self.send_json(self.read_projects())
+            return
+        if path == "/api/settings":
+            self.send_json(self.read_settings())
             return
         project_id = get_project_id_from_path(path)
         if project_id:
@@ -67,6 +70,9 @@ class QPixelHandler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/ai/generate":
             self.generate_ai_image()
+            return
+        if path == "/api/settings":
+            self.write_settings_request()
             return
         project_id = get_project_id_from_path(path)
         if project_id:
@@ -87,6 +93,7 @@ class QPixelHandler(SimpleHTTPRequestHandler):
             return
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         backup_projects_file()
+        payload = merge_projects(self.read_projects(), payload)
         tmp = PROJECTS_FILE.with_suffix(".tmp")
         tmp.write_text(json.dumps(payload[:200], ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, PROJECTS_FILE)
@@ -134,6 +141,25 @@ class QPixelHandler(SimpleHTTPRequestHandler):
         os.replace(tmp, PROJECTS_FILE)
         self.send_json({"ok": True, "id": project_id, "count": len(projects[:200])})
 
+    def write_settings_request(self):
+        length = int(self.headers.get("Content-Length") or "0")
+        raw = self.rfile.read(length)
+        try:
+            payload = json.loads(raw.decode("utf-8") or "{}")
+        except json.JSONDecodeError:
+            self.send_error(400, "Invalid JSON")
+            return
+        if not isinstance(payload, dict):
+            self.send_error(400, "Expected settings object")
+            return
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        backup_settings_file()
+        merged = merge_settings(self.read_settings(), payload)
+        tmp = SETTINGS_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(merged, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, SETTINGS_FILE)
+        self.send_json({"ok": True, "updatedAt": merged.get("updatedAt")})
+
     def read_projects(self):
         if not PROJECTS_FILE.exists():
             return []
@@ -142,6 +168,15 @@ class QPixelHandler(SimpleHTTPRequestHandler):
             return data if isinstance(data, list) else []
         except Exception:
             return []
+
+    def read_settings(self):
+        if not SETTINGS_FILE.exists():
+            return {"stylePresets": [], "exportPresets": [], "updatedAt": ""}
+        try:
+            data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {"stylePresets": [], "exportPresets": [], "updatedAt": ""}
+        except Exception:
+            return {"stylePresets": [], "exportPresets": [], "updatedAt": ""}
 
     def send_json(self, payload, status=200):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -204,12 +239,12 @@ def file_size(path):
         return 0
 
 
-def health_payload(projects):
+def health_payload(projects, settings):
     projects_ok = isinstance(projects, list)
     return {
-        "ok": projects_ok,
+        "ok": projects_ok and isinstance(settings, dict),
         "projectsOk": projects_ok,
-        "settingsOk": True,
+        "settingsOk": isinstance(settings, dict),
         "projectCount": len(projects) if projects_ok else 0,
         "projectsFileExists": PROJECTS_FILE.exists(),
         "projectsFileSize": file_size(PROJECTS_FILE),
@@ -249,6 +284,15 @@ def backup_projects_file():
     cleanup_backups()
 
 
+def backup_settings_file():
+    if not SETTINGS_FILE.exists():
+        return
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    shutil.copy2(SETTINGS_FILE, BACKUP_DIR / f"qpixel-settings-{stamp}.json")
+    cleanup_backups()
+
+
 def cleanup_backup_group(pattern, keep_count, now=None):
     if not BACKUP_DIR.exists():
         return 0
@@ -276,6 +320,35 @@ def cleanup_backups():
         cleanup_backup_group("qpixel-projects-*.json", PROJECT_BACKUP_LIMIT)
         + cleanup_backup_group("qpixel-settings-*.json", SETTINGS_BACKUP_LIMIT)
     )
+
+
+def item_sort_time(item):
+    if not isinstance(item, dict):
+        return ""
+    return item.get("updatedAt") or item.get("savedAt") or item.get("createdAt") or item.get("id") or ""
+
+
+def merge_setting_lists(existing, incoming, limit=80):
+    merged = {}
+    for item in list(existing or []) + list(incoming or []):
+        if not isinstance(item, dict) or not item.get("id"):
+            continue
+        current = merged.get(item["id"])
+        if current is None or item_sort_time(item) >= item_sort_time(current):
+            merged[item["id"]] = item
+    return sorted(merged.values(), key=item_sort_time, reverse=True)[:limit]
+
+
+def merge_settings(existing, incoming):
+    existing = existing if isinstance(existing, dict) else {}
+    incoming = incoming if isinstance(incoming, dict) else {}
+    now = datetime_now_iso()
+    base = {} if incoming.get("replace") else existing
+    return {
+        "stylePresets": merge_setting_lists(base.get("stylePresets"), incoming.get("stylePresets")),
+        "exportPresets": merge_setting_lists(base.get("exportPresets"), incoming.get("exportPresets")),
+        "updatedAt": incoming.get("updatedAt") or existing.get("updatedAt") or now,
+    }
 
 
 def main():
