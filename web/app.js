@@ -2655,7 +2655,7 @@
   function openAiGenerateModal() {
     if (els.aiGenerateModal) els.aiGenerateModal.classList.remove("hidden");
     if (els.aiGenerateStatus) {
-      els.aiGenerateStatus.textContent = "使用 OpenAI GPT Image 2 生成，密钥由本机服务安全保存。";
+      els.aiGenerateStatus.textContent = "当前使用 Hugging Face 免费额度生成，Token 由本机服务安全保存。";
     }
   }
 

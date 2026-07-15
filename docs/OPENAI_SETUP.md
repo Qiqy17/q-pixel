@@ -2,6 +2,18 @@
 
 Q像素的“AI灵感”使用 OpenAI GPT Image 2。API key 只由本机 Python 服务读取，网页、桌面资源和 GitHub 仓库都不应保存真实 key。
 
+当前默认已切换为 Hugging Face 免费额度，使用 `black-forest-labs/FLUX.1-schnell` 进行快速测试。GPT 仍保留为备用方案，可通过设置 `QPIXEL_AI_PROVIDER=openai` 切回。
+
+## 推荐的免费测试配置
+
+在 Hugging Face 创建具有 Inference Providers 权限的 Token 后，双击运行：
+
+```text
+/Users/mac/GitHub/q-pixel/scripts/配置HuggingFace令牌.command
+```
+
+桌面包中也同步提供了同名配置脚本。免费额度和频率会受 Hugging Face 账户限制，适合先验证效果，不保证无限量。
+
 ## 推荐配置：保存到 macOS 钥匙串
 
 双击运行：

@@ -26,7 +26,8 @@ class OpenAIRequestError(Exception):
     pass
 
 
-KEYCHAIN_SERVICE = "qpixel-openai-api-key"
+OPENAI_KEYCHAIN_SERVICE = "qpixel-openai-api-key"
+HF_KEYCHAIN_SERVICE = "qpixel-hf-token"
 
 
 def _friendly_error(detail, status):
@@ -41,12 +42,12 @@ def _friendly_error(detail, status):
     return text or f"OpenAI 返回 HTTP {status}"
 
 
-def _read_keychain_key():
+def _read_keychain_key(service):
     if os.name != "posix" or not os.path.exists("/usr/bin/security"):
         return ""
     try:
         result = subprocess.run(
-            ["/usr/bin/security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
+            ["/usr/bin/security", "find-generic-password", "-s", service, "-w"],
             check=False,
             capture_output=True,
             text=True,
@@ -106,9 +107,9 @@ def _build_prompt(prompt, style, width, height, color_limit):
     )
 
 
-def generate_image(request):
+def _generate_openai(request):
     prompt, width, height, color_limit, style = validate_request(request)
-    api_key = os.environ.get("OPENAI_API_KEY", "").strip() or _read_keychain_key()
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip() or _read_keychain_key(OPENAI_KEYCHAIN_SERVICE)
     if not api_key:
         raise OpenAIConfigError("未配置 OpenAI API Key，请先运行“配置OpenAI密钥.command”")
     base_url = os.environ.get("OPENAI_API_BASE_URL", "https://api.openai.com/v1").rstrip("/")
@@ -139,7 +140,6 @@ def generate_image(request):
         raise OpenAIRequestError("无法连接 OpenAI，请检查网络或代理设置") from error
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise OpenAIRequestError("OpenAI 返回内容无法解析") from error
-
     items = result.get("data") if isinstance(result, dict) else None
     encoded = items[0].get("b64_json") if items and isinstance(items[0], dict) else ""
     if not encoded:
@@ -148,4 +148,51 @@ def generate_image(request):
         base64.b64decode(encoded, validate=True)
     except (ValueError, TypeError) as error:
         raise OpenAIRequestError("OpenAI 返回的图片数据无效") from error
-    return {"imageDataUrl": f"data:image/png;base64,{encoded}", "model": model}
+    return {"imageDataUrl": f"data:image/png;base64,{encoded}", "model": model, "provider": "openai"}
+
+
+def _generate_huggingface(request):
+    prompt, width, height, color_limit, style = validate_request(request)
+    token = os.environ.get("HF_TOKEN", "").strip() or _read_keychain_key(HF_KEYCHAIN_SERVICE)
+    if not token:
+        raise OpenAIConfigError("未配置 Hugging Face Token，请先运行“配置HuggingFace令牌.command”")
+    model = os.environ.get("HF_IMAGE_MODEL", "black-forest-labs/FLUX.1-schnell").strip()
+    image_width, image_height = (768, 512) if width > height * 1.18 else ((512, 768) if height > width * 1.18 else (512, 512))
+    body = json.dumps({
+        "inputs": _build_prompt(prompt, style, width, height, color_limit),
+        "parameters": {
+            "width": image_width,
+            "height": image_height,
+            "num_inference_steps": 4,
+            "negative_prompt": "blur, gradients, anti-aliasing, noise, tiny details, watermark, text",
+        },
+    }).encode("utf-8")
+    request_obj = Request(
+        f"https://router.huggingface.co/hf-inference/models/{model}",
+        data=body,
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request_obj, timeout=180, context=_ssl_context()) as response:
+            image_bytes = response.read()
+            content_type = response.headers.get("Content-Type", "image/png").split(";", 1)[0]
+    except HTTPError as error:
+        try:
+            detail = error.read().decode("utf-8", errors="replace")
+        except Exception:
+            detail = ""
+        if "exceeded" in detail.lower() or "quota" in detail.lower() or error.code == 429:
+            detail = "Hugging Face 免费额度或请求频率已用完，请稍后重试或更换 Token"
+        raise OpenAIRequestError(detail or f"Hugging Face 返回 HTTP {error.code}") from error
+    except (URLError, TimeoutError, OSError) as error:
+        raise OpenAIRequestError("无法连接 Hugging Face，请检查网络或代理设置") from error
+    if not image_bytes or not content_type.startswith("image/"):
+        raise OpenAIRequestError("Hugging Face 未返回有效图片")
+    encoded = base64.b64encode(image_bytes).decode("ascii")
+    return {"imageDataUrl": f"data:{content_type};base64,{encoded}", "model": model, "provider": "huggingface"}
+
+
+def generate_image(request):
+    provider = os.environ.get("QPIXEL_AI_PROVIDER", "huggingface").strip().lower()
+    return _generate_openai(request) if provider == "openai" else _generate_huggingface(request)
