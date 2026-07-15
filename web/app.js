@@ -413,6 +413,9 @@
     }
   };
 
+  let recalibrationSession = false;
+  let previousCalibrationBeforeRecalibration = null;
+
   const storageKey = "q-pixel-local-projects-v1";
   const inventoryStorageKey = "q-pixel-inventory-v1";
   const trashStorageKey = "q-pixel-trash-projects-v1";
@@ -479,7 +482,7 @@
       "exportButton", "pixelExportPreviewButton", "exportTopButton", "modePixelButton", "modeBeadsButton",
       "zoomOutButton", "fitViewButton", "zoomInButton",
       "pixelPanel", "beadPanel", "pixelToBeadsButton", "beadWidthNumber",
-      "beadHeightNumber", "beadLockRatio", "generateBeadsButton", "usePixelButton",
+      "beadHeightNumber", "beadLockRatio", "generateBeadsButton", "recalibrateImageButton", "usePixelButton",
       "showCodesToggle", "showGridToggle", "codeFontScaleRange", "codeFontScaleNumber",
       "importSummary", "importChoiceSummary",
       "qualitySummary", "qualityCheckButton", "exportMaterialsButton", "buildModeToggle", "buildProgress", "clearBuildProgressButton",
@@ -3154,8 +3157,14 @@
 
   function cancelImportSession() {
     if (state.importSession && state.importSession.url) URL.revokeObjectURL(state.importSession.url);
+    if (recalibrationSession) {
+      state.importCalibration = previousCalibrationBeforeRecalibration;
+      previousCalibrationBeforeRecalibration = null;
+      recalibrationSession = false;
+    } else {
+      state.importCalibration = null;
+    }
     state.importSession = null;
-    state.importCalibration = null;
     closeImportChoiceModal();
     closeCalibrationModal();
   }
@@ -3192,7 +3201,7 @@
       state.importSession = null;
       return;
     }
-    if (state.image && state.image.src && state.image.src.startsWith("blob:")) {
+    if (state.image !== session.image && state.image && state.image.src && state.image.src.startsWith("blob:")) {
       URL.revokeObjectURL(state.image.src);
     }
     state.image = session.image;
@@ -3235,6 +3244,31 @@
     const width = session.image.naturalWidth || session.image.width;
     const height = session.image.naturalHeight || session.image.height;
     state.importCalibration = makeDefaultCalibration(width, height, estimatePixelArtGrid(session.image));
+    syncCalibrationInputs();
+    if (els.calibrationModal) els.calibrationModal.classList.remove("hidden");
+    renderCalibrationCanvas();
+  }
+
+  function openCalibrationForCurrentImage() {
+    if (!state.image) {
+      setMessage("当前没有可重新校准的原图。", true);
+      return;
+    }
+    const width = state.image.naturalWidth || state.image.width;
+    const height = state.image.naturalHeight || state.image.height;
+    previousCalibrationBeforeRecalibration = state.importCalibration && state.importCalibration.enabled
+      ? Object.assign({}, state.importCalibration)
+      : null;
+    recalibrationSession = true;
+    state.importSession = {
+      image: state.image,
+      url: "",
+      name: state.imageName || "当前图片",
+      mode: "main"
+    };
+    state.importCalibration = state.importCalibration && state.importCalibration.enabled
+      ? Object.assign({}, state.importCalibration)
+      : makeDefaultCalibration(width, height, estimatePixelArtGrid(state.image));
     syncCalibrationInputs();
     if (els.calibrationModal) els.calibrationModal.classList.remove("hidden");
     renderCalibrationCanvas();
@@ -3364,6 +3398,8 @@
         URL.revokeObjectURL(session.url);
         state.importSession = null;
         state.importCalibration = null;
+        recalibrationSession = false;
+        previousCalibrationBeforeRecalibration = null;
         return;
       }
       const placed = placeSourceCellsIntoCurrentPattern(pattern.cells, pattern.width, pattern.height);
@@ -3372,6 +3408,8 @@
         URL.revokeObjectURL(session.url);
         state.importSession = null;
         state.importCalibration = null;
+        recalibrationSession = false;
+        previousCalibrationBeforeRecalibration = null;
         return;
       }
       pushHistory();
@@ -3384,9 +3422,11 @@
       URL.revokeObjectURL(session.url);
       state.importSession = null;
       state.importCalibration = null;
+      recalibrationSession = false;
+      previousCalibrationBeforeRecalibration = null;
       return;
     }
-    if (state.image && state.image.src && state.image.src.startsWith("blob:")) {
+    if (state.image !== session.image && state.image && state.image.src && state.image.src.startsWith("blob:")) {
       URL.revokeObjectURL(state.image.src);
     }
     state.image = session.image;
@@ -3409,6 +3449,8 @@
     renderImportSummary();
     markUnsavedChanges();
     state.importSession = null;
+    recalibrationSession = false;
+    previousCalibrationBeforeRecalibration = null;
   }
 
   function formatStamp(date) {
@@ -3442,6 +3484,23 @@
     const params = clampBeadParams(state.beads);
     state.beads.width = params.width;
     state.beads.height = params.height;
+    if (state.importCalibration && state.importCalibration.enabled) {
+      const sourceWidth = state.image.naturalWidth || state.image.width;
+      const sourceHeight = state.image.naturalHeight || state.image.height;
+      const currentCalibration = normalizeCalibration(state.importCalibration, sourceWidth, sourceHeight);
+      if (params.width !== currentCalibration.columns || params.height !== currentCalibration.rows) {
+        const cellSize = Math.max(1, Math.min(sourceWidth / params.width, sourceHeight / params.height));
+        state.importCalibration = normalizeCalibration({
+          enabled: true,
+          offsetX: currentCalibration.offsetX,
+          offsetY: currentCalibration.offsetY,
+          columns: params.width,
+          cellSize
+        }, sourceWidth, sourceHeight);
+      } else {
+        state.importCalibration = currentCalibration;
+      }
+    }
     const rawPattern = state.importCalibration
       ? createPatternFromSourceWithCalibration(state.image, state.importCalibration, state.imageName, { clean: false })
       : createPatternFromSource(state.image, params.width, params.height, state.imageName, { clean: false });
@@ -11301,7 +11360,11 @@
     if (els.calibrationBackButton) {
       els.calibrationBackButton.addEventListener("click", () => {
         closeCalibrationModal();
-        openImportChoiceModal();
+        if (recalibrationSession) {
+          cancelImportSession();
+        } else {
+          openImportChoiceModal();
+        }
       });
     }
     if (els.calibrationDoneButton) els.calibrationDoneButton.addEventListener("click", completeCalibrationImport);
@@ -11513,6 +11576,7 @@
     els.modeBeadsButton.addEventListener("click", () => setMode("beads"));
     els.pixelToBeadsButton.addEventListener("click", generateBeadsFromPixel);
     els.generateBeadsButton.addEventListener("click", () => generateBeadsFromImage(true));
+    if (els.recalibrateImageButton) els.recalibrateImageButton.addEventListener("click", openCalibrationForCurrentImage);
     els.usePixelButton.addEventListener("click", generateBeadsFromPixel);
     els.previewCanvas.addEventListener("pointerdown", handleCanvasPointerDown);
     els.previewCanvas.addEventListener("pointermove", handleCanvasPointerMove);
