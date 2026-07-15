@@ -488,7 +488,7 @@
       "beadHeightNumber", "beadLockRatio", "generateBeadsButton", "recalibrateImageButton", "usePixelButton",
       "showCodesToggle", "showGridToggle", "codeFontScaleRange", "codeFontScaleNumber",
       "importSummary", "importChoiceSummary",
-      "importWizardStep1", "importWizardStep2", "importWizardStep3", "importWizardColorSummary", "importWizardFinalSummary", "importWizardColorLimitInput", "importWizardCalibrationButton", "importWizardSkipCalibrationButton", "importWizardOptimizeButton", "importWizardKeepColorsButton", "importWizardApplyButton", "importWizardRestartButton", "importWizardOriginalCanvas", "importWizardPatternCanvas", "importWizardFinalOriginalCanvas", "importWizardFinalPatternCanvas", "importAiAssistButton", "importAiAssistStatus", "importAiAssistApplyRecommendationButton", "importAiAssistUndoButton",
+      "importWizardStep1", "importWizardStep2", "importWizardStep3", "importWizardColorSummary", "importWizardFinalSummary", "importWizardColorLimitInput", "importWizardCalibrationButton", "importWizardSkipCalibrationButton", "importWizardOptimizeButton", "importWizardKeepColorsButton", "importWizardApplyButton", "importWizardRestartButton", "importWizardOriginalCanvas", "importWizardPatternCanvas", "importWizardFinalOriginalCanvas", "importWizardFinalPatternCanvas", "importAiAssistButton", "importAiAssistStatus", "importAiAssistApplyRecommendationButton", "importAiAssistApplySubjectButton", "importAiAssistUndoButton",
       "qualitySummary", "qualityCheckButton", "exportMaterialsButton", "buildModeToggle", "buildProgress", "clearBuildProgressButton",
       "paletteSelect", "paletteGrid", "cellTargetPaletteGrid", "selectionColorTargetPaletteGrid",
       "replaceFromSelect", "replaceToSelect", "replaceAllButton", "usageSummary",
@@ -3179,6 +3179,80 @@
     return pattern;
   }
 
+  function extractSubjectFromImage(image) {
+    const sourceWidth = image.naturalWidth || image.width;
+    const sourceHeight = image.naturalHeight || image.height;
+    const scale = Math.min(1, 1000 / Math.max(sourceWidth, sourceHeight));
+    const width = Math.max(1, Math.round(sourceWidth * scale));
+    const height = Math.max(1, Math.round(sourceHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(image, 0, 0, width, height);
+    const source = ctx.getImageData(0, 0, width, height);
+    const pixels = source.data;
+    const border = [];
+    for (let x = 0; x < width; x += 1) {
+      border.push([x, 0], [x, height - 1]);
+    }
+    for (let y = 1; y < height - 1; y += 1) {
+      border.push([0, y], [width - 1, y]);
+    }
+    let bgR = 0;
+    let bgG = 0;
+    let bgB = 0;
+    border.forEach(([x, y]) => {
+      const index = (y * width + x) * 4;
+      bgR += pixels[index];
+      bgG += pixels[index + 1];
+      bgB += pixels[index + 2];
+    });
+    bgR /= border.length;
+    bgG /= border.length;
+    bgB /= border.length;
+    let variance = 0;
+    border.forEach(([x, y]) => {
+      const index = (y * width + x) * 4;
+      variance += Math.hypot(pixels[index] - bgR, pixels[index + 1] - bgG, pixels[index + 2] - bgB);
+    });
+    variance /= Math.max(1, border.length);
+    const threshold = Math.max(28, Math.min(72, variance * 2.2 + 20));
+    const background = new Uint8Array(width * height);
+    const queue = [];
+    const enqueue = (x, y) => {
+      if (x < 0 || y < 0 || x >= width || y >= height) return;
+      const position = y * width + x;
+      if (background[position]) return;
+      const index = position * 4;
+      const distance = Math.hypot(pixels[index] - bgR, pixels[index + 1] - bgG, pixels[index + 2] - bgB);
+      if (distance <= threshold && pixels[index + 3] > 12) {
+        background[position] = 1;
+        queue.push(position);
+      }
+    };
+    border.forEach(([x, y]) => enqueue(x, y));
+    for (let cursor = 0; cursor < queue.length; cursor += 1) {
+      const position = queue[cursor];
+      const x = position % width;
+      const y = Math.floor(position / width);
+      enqueue(x - 1, y);
+      enqueue(x + 1, y);
+      enqueue(x, y - 1);
+      enqueue(x, y + 1);
+    }
+    const removedRatio = background.reduce((sum, value) => sum + value, 0) / Math.max(1, background.length);
+    const confidence = clamp((1 - variance / 85) * (removedRatio > 0.03 && removedRatio < 0.92 ? 1 : 0.45), 0, 1);
+    if (confidence < 0.58) return { confidence, dataUrl: "", removedRatio };
+    const output = ctx.createImageData(width, height);
+    output.data.set(pixels);
+    for (let position = 0; position < background.length; position += 1) {
+      if (background[position]) output.data[position * 4 + 3] = 0;
+    }
+    ctx.putImageData(output, 0, 0);
+    return { confidence, dataUrl: canvas.toDataURL("image/png"), removedRatio };
+  }
+
   function recommendImportPrecision(image, pattern) {
     const estimated = image ? estimatePixelArtGrid(image) : null;
     const quality = analyzePatternQuality(pattern);
@@ -3211,13 +3285,23 @@
       els.importAiAssistStatus.classList.remove("hidden");
       els.importAiAssistStatus.textContent = "AI还原助手正在分析主体、精度和轮廓...";
     }
-    window.setTimeout(() => {
+    window.setTimeout(async () => {
       try {
-        const roleAnalysis = analyzeLockedColorRoles(basePattern);
+        const subject = extractSubjectFromImage(state.importSession.image);
+        importAiAssist.subject = subject;
+        let analysisPattern = basePattern;
+        if (subject.dataUrl && subject.confidence >= 0.72) {
+          importAiAssist.subjectImage = await loadImageFromDataUrl(subject.dataUrl);
+          analysisPattern = state.importCalibration && state.importCalibration.enabled
+            ? createPatternFromSourceWithCalibration(importAiAssist.subjectImage, state.importCalibration, state.importSession.name, { clean: false })
+            : createPatternFromSource(importAiAssist.subjectImage, basePattern.width, basePattern.height, state.importSession.name, { clean: false });
+        }
+        const roleAnalysis = analyzeLockedColorRoles(analysisPattern);
         const locked = new Set(roleAnalysis.codes);
-        const cleaned = cleanPixelArtPattern(basePattern, locked);
-        const repaired = protectLockedCells(basePattern, cleaned, locked);
-        importAiAssist.recommendation = recommendImportPrecision(state.importSession.image, basePattern);
+        const cleaned = cleanPixelArtPattern(analysisPattern, locked);
+        const repaired = protectLockedCells(analysisPattern, cleaned, locked);
+        importAiAssist.recommendation = recommendImportPrecision(state.importSession.image, analysisPattern);
+        importAiAssist.analysisPattern = analysisPattern;
         importAiAssist.repairedPattern = repaired;
         importWizard.pattern = repaired;
         state.beads.lockedColorCodes = roleAnalysis.codes;
@@ -3225,9 +3309,11 @@
         const changed = countPatternDifferences(basePattern, repaired);
         const recommendation = importAiAssist.recommendation;
         if (els.importAiAssistStatus) {
-          els.importAiAssistStatus.textContent = `分析完成：推荐 ${recommendation.width} x ${recommendation.height} · 轮廓 ${recommendation.outlineScore}% · 高光 ${recommendation.highlightScore}% · 修复 ${changed} 格 · 色号难度 ${recommendation.colorDifficulty} 种。`;
+          const subjectText = subject.dataUrl && subject.confidence >= 0.72 ? `主体清理 ${Math.round(subject.removedRatio * 100)}%` : "保留原背景";
+          els.importAiAssistStatus.textContent = `分析完成：${subjectText} · 推荐 ${recommendation.width} x ${recommendation.height} · 轮廓 ${recommendation.outlineScore}% · 高光 ${recommendation.highlightScore}% · 修复 ${changed} 格 · 色号难度 ${recommendation.colorDifficulty} 种。`;
         }
         if (els.importAiAssistApplyRecommendationButton) els.importAiAssistApplyRecommendationButton.classList.remove("hidden");
+        if (els.importAiAssistApplySubjectButton && subject.dataUrl && subject.confidence >= 0.72) els.importAiAssistApplySubjectButton.classList.remove("hidden");
         if (els.importAiAssistUndoButton) els.importAiAssistUndoButton.classList.remove("hidden");
         renderImportWizardStep();
       } catch (error) {
@@ -3246,6 +3332,15 @@
     if (els.importAiAssistStatus) els.importAiAssistStatus.textContent = "已放弃 AI还原结果，恢复当前导入结果。";
     if (els.importAiAssistUndoButton) els.importAiAssistUndoButton.classList.add("hidden");
     if (els.importAiAssistApplyRecommendationButton) els.importAiAssistApplyRecommendationButton.classList.add("hidden");
+    if (els.importAiAssistApplySubjectButton) els.importAiAssistApplySubjectButton.classList.add("hidden");
+    renderImportWizardStep();
+  }
+
+  function applyImportAiSubject() {
+    if (!importAiAssist || !importAiAssist.analysisPattern || !importWizard) return;
+    importWizard.pattern = importAiAssist.analysisPattern;
+    if (els.importAiAssistStatus) els.importAiAssistStatus.textContent = "已应用主体清理结果，可继续进入色号优化。";
+    if (els.importAiAssistApplySubjectButton) els.importAiAssistApplySubjectButton.classList.add("hidden");
     renderImportWizardStep();
   }
 
@@ -3347,6 +3442,7 @@
     if (els.importAiAssistStatus) els.importAiAssistStatus.classList.add("hidden");
     if (els.importAiAssistUndoButton) els.importAiAssistUndoButton.classList.add("hidden");
     if (els.importAiAssistApplyRecommendationButton) els.importAiAssistApplyRecommendationButton.classList.add("hidden");
+    if (els.importAiAssistApplySubjectButton) els.importAiAssistApplySubjectButton.classList.add("hidden");
     state.importCalibration = null;
     setImportMode(getImportMode());
     renderImportWizardStep();
@@ -11678,6 +11774,7 @@
     if (els.importWizardKeepColorsButton) els.importWizardKeepColorsButton.addEventListener("click", wizardKeepColors);
     if (els.importWizardApplyButton) els.importWizardApplyButton.addEventListener("click", applyWizardImport);
     if (els.importAiAssistButton) els.importAiAssistButton.addEventListener("click", runImportAiAssist);
+    if (els.importAiAssistApplySubjectButton) els.importAiAssistApplySubjectButton.addEventListener("click", applyImportAiSubject);
     if (els.importAiAssistUndoButton) els.importAiAssistUndoButton.addEventListener("click", undoImportAiAssist);
     if (els.importAiAssistApplyRecommendationButton) els.importAiAssistApplyRecommendationButton.addEventListener("click", applyImportAiRecommendation);
     if (els.importWizardRestartButton) els.importWizardRestartButton.addEventListener("click", () => {
