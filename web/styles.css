@@ -3205,6 +3205,18 @@ body[data-mode="beads"] #paletteGrid {
 .ai-provider-balance em { font-style: normal; color: #b7791f; }
 .ai-provider-balance em.ok { color: #248a58; }
 
+.ai-pending-download {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px;
+  border: 1px solid #e7b75e;
+  border-radius: 8px;
+  background: #fffaf0;
+  color: #765414;
+  font-size: 12px;
+}
+
 .restore-actions {
   display: grid;
   grid-template-columns: auto repeat(3, minmax(0, 1fr));

@@ -1114,6 +1114,13 @@
       </div>
       <div id="aiProviderBalances" class="ai-provider-balances" aria-label="接口额度状态">正在读取接口额度状态...</div>
       <div id="aiGenerateStatus" class="ai-status">当前使用 Hugging Face 免费额度生成，Token 由本机服务安全保存。</div>
+      <div id="aiJimengPending" class="ai-pending-download hidden">
+        <span id="aiJimengPendingName"></span>
+        <div class="split-actions">
+          <button class="text-button" id="aiJimengImportButton" type="button">导入这张图片</button>
+          <button class="text-button secondary" id="aiJimengIgnoreButton" type="button">忽略本次</button>
+        </div>
+      </div>
       <div class="split-actions">
         <button class="text-button secondary" id="aiPromptCopyButton" type="button">复制提示词</button>
         <button class="text-button secondary" id="aiJimengWebButton" type="button">即梦网页一键协同</button>

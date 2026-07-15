@@ -542,7 +542,7 @@
       "projectActionThumb", "projectActionTitle", "projectActionCreated", "projectActionUpdated",
       "projectActionOpenButton", "projectActionHistoryButton", "projectActionTemplateButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
       "projectHistoryModal", "projectHistoryCloseButton", "projectHistoryTitle", "projectHistoryList",
-      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiProviderSelect", "aiStyleSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiProviderBalances", "aiGenerateStatus", "aiPromptCopyButton", "aiJimengWebButton", "aiGenerateButton",
+      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiProviderSelect", "aiStyleSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiProviderBalances", "aiGenerateStatus", "aiJimengPending", "aiJimengPendingName", "aiJimengImportButton", "aiJimengIgnoreButton", "aiPromptCopyButton", "aiJimengWebButton", "aiGenerateButton",
       "layerImportModal", "layerImportCloseButton", "layerImportImageButton", "layerImportProjectFileButton", "layerImportProjectList",
       "importChoiceModal", "importChoiceCancelButton", "importChoiceFileName",
       "importModeFidelityButton", "importModeBalancedButton", "importModeSimpleButton",
@@ -2664,6 +2664,30 @@
     if (els.aiGenerateModal) els.aiGenerateModal.classList.add("hidden");
   }
 
+  let pendingJimengDownload = null;
+  let jimengDownloadPollTimer = 0;
+
+  function clearPendingJimengDownload() {
+    pendingJimengDownload = null;
+    if (els.aiJimengPending) els.aiJimengPending.classList.add("hidden");
+    if (els.aiJimengPendingName) els.aiJimengPendingName.textContent = "";
+  }
+
+  async function importPendingJimengDownload() {
+    if (!pendingJimengDownload) return;
+    const pending = pendingJimengDownload;
+    const imported = await applyAiImageDataUrl(pending.imageDataUrl, pending.request);
+    if (!imported) {
+      if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "这张下载图片无法读取，请换一张图片。";
+      return;
+    }
+    clearPendingJimengDownload();
+    markUnsavedChanges();
+    closeAiGenerateModal();
+    showEditor();
+    setMessage(`已导入即梦图片：${pending.name || "下载图片"}`, false);
+  }
+
   function buildAiGenerationRequest() {
     return {
       prompt: (els.aiPromptInput && els.aiPromptInput.value || "").trim(),
@@ -2736,15 +2760,12 @@
         const response = await fetch(`/api/ai/latest-download?since=${startedAt}`, { cache: "no-store" });
         const result = await response.json();
         if (result && result.imageDataUrl) {
-          const imported = await applyAiImageDataUrl(result.imageDataUrl, request);
-          if (imported) {
-            markUnsavedChanges();
-            closeAiGenerateModal();
-            showEditor();
-            setMessage(`已自动导入即梦图片：${result.name || "最新下载图片"}`, false);
-            if (els.aiJimengWebButton) els.aiJimengWebButton.disabled = false;
-            return;
-          }
+          pendingJimengDownload = { imageDataUrl: result.imageDataUrl, name: result.name, request };
+          if (els.aiJimengPendingName) els.aiJimengPendingName.textContent = `检测到新下载图片：${result.name || "未命名图片"}`;
+          if (els.aiJimengPending) els.aiJimengPending.classList.remove("hidden");
+          if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "已发现新图片，请确认后再导入。";
+          if (els.aiJimengWebButton) els.aiJimengWebButton.disabled = false;
+          return;
         }
       } catch {}
       if (els.aiGenerateModal && !els.aiGenerateModal.classList.contains("hidden")) {
@@ -11724,6 +11745,11 @@
     });
     if (els.aiGenerateButton) els.aiGenerateButton.addEventListener("click", startAiGeneration);
     if (els.aiJimengWebButton) els.aiJimengWebButton.addEventListener("click", startJimengWebCollaboration);
+    if (els.aiJimengImportButton) els.aiJimengImportButton.addEventListener("click", importPendingJimengDownload);
+    if (els.aiJimengIgnoreButton) els.aiJimengIgnoreButton.addEventListener("click", () => {
+      clearPendingJimengDownload();
+      if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "已忽略这次下载图片，可以继续生成或重新协同。";
+    });
     if (els.aiProviderSelect) els.aiProviderSelect.addEventListener("change", refreshAiProviderStatus);
     if (els.aiGenerateModal) els.aiGenerateModal.addEventListener("click", (event) => {
       if (event.target === els.aiGenerateModal) closeAiGenerateModal();
