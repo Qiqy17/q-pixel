@@ -10,6 +10,7 @@ import os
 import ssl
 import subprocess
 import time
+from pathlib import Path
 from urllib.parse import quote
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -361,6 +362,35 @@ def get_provider_status():
         "jimeng": {"name": "即梦 AI（火山引擎）", "configured": bool((os.environ.get("VOLCENGINE_ACCESS_KEY", "").strip() or _read_keychain_key(VOLC_ACCESS_KEY_SERVICE)) and (os.environ.get("VOLCENGINE_SECRET_KEY", "").strip() or _read_keychain_key(VOLC_SECRET_KEY_SERVICE))), "balanceLabel": "API余额请在火山引擎控制台查看；即梦网页积分不适用于API"},
         "openai": {"name": "OpenAI GPT", "configured": bool(os.environ.get("OPENAI_API_KEY", "").strip() or _read_keychain_key(OPENAI_KEYCHAIN_SERVICE)), "balanceLabel": "余额/额度请在 OpenAI API 控制台查看"},
     }
+
+
+def find_latest_download_image(since_ms):
+    try:
+        since = float(since_ms or 0) / 1000
+    except (TypeError, ValueError):
+        since = 0
+    download_dir = Path.home() / "Downloads"
+    if not download_dir.is_dir():
+        return None
+    candidates = []
+    for path in download_dir.iterdir():
+        if not path.is_file() or path.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+            continue
+        try:
+            modified = path.stat().st_mtime
+        except OSError:
+            continue
+        if modified >= since - 2:
+            candidates.append((modified, path))
+    if not candidates:
+        return None
+    _, path = max(candidates, key=lambda item: item[0])
+    try:
+        image_bytes = path.read_bytes()
+    except OSError:
+        return None
+    content_types = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+    return {"name": path.name, "imageDataUrl": f"data:{content_types[path.suffix.lower()]};base64," + base64.b64encode(image_bytes).decode("ascii")}
 
 
 def generate_image(request):

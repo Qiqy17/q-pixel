@@ -542,7 +542,7 @@
       "projectActionThumb", "projectActionTitle", "projectActionCreated", "projectActionUpdated",
       "projectActionOpenButton", "projectActionHistoryButton", "projectActionTemplateButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
       "projectHistoryModal", "projectHistoryCloseButton", "projectHistoryTitle", "projectHistoryList",
-      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiProviderSelect", "aiStyleSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiProviderBalances", "aiGenerateStatus", "aiPromptCopyButton", "aiGenerateButton",
+      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiProviderSelect", "aiStyleSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiProviderBalances", "aiGenerateStatus", "aiPromptCopyButton", "aiJimengWebButton", "aiGenerateButton",
       "layerImportModal", "layerImportCloseButton", "layerImportImageButton", "layerImportProjectFileButton", "layerImportProjectList",
       "importChoiceModal", "importChoiceCancelButton", "importChoiceFileName",
       "importModeFidelityButton", "importModeBalancedButton", "importModeSimpleButton",
@@ -2715,6 +2715,45 @@
     } finally {
       if (els.aiGenerateButton) els.aiGenerateButton.disabled = false;
     }
+  }
+
+  async function startJimengWebCollaboration() {
+    const request = buildAiGenerationRequest();
+    if (!request.prompt) {
+      if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "请先输入主题描述。";
+      return;
+    }
+    const startedAt = Date.now();
+    const webPrompt = `${request.prompt}。请生成适合拼豆像素化的图片，主体居中，轮廓清晰，色块均匀，避免文字和水印。`;
+    try {
+      await navigator.clipboard.writeText(webPrompt);
+    } catch {}
+    window.open("https://jimeng.jianying.com/", "_blank", "noopener");
+    if (els.aiJimengWebButton) els.aiJimengWebButton.disabled = true;
+    if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "已打开即梦，提示词已复制。生成并下载图片后，Q像素会自动导入最新下载图片。";
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/ai/latest-download?since=${startedAt}`, { cache: "no-store" });
+        const result = await response.json();
+        if (result && result.imageDataUrl) {
+          const imported = await applyAiImageDataUrl(result.imageDataUrl, request);
+          if (imported) {
+            markUnsavedChanges();
+            closeAiGenerateModal();
+            showEditor();
+            setMessage(`已自动导入即梦图片：${result.name || "最新下载图片"}`, false);
+            if (els.aiJimengWebButton) els.aiJimengWebButton.disabled = false;
+            return;
+          }
+        }
+      } catch {}
+      if (els.aiGenerateModal && !els.aiGenerateModal.classList.contains("hidden")) {
+        window.setTimeout(poll, 2500);
+      } else if (els.aiJimengWebButton) {
+        els.aiJimengWebButton.disabled = false;
+      }
+    };
+    window.setTimeout(poll, 2500);
   }
 
   function applyAiImageDataUrl(dataUrl, request) {
@@ -11684,6 +11723,7 @@
       if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = prompt ? "提示词已复制。" : "请先输入主题描述。";
     });
     if (els.aiGenerateButton) els.aiGenerateButton.addEventListener("click", startAiGeneration);
+    if (els.aiJimengWebButton) els.aiJimengWebButton.addEventListener("click", startJimengWebCollaboration);
     if (els.aiProviderSelect) els.aiProviderSelect.addEventListener("change", refreshAiProviderStatus);
     if (els.aiGenerateModal) els.aiGenerateModal.addEventListener("click", (event) => {
       if (event.target === els.aiGenerateModal) closeAiGenerateModal();

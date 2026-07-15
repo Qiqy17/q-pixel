@@ -12,7 +12,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from qpixel_openai import OpenAIConfigError, OpenAIRequestError, generate_image, get_provider_status
+from qpixel_openai import OpenAIConfigError, OpenAIRequestError, find_latest_download_image, generate_image, get_provider_status
 
 
 ROOT = Path(__file__).resolve().parent
@@ -51,6 +51,9 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/ai/status":
             self.send_json({"providers": get_provider_status()})
+            return
+        if path == "/api/ai/latest-download":
+            self.send_json(find_latest_download_image(parse_query(self.path).get("since", ["0"])[0]) or {"found": False})
             return
         if path == "/api/health":
             self.send_json(health_payload(self.read_projects(), self.read_settings()))
@@ -277,6 +280,11 @@ def get_project_id_from_path(path):
         return ""
     project_id = unquote(path[len(prefix):].strip("/"))
     return project_id if project_id and "/" not in project_id else ""
+
+
+def parse_query(path):
+    from urllib.parse import parse_qs
+    return parse_qs(urlparse(path).query)
 
 
 def find_project(projects, project_id):
