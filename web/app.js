@@ -123,7 +123,11 @@
         { value: "cork", label: "软木板", texture: "cork", colors: ["#c99a63", "#7e512a", "#f0c58b"], grain: 1.4 },
         { value: "grid-paper", label: "方格纸", texture: "print", colors: ["#fbfdff", "#d7e5f7", "#7fa3ca"], grid: 1 },
         { value: "pastel-gradient", label: "柔彩渐变", texture: "cream", colors: ["#ffeaf4", "#e5f1ff", "#eee8ff"], blobs: 1 },
-        { value: "dark-studio", label: "深色摄影棚", texture: "dark", colors: ["#3b4150", "#12151c", "#667085"], lines: 0.7 }
+        { value: "dark-studio", label: "深色摄影棚", texture: "dark", colors: ["#3b4150", "#12151c", "#667085"], lines: 0.7 },
+        { value: "concrete-studio", label: "细砂混凝土", texture: "concrete", colors: ["#d8d6d0", "#8f918f", "#f2f1ec"], grain: 1.35, micro: 1.15 },
+        { value: "terrazzo-studio", label: "水磨石", texture: "terrazzo", colors: ["#eee9df", "#b7a894", "#f9f7f0"], micro: 1.05 },
+        { value: "bamboo-board", label: "浅色竹板", texture: "bamboo", colors: ["#e7c981", "#a57637", "#fff0b2"], grain: 1.1, micro: 0.7 },
+        { value: "slate-board", label: "深灰板岩", texture: "slate", colors: ["#424853", "#1d222b", "#8f9aa8"], grain: 0.55, micro: 0.85 }
       ]
     },
     {
@@ -137,6 +141,7 @@
         { value: "paper-riso", label: "孔版印刷纸", texture: "riso", colors: ["#fff5df", "#ff715e", "#4ca3ff"], grain: 1.1, print: 1 },
         { value: "paper-receipt", label: "热敏票据纸", texture: "receipt", colors: ["#f4f1e8", "#d7d0c2", "#8c8d91"], grain: 0.7, lines: 0.75 },
         { value: "paper-newsprint", label: "旧报刊纸", texture: "newspaper", colors: ["#ece4d6", "#bcb09d", "#35383d"], grain: 1.2, print: 0.8 }
+        ,{ value: "paper-cotton", label: "棉质艺术纸", texture: "paper", colors: ["#fffaf1", "#d6c7b4", "#ffffff"], grain: 0.85, fibers: 1.8, micro: 0.8 }
       ]
     },
     {
@@ -193,6 +198,7 @@
         { value: "fabric-embroidery", label: "刺绣布底", texture: "embroidery", colors: ["#f2e7d6", "#c5a88f", "#fffaf0"], weave: 1.2, stitch: 1 },
         { value: "fabric-soft", label: "柔软绒布", texture: "velvet", colors: ["#d8ccd8", "#a488a3", "#f8f1f9"], grain: 0.85, nap: 1.2 },
         { value: "fabric-tweed", label: "粗花呢", texture: "tweed", colors: ["#b8b0a0", "#6f6a5f", "#e1d8c9"], weave: 1.8, grain: 1.1 }
+        ,{ value: "fabric-denim", label: "靛蓝牛仔", texture: "denim", colors: ["#4b6f92", "#203b59", "#9bb7d0"], weave: 1.35, grain: 0.85, micro: 0.8 }
       ]
     },
     {
@@ -530,7 +536,7 @@
       "exportPreviewPdfButton", "exportPreviewMirrorButton", "exportPreviewOpenButton", "materialPreviewButton", "charmPreviewButton",
       "exportPreviewZoomOutButton", "exportPreviewZoomFitButton", "exportPreviewZoomInButton",
       "materialPreviewModal", "materialPreviewCloseButton", "materialPreviewCanvas", "materialModeSelect",
-      "materialBaseSelect", "materialIntensityRange", "materialIntensityLabel", "materialBackgroundSelect", "materialLightSelect", "materialDecorSelect", "materialExportButton",
+      "materialBaseSelect", "materialIntensityRange", "materialIntensityLabel", "materialBackgroundSelect", "materialLightSelect", "materialDecorSelect", "materialQualityCheckButton", "materialQualitySummary", "materialExportButton",
       "styleRatioSelect", "styleBackgroundColorInput", "styleBackgroundAlphaRange", "styleBackgroundAlphaLabel", "styleBackgroundImageInput",
       "styleOrientationSelect", "styleCustomWidthInput", "styleCustomHeightInput", "styleBackgroundImageButton", "styleBackgroundImageName",
       "styleBorderSizeRange", "styleBorderSizeLabel", "styleBorderColorInput", "styleShadowColorInput", "styleShadowBlurRange",
@@ -8183,6 +8189,42 @@
     return true;
   }
 
+  function auditMaterialPreview() {
+    if (!els.materialPreviewCanvas || !getMaterialPattern()) {
+      if (els.materialQualitySummary) els.materialQualitySummary.textContent = "请先生成图纸，再检查样式预览。";
+      return { valid: false };
+    }
+    drawMaterialPreview();
+    const canvas = els.materialPreviewCanvas;
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    const sample = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let opaque = 0;
+    let luminanceTotal = 0;
+    let luminanceSquared = 0;
+    const stride = 16;
+    for (let index = 0; index < sample.length; index += stride * 4) {
+      const alpha = sample[index + 3];
+      if (alpha > 8) opaque += 1;
+      const luminance = sample[index] * 0.2126 + sample[index + 1] * 0.7152 + sample[index + 2] * 0.0722;
+      luminanceTotal += luminance;
+      luminanceSquared += luminance * luminance;
+    }
+    const count = Math.max(1, Math.floor(sample.length / (stride * 4)));
+    const mean = luminanceTotal / count;
+    const variance = Math.max(0, luminanceSquared / count - mean * mean);
+    const selectedText = (element, fallback) => element && element.options[element.selectedIndex] ? element.options[element.selectedIndex].text : fallback;
+    const active = [
+      `背景：${selectedText(els.materialBackgroundSelect, "默认")}`,
+      `遮罩：${selectedText(els.materialModeSelect, "默认")}`,
+      `边框：${selectedText(els.materialBaseSelect, "无")}`,
+      `灯光：${selectedText(els.materialLightSelect, "默认")}`,
+      `装饰：${selectedText(els.materialDecorSelect, "无")}`
+    ];
+    const quality = variance > 180 ? "层次正常" : variance > 55 ? "层次偏弱" : "画面偏平";
+    if (els.materialQualitySummary) els.materialQualitySummary.textContent = `${quality} · 画面有效像素 ${Math.round(opaque / count * 100)}% · 明暗变化 ${Math.round(variance)} · ${active.join(" · ")}`;
+    return { valid: true, variance, opaqueRatio: opaque / count, active };
+  }
+
   function drawMaterialSceneBackground(ctx, width, height, background) {
     if (background === "transparent") return;
     if (background === "dark") {
@@ -9407,6 +9449,7 @@
     ctx.fillStyle = base;
     ctx.fillRect(0, 0, width, height);
 
+    drawMaterialMicroNoise(ctx, width, height, material, material.micro || 0.55);
     if (material.blobs) drawSoftMaterialBlobs(ctx, width, height, material, material.blobs);
     drawMaterialTextureDetails(ctx, width, height, material);
     if (material.grain) drawMaterialGrain(ctx, width, height, material, material.grain);
@@ -9424,6 +9467,24 @@
       const dark = pseudoRandom(i, 11.1) > 0.52;
       ctx.globalAlpha = (dark ? 0.055 : 0.08) * Math.min(2.2, amount);
       ctx.fillStyle = dark ? materialColor(material, 1, "#000000") : "#ffffff";
+      ctx.fillRect(x, y, size, size);
+    }
+    ctx.restore();
+  }
+
+  function drawMaterialMicroNoise(ctx, width, height, material, amount = 0.55) {
+    const count = Math.max(180, Math.min(2600, Math.floor((width * height / 2600) * amount)));
+    const dark = materialColor(material, 1, "#5d6470");
+    const light = materialColor(material, 2, "#ffffff");
+    ctx.save();
+    ctx.globalCompositeOperation = "soft-light";
+    for (let i = 0; i < count; i += 1) {
+      const x = pseudoRandom(i, 101.7) * width;
+      const y = pseudoRandom(i, 109.3) * height;
+      const size = 0.35 + pseudoRandom(i, 117.1) * (0.8 + amount * 1.6);
+      const isLight = pseudoRandom(i, 123.9) > 0.5;
+      ctx.globalAlpha = 0.035 + pseudoRandom(i, 131.4) * 0.075 * Math.min(1.8, amount);
+      ctx.fillStyle = isLight ? light : dark;
       ctx.fillRect(x, y, size, size);
     }
     ctx.restore();
@@ -9653,10 +9714,11 @@
         ctx.restore();
       }
       drawSoftMaterialBlobs(ctx, width, height, material, material.blobs || 0.85);
-    } else if (["fabric", "embroidery", "velvet", "tweed", "carbon"].includes(texture)) {
+    } else if (["fabric", "embroidery", "velvet", "tweed", "denim", "carbon"].includes(texture)) {
       drawWeaveTexture(ctx, width, height, material, material.weave || 1);
       if (texture === "embroidery" || texture === "tweed") drawLooseLines(ctx, width, height, material, { diagonal: true, step: 13, alpha: 0.13, color: "#ffffff", width: 1.1 });
       if (texture === "velvet") drawLooseLines(ctx, width, height, material, { diagonal: true, step: 24, alpha: 0.14, color: materialColor(material, 2), width: 4 });
+      if (texture === "denim") drawLooseLines(ctx, width, height, material, { diagonal: true, step: 9, alpha: 0.16, color: materialColor(material, 2), width: 1.2 });
     } else if (["plastic", "puffy", "clay"].includes(texture)) {
       drawSoftMaterialBlobs(ctx, width, height, material, material.blobs || 0.8);
       ctx.save();
@@ -9670,14 +9732,43 @@
       ctx.fillRect(0, 0, width, height);
       ctx.restore();
       if (texture === "clay") drawMaterialGrain(ctx, width, height, material, 0.8);
-    } else if (["dark", "dark-lines", "carbon"].includes(texture)) {
+    } else if (["dark", "dark-lines", "carbon", "slate"].includes(texture)) {
       drawMaterialVignette(ctx, width, height, material.vignette || 0.46);
-      drawLooseLines(ctx, width, height, material, { diagonal: texture !== "dark", step: texture === "dark-lines" ? 28 : 44, alpha: 0.12, color: materialColor(material, 2), width: 1.2 });
+      drawLooseLines(ctx, width, height, material, { diagonal: texture !== "dark", step: texture === "dark-lines" ? 28 : texture === "slate" ? 38 : 44, alpha: texture === "slate" ? 0.18 : 0.12, color: materialColor(material, 2), width: 1.2 });
       if (texture === "carbon") drawWeaveTexture(ctx, width, height, material, 1.7);
     } else if (texture === "wood") {
       drawLooseLines(ctx, width, height, material, { step: 15, alpha: 0.18, color: materialColor(material, 1), width: 2 });
+    } else if (texture === "bamboo") {
+      drawLooseLines(ctx, width, height, material, { step: 22, alpha: 0.2, color: materialColor(material, 1), width: 1.4 });
+      ctx.save();
+      ctx.globalAlpha = 0.26;
+      ctx.strokeStyle = materialColor(material, 1);
+      for (let x = 70; x < width; x += 160) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x + Math.sin(x) * 4, height);
+        ctx.stroke();
+      }
+      ctx.restore();
     } else if (texture === "stone") {
       drawLooseLines(ctx, width, height, material, { diagonal: true, step: 48, alpha: 0.18, color: materialColor(material, 1), width: 2.2 });
+    } else if (texture === "concrete") {
+      drawLooseLines(ctx, width, height, material, { diagonal: true, step: 96, alpha: 0.08, color: materialColor(material, 1), width: 1.2 });
+      drawMaterialGrain(ctx, width, height, material, material.grain || 1);
+    } else if (texture === "terrazzo") {
+      ctx.save();
+      for (let i = 0; i < 95; i += 1) {
+        const x = pseudoRandom(i, 141.2) * width;
+        const y = pseudoRandom(i, 149.8) * height;
+        const rx = 2 + pseudoRandom(i, 157.1) * 12;
+        const ry = 1 + pseudoRandom(i, 163.6) * 7;
+        ctx.globalAlpha = 0.22 + pseudoRandom(i, 171.4) * 0.2;
+        ctx.fillStyle = i % 3 === 0 ? materialColor(material, 1) : i % 3 === 1 ? "#c98d7c" : materialColor(material, 2);
+        ctx.beginPath();
+        ctx.ellipse(x, y, rx, ry, pseudoRandom(i, 177.2) * Math.PI, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
     } else if (texture === "cork") {
       drawMaterialGrain(ctx, width, height, material, 1.8);
       drawPaperFibers(ctx, width, height, material, 0.7);
@@ -12109,6 +12200,7 @@
     if (els.charmPreviewCloseButton) els.charmPreviewCloseButton.addEventListener("click", closeCharmPreview);
     if (els.materialModeSelect) els.materialModeSelect.addEventListener("change", drawMaterialPreview);
     if (els.materialBaseSelect) els.materialBaseSelect.addEventListener("change", drawMaterialPreview);
+    if (els.materialQualityCheckButton) els.materialQualityCheckButton.addEventListener("click", auditMaterialPreview);
     if (els.materialIntensityRange) els.materialIntensityRange.addEventListener("input", drawMaterialPreview);
     if (els.materialBackgroundSelect) els.materialBackgroundSelect.addEventListener("change", drawMaterialPreview);
     if (els.materialLightSelect) els.materialLightSelect.addEventListener("change", drawMaterialPreview);
