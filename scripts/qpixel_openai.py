@@ -4,9 +4,18 @@
 import base64
 import json
 import os
+import ssl
 import subprocess
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+
+def _ssl_context():
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except (ImportError, OSError):
+        return ssl.create_default_context()
 
 
 class OpenAIConfigError(Exception):
@@ -18,6 +27,18 @@ class OpenAIRequestError(Exception):
 
 
 KEYCHAIN_SERVICE = "qpixel-openai-api-key"
+
+
+def _friendly_error(detail, status):
+    text = str(detail or "")
+    lowered = text.lower()
+    if "billing hard limit" in lowered or "insufficient_quota" in lowered or "quota" in lowered:
+        return "OpenAI API 账户已达到消费上限，请在 API 控制台提高预算或充值后重试"
+    if "invalid api key" in lowered or "incorrect api key" in lowered:
+        return "OpenAI API Key 无效，请重新配置密钥"
+    if "organization" in lowered and "verif" in lowered:
+        return "OpenAI 账户需要完成组织验证后才能使用图片模型"
+    return text or f"OpenAI 返回 HTTP {status}"
 
 
 def _read_keychain_key():
@@ -106,14 +127,14 @@ def generate_image(request):
         method="POST",
     )
     try:
-        with urlopen(request_obj, timeout=130) as response:
+        with urlopen(request_obj, timeout=130, context=_ssl_context()) as response:
             result = json.loads(response.read().decode("utf-8"))
     except HTTPError as error:
         try:
             detail = json.loads(error.read().decode("utf-8")).get("error", {}).get("message", "")
         except Exception:
             detail = ""
-        raise OpenAIRequestError(detail or f"OpenAI 返回 HTTP {error.code}") from error
+        raise OpenAIRequestError(_friendly_error(detail, error.code)) from error
     except (URLError, TimeoutError, OSError) as error:
         raise OpenAIRequestError("无法连接 OpenAI，请检查网络或代理设置") from error
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
