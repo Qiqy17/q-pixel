@@ -549,7 +549,7 @@
       "projectActionThumb", "projectActionTitle", "projectActionCreated", "projectActionUpdated",
       "projectActionOpenButton", "projectActionHistoryButton", "projectActionTemplateButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
       "projectHistoryModal", "projectHistoryCloseButton", "projectHistoryTitle", "projectHistoryList",
-      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiProviderSelect", "aiStyleSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiProviderBalances", "aiGenerateStatus", "aiJimengPending", "aiJimengPendingName", "aiJimengImportButton", "aiJimengIgnoreButton", "aiPromptCopyButton", "aiJimengWebButton", "aiGenerateButton", "jimengWatermarkModal", "jimengWatermarkCloseButton", "jimengWatermarkCancelButton", "jimengWatermarkConfirmButton",
+      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiProviderSelect", "aiStyleSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiProviderBalances", "aiGenerateStatus", "aiJimengPending", "aiJimengPendingName", "aiJimengImportButton", "aiJimengIgnoreButton", "aiPromptCopyButton", "aiJimengWebButton", "aiGenerateButton", "jimengWatermarkModal", "jimengWatermarkCloseButton", "jimengWatermarkCancelButton", "jimengWatermarkConfirmButton", "jimengWatermarkCropEdge",
       "layerImportModal", "layerImportCloseButton", "layerImportImageButton", "layerImportProjectFileButton", "layerImportProjectList",
       "importChoiceModal", "importChoiceCancelButton", "importChoiceFileName",
       "importModeFidelityButton", "importModeBalancedButton", "importModeSimpleButton",
@@ -2693,7 +2693,7 @@
     return selected ? selected.value : "keep";
   }
 
-  function cropJimengEdgeDataUrl(dataUrl) {
+  function cropJimengEdgeDataUrl(dataUrl, edge) {
     return new Promise((resolve) => {
       const image = new Image();
       image.onload = () => {
@@ -2704,7 +2704,9 @@
         canvas.width = Math.max(1, width - crop);
         canvas.height = Math.max(1, height - crop);
         const context = canvas.getContext("2d");
-        context.drawImage(image, 0, 0, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+        const sourceX = edge.endsWith("right") ? 0 : crop;
+        const sourceY = edge.startsWith("bottom") ? 0 : crop;
+        context.drawImage(image, sourceX, sourceY, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
         resolve(canvas.toDataURL("image/png"));
       };
       image.onerror = () => resolve(dataUrl);
@@ -2727,6 +2729,9 @@
 
   function openJimengWatermarkModal() {
     if (!pendingJimengDownload || !els.jimengWatermarkModal) return;
+    const keep = document.querySelector('input[name="jimengWatermarkMode"][value="keep"]');
+    if (keep) keep.checked = true;
+    if (els.jimengWatermarkCropEdge) els.jimengWatermarkCropEdge.value = "bottom-right";
     els.jimengWatermarkModal.classList.remove("hidden");
   }
 
@@ -2738,8 +2743,9 @@
     let dataUrl = pending.imageDataUrl;
     let note = "";
     if (mode === "crop") {
-      dataUrl = await cropJimengEdgeDataUrl(dataUrl);
-      note = "已裁切边缘标识";
+      const edge = els.jimengWatermarkCropEdge ? els.jimengWatermarkCropEdge.value : "bottom-right";
+      dataUrl = await cropJimengEdgeDataUrl(dataUrl, edge);
+      note = `已裁切${({"bottom-right":"右下角", "bottom-left":"左下角", "top-right":"右上角", "top-left":"左上角"}[edge] || "边缘")}标识`;
     } else if (mode === "authorized") {
       const cleaned = await cleanAuthorizedJimengImage(dataUrl);
       dataUrl = cleaned.dataUrl;

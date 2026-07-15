@@ -1153,14 +1153,22 @@
         </label>
         <label class="jimeng-watermark-option">
           <input type="radio" name="jimengWatermarkMode" value="crop">
-          <span><strong>裁切边缘标识</strong><em>仅裁掉边缘区域，再进入像素校准；适合标识位于画面边缘的图片。</em></span>
+          <span><strong>裁切边缘标识</strong><em>仅裁掉指定边缘区域，再进入像素校准；适合标识位于画面边缘的图片。</em></span>
+        </label>
+        <label class="jimeng-watermark-crop-field">标识所在边缘
+          <select id="jimengWatermarkCropEdge">
+            <option value="bottom-right">右下角</option>
+            <option value="bottom-left">左下角</option>
+            <option value="top-right">右上角</option>
+            <option value="top-left">左上角</option>
+          </select>
         </label>
         <label class="jimeng-watermark-option">
           <input type="radio" name="jimengWatermarkMode" value="authorized">
-          <span><strong>授权图片清理（实验）</strong><em>仅用于你有权处理的图片，尝试清理平坦背景上的浅色标识；复杂背景会保留原图。</em></span>
+          <span><strong>授权图片背景清理（实验）</strong><em>仅用于你有权处理的图片，尝试提取主体并清理平坦背景；复杂背景或不确定时会保留原图。</em></span>
         </label>
       </div>
-      <div class="ai-status">Q像素不会自动替第三方图片去除平台标识。无论选择哪种方式，后续都可以在像素校准和导入优化中继续调整。</div>
+      <div class="ai-status">Q像素不会自动替第三方图片强行去除平台标识。裁切和背景清理仅适用于你有权处理的图片，后续仍可在像素校准和导入优化中继续调整。</div>
       <div class="split-actions">
         <button class="text-button secondary" id="jimengWatermarkCancelButton" type="button">取消</button>
         <button class="text-button" id="jimengWatermarkConfirmButton" type="button">处理并进入导入</button>

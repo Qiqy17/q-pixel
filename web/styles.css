@@ -3351,6 +3351,30 @@ body[data-mode="beads"] #paletteGrid {
   line-height: 1.45;
 }
 
+.jimeng-watermark-crop-field {
+  display: none;
+  grid-template-columns: 1fr 150px;
+  gap: 10px;
+  align-items: center;
+  padding: 0 12px 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.jimeng-watermark-option:has(input[value="crop"]:checked) + .jimeng-watermark-crop-field {
+  display: grid;
+}
+
+.jimeng-watermark-crop-field select {
+  min-height: 34px;
+  border: 1px solid var(--panel-line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font-weight: 700;
+}
+
 .restore-actions {
   display: grid;
   grid-template-columns: auto repeat(3, minmax(0, 1fr));
