@@ -549,7 +549,7 @@
       "projectActionThumb", "projectActionTitle", "projectActionCreated", "projectActionUpdated",
       "projectActionOpenButton", "projectActionHistoryButton", "projectActionTemplateButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
       "projectHistoryModal", "projectHistoryCloseButton", "projectHistoryTitle", "projectHistoryList",
-      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiProviderSelect", "aiStyleSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiCompositionSelect", "aiPaletteModeSelect", "aiCandidateCountSelect", "aiCreativeBrief", "aiProviderBalances", "aiGenerateStatus", "aiCandidatePanel", "aiCandidateSummary", "aiCandidateGrid", "aiCandidateRepairButton", "aiCandidatePaletteButton", "aiCandidateUndoButton", "aiCandidateApplyButton", "aiCandidateAnalysis", "aiJimengPending", "aiJimengPendingName", "aiJimengImportButton", "aiJimengIgnoreButton", "aiPromptCopyButton", "aiJimengWebButton", "aiGenerateButton", "jimengWatermarkModal", "jimengWatermarkCloseButton", "jimengWatermarkCancelButton", "jimengWatermarkConfirmButton", "jimengWatermarkCropEdge",
+      "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiProviderSelect", "aiStyleSelect", "aiTemplateSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiCompositionSelect", "aiPaletteModeSelect", "aiCandidateCountSelect", "aiCreativeBrief", "aiProviderBalances", "aiGenerateStatus", "aiCandidatePanel", "aiCandidateSummary", "aiCandidateGrid", "aiCandidateRepairButton", "aiCandidatePaletteButton", "aiCandidateUndoButton", "aiCandidateApplyButton", "aiCandidateAnalysis", "aiJimengPending", "aiJimengPendingName", "aiJimengImportButton", "aiJimengIgnoreButton", "aiPromptCopyButton", "aiIdeaButton", "aiJimengWebButton", "aiGenerateButton", "jimengWatermarkModal", "jimengWatermarkCloseButton", "jimengWatermarkCancelButton", "jimengWatermarkConfirmButton", "jimengWatermarkCropEdge",
       "layerImportModal", "layerImportCloseButton", "layerImportImageButton", "layerImportProjectFileButton", "layerImportProjectList",
       "importChoiceModal", "importChoiceCancelButton", "importChoiceFileName",
       "importModeFidelityButton", "importModeBalancedButton", "importModeSimpleButton",
@@ -2678,13 +2678,34 @@
 
   let aiCandidateState = { request: null, candidates: [], selectedIndex: 0 };
 
+  const AI_CREATIVE_TEMPLATES = {
+    free: { label: "自由创作", prompt: "保持主体明确，适合像素化和拼豆制作" },
+    avatar: { label: "动物头像", prompt: "只表现一个可爱的动物头像，五官清楚，轮廓完整，表情有辨识度" },
+    badge: { label: "徽章贴纸", prompt: "设计成紧凑的徽章或贴纸构图，主体外轮廓完整，四周留少量空白" },
+    bow: { label: "对称蝴蝶结", prompt: "左右高度对称，中心结点明确，两侧轮廓连续，细节简洁但保留高光" },
+    food: { label: "可爱食物", prompt: "设计成一块可爱的食物或甜点，色块分明，轮廓清晰，避免复杂纹理" },
+    ornament: { label: "装饰挂件", prompt: "设计成适合做拼豆挂件的小图案，主体集中，外轮廓闭合，避免细长孤立结构" },
+    scene: { label: "小场景", prompt: "设计成一个简洁的小场景，前景主体突出，背景只保留少量有用色块" }
+  };
+
+  const AI_IDEA_PROMPTS = [
+    "一只戴蓝色蝴蝶结的小熊，圆润脸型，眼睛有白色高光",
+    "一枚月亮和星星组成的梦幻徽章，蓝黑色系，边缘有金色高光",
+    "一块草莓奶油蛋糕，粉红、奶白和红色，轮廓粗而连续",
+    "一只抱着小花的圆滚滚小羊，柔和马卡龙配色，表情开心",
+    "一只穿雨靴的小鸭子站在水洼旁，黄色和蓝色为主色",
+    "一只对称的蓝黑色蝴蝶结，中间有小宝石，适合做挂件"
+  ];
+
   function buildAiCreativeBrief() {
     const prompt = (els.aiPromptInput && els.aiPromptInput.value || "").trim() || "未填写主题";
     const composition = els.aiCompositionSelect ? els.aiCompositionSelect.value : "free";
     const palette = els.aiPaletteModeSelect ? els.aiPaletteModeSelect.value : "source";
+    const templateKey = els.aiTemplateSelect ? els.aiTemplateSelect.value : "free";
+    const template = AI_CREATIVE_TEMPLATES[templateKey] || AI_CREATIVE_TEMPLATES.free;
     const compositionText = { free: "自由构图", symmetric: "左右对称，中心轴清晰", centered: "主体居中，四周留出均匀空间" }[composition] || "自由构图";
     const paletteText = { source: "贴近主题自然配色", theme: "使用鲜明主题配色", easy: "减少近似色，优先易制作" }[palette] || "贴近主题自然配色";
-    return `主题：${prompt}；构图：${compositionText}；要求：清晰像素块、连续轮廓、保留眼睛和高光等关键细节；配色：${paletteText}。`;
+    return `主题：${prompt}；模板：${template.label}（${template.prompt}）；构图：${compositionText}；要求：清晰像素块、连续轮廓、保留眼睛和高光等关键细节；配色：${paletteText}。`;
   }
 
   function updateAiCreativeBrief() {
@@ -2874,12 +2895,23 @@
       height: clamp(els.aiHeightInput && els.aiHeightInput.value || 48, 16, 128),
       colorLimit: clamp(els.aiColorLimitInput && els.aiColorLimitInput.value || 20, 2, 64),
       composition: els.aiCompositionSelect ? els.aiCompositionSelect.value : "free",
+      template: els.aiTemplateSelect ? els.aiTemplateSelect.value : "free",
       paletteMode: els.aiPaletteModeSelect ? els.aiPaletteModeSelect.value : "source",
       candidateCount: clamp(els.aiCandidateCountSelect && els.aiCandidateCountSelect.value || 1, 1, 3),
       creativeBrief,
       target: "q-pixel-pattern",
       palette: "MARD-221"
     };
+  }
+
+  function fillRandomAiIdea() {
+    if (!els.aiPromptInput) return;
+    const idea = AI_IDEA_PROMPTS[Math.floor(Math.random() * AI_IDEA_PROMPTS.length)];
+    els.aiPromptInput.value = idea;
+    if (els.aiTemplateSelect && idea.includes("蝴蝶结")) els.aiTemplateSelect.value = "bow";
+    if (els.aiCompositionSelect && idea.includes("对称")) els.aiCompositionSelect.value = "symmetric";
+    updateAiCreativeBrief();
+    if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = "已填入一条创作灵感，可以继续修改主题后生成。";
   }
 
   async function refreshAiProviderStatus() {
@@ -12462,10 +12494,11 @@
       if (els.aiGenerateStatus) els.aiGenerateStatus.textContent = prompt ? "提示词已复制。" : "请先输入主题描述。";
     });
     if (els.aiGenerateButton) els.aiGenerateButton.addEventListener("click", startAiGeneration);
-    [els.aiPromptInput, els.aiStyleSelect, els.aiWidthInput, els.aiHeightInput, els.aiColorLimitInput, els.aiCompositionSelect, els.aiPaletteModeSelect, els.aiCandidateCountSelect].forEach((element) => {
+    [els.aiPromptInput, els.aiStyleSelect, els.aiTemplateSelect, els.aiWidthInput, els.aiHeightInput, els.aiColorLimitInput, els.aiCompositionSelect, els.aiPaletteModeSelect, els.aiCandidateCountSelect].forEach((element) => {
       if (element) element.addEventListener("input", updateAiCreativeBrief);
       if (element && element.tagName === "SELECT") element.addEventListener("change", updateAiCreativeBrief);
     });
+    if (els.aiIdeaButton) els.aiIdeaButton.addEventListener("click", fillRandomAiIdea);
     if (els.aiCandidateRepairButton) els.aiCandidateRepairButton.addEventListener("click", analyzeSelectedAiCandidate);
     if (els.aiCandidatePaletteButton) els.aiCandidatePaletteButton.addEventListener("click", updateAiPaletteHint);
     if (els.aiCandidateUndoButton) els.aiCandidateUndoButton.addEventListener("click", () => {

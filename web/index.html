@@ -1116,6 +1116,7 @@
       <div class="ai-options">
         <label>生图接口<select id="aiProviderSelect"><option value="huggingface">Hugging Face 免费额度</option><option value="jimeng">即梦 AI（火山引擎）</option><option value="openai">OpenAI GPT</option></select></label>
         <label>风格<select id="aiStyleSelect"><option value="pixel">清晰像素画</option><option value="cute">可爱卡通</option><option value="retro">复古游戏</option></select></label>
+        <label>创作模板<select id="aiTemplateSelect"><option value="free">自由创作</option><option value="avatar">动物头像</option><option value="badge">徽章贴纸</option><option value="bow">对称蝴蝶结</option><option value="food">可爱食物</option><option value="ornament">装饰挂件</option><option value="scene">小场景</option></select></label>
         <label>宽度<input id="aiWidthInput" type="number" min="16" max="128" value="48"></label>
         <label>高度<input id="aiHeightInput" type="number" min="16" max="128" value="48"></label>
         <label>最多色号<input id="aiColorLimitInput" type="number" min="2" max="64" value="20"></label>
@@ -1146,6 +1147,7 @@
       </div>
       <div class="split-actions">
         <button class="text-button secondary" id="aiPromptCopyButton" type="button">复制提示词</button>
+        <button class="text-button secondary" id="aiIdeaButton" type="button">随机灵感</button>
         <button class="text-button secondary" id="aiJimengWebButton" type="button">即梦网页一键协同</button>
         <button class="text-button" id="aiGenerateButton" type="button">开始生成</button>
       </div>
