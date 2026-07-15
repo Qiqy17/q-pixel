@@ -18,6 +18,7 @@ from qpixel_openai import OpenAIConfigError, OpenAIRequestError, find_latest_dow
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = Path.home() / "Documents" / "Q像素"
 PROJECTS_FILE = DATA_DIR / "qpixel-projects.json"
+PROJECTS_DIR = DATA_DIR / "projects"
 SETTINGS_FILE = DATA_DIR / "qpixel-settings.json"
 BACKUP_DIR = DATA_DIR / "backups"
 PROJECT_BACKUP_LIMIT = 100
@@ -66,7 +67,7 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
             return
         project_id = get_project_id_from_path(path)
         if project_id:
-            project = find_project(self.read_projects(), project_id)
+            project = self.read_project(project_id) or find_project(self.read_projects(), project_id)
             if project:
                 self.send_json(project)
             else:
@@ -105,6 +106,7 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         backup_projects_file()
         payload = merge_projects(self.read_projects(), payload)
+        write_project_files(payload)
         tmp = PROJECTS_FILE.with_suffix(".tmp")
         tmp.write_text(json.dumps(payload[:200], ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, PROJECTS_FILE)
@@ -147,6 +149,7 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         backup_projects_file()
         projects = merge_projects(self.read_projects(), [payload])
+        write_project_file(payload)
         tmp = PROJECTS_FILE.with_suffix(".tmp")
         tmp.write_text(json.dumps(projects[:200], ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, PROJECTS_FILE)
@@ -173,6 +176,9 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
         self.send_json({"ok": True, "updatedAt": merged.get("updatedAt")})
 
     def read_projects(self):
+        project_files = list_project_files()
+        if project_files:
+            return project_files
         if not PROJECTS_FILE.exists():
             return []
         try:
@@ -180,6 +186,15 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
             return data if isinstance(data, list) else []
         except Exception:
             return []
+
+    def read_project(self, project_id):
+        path = project_file_path(project_id)
+        if not path or not path.exists():
+            return None
+        try:
+            return normalize_project(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            return None
 
     def read_settings(self):
         if not SETTINGS_FILE.exists():
@@ -260,6 +275,54 @@ def normalize_project(project):
     return project if isinstance(project, dict) and project.get("id") else None
 
 
+def project_file_path(project_id):
+    safe_id = str(project_id or "").strip()
+    if not safe_id or "/" in safe_id or "\\" in safe_id or safe_id in {".", ".."}:
+        return None
+    return PROJECTS_DIR / f"{safe_id}.json"
+
+
+def list_project_paths():
+    if not PROJECTS_DIR.exists():
+        return []
+    return [path for path in PROJECTS_DIR.glob("*.json") if path.is_file()]
+
+
+def list_project_files():
+    projects = []
+    for path in list_project_paths():
+        try:
+            project = normalize_project(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            project = None
+        if project:
+            projects.append(project)
+    return sorted(projects, key=project_sort_time, reverse=True)
+
+
+def write_project_file(project):
+    project = normalize_project(project)
+    path = project_file_path(project.get("id") if project else "")
+    if not project or not path:
+        return
+    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(project, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def write_project_files(projects):
+    for project in projects or []:
+        write_project_file(project)
+
+
+def directory_size(path):
+    try:
+        return sum(item.stat().st_size for item in list_project_paths())
+    except OSError:
+        return 0
+
+
 def project_summary(project):
     project = normalize_project(project)
     if not project:
@@ -310,6 +373,8 @@ def health_payload(projects, settings):
         "projectsOk": projects_ok,
         "settingsOk": settings_ok,
         "projectCount": len(projects) if projects_ok else 0,
+        "projectFileCount": len(list_project_paths()),
+        "projectDirectorySize": directory_size(PROJECTS_DIR),
         "projectsFileExists": PROJECTS_FILE.exists(),
         "projectsFileSize": file_size(PROJECTS_FILE),
         "settingsFileExists": SETTINGS_FILE.exists(),
@@ -384,6 +449,17 @@ def cleanup_backups():
     )
 
 
+def migrate_projects_if_needed():
+    if list_project_paths() or not PROJECTS_FILE.exists():
+        return
+    try:
+        data = json.loads(PROJECTS_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return
+    if isinstance(data, list):
+        write_project_files(data)
+
+
 def item_sort_time(item):
     if not isinstance(item, dict):
         return ""
@@ -430,6 +506,7 @@ def main():
     parser.add_argument("--http", action="store_true", help="使用普通 HTTP，保留创作空间同步接口。")
     args = parser.parse_args()
     cleanup_backups()
+    migrate_projects_if_needed()
     server = ThreadingHTTPServer((args.host, args.port), QPixelHttpsHandler)
     if args.http:
         print(f"Q像素 iPad HTTP 服务：http://{args.cert_host}:{args.port}/index.html")

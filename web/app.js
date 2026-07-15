@@ -417,6 +417,7 @@
   let previousCalibrationBeforeRecalibration = null;
 
   const storageKey = "q-pixel-local-projects-v1";
+  const projectPayloadStoragePrefix = "q-pixel-project-payload-v1:";
   const inventoryStorageKey = "q-pixel-inventory-v1";
   const trashStorageKey = "q-pixel-trash-projects-v1";
   const stylePresetStorageKey = "q-pixel-style-presets-v1";
@@ -10214,6 +10215,7 @@
       const projects = Array.isArray(parsed) ? parsed.map(normalizeProject) : [];
       state.projectCache = projects;
       state.projectCacheReady = true;
+      if (projects.some((project) => project.payload)) storeProjectsLocally(projects);
       return projects;
     } catch {
       state.projectCacheReady = true;
@@ -10230,7 +10232,23 @@
     state.projectCacheReady = true;
     try {
       if (state.forceProjectStorageFailureForTest) throw new Error("forced project storage failure");
-      localStorage.setItem(storageKey, JSON.stringify(normalized));
+      normalized.forEach((project) => {
+        if (project.payload) {
+          localStorage.setItem(`${projectPayloadStoragePrefix}${project.id}`, JSON.stringify(project.payload));
+        }
+      });
+      const activeIds = new Set(normalized.map((project) => project.id));
+      for (let index = localStorage.length - 1; index >= 0; index -= 1) {
+        const key = localStorage.key(index);
+        if (key && key.startsWith(projectPayloadStoragePrefix) && !activeIds.has(key.slice(projectPayloadStoragePrefix.length))) {
+          localStorage.removeItem(key);
+        }
+      }
+      localStorage.setItem(storageKey, JSON.stringify(normalized.map((project) => {
+        const index = Object.assign({}, project);
+        delete index.payload;
+        return index;
+      })));
       return { ok: true, localStorage: true, count: normalized.length };
     } catch (error) {
       console.warn("Q像素本机缓存写入失败，已改用当前页面缓存。", error);
@@ -10340,6 +10358,15 @@
     if (local && local.payload) {
       state.projectPayloadCache.set(id, local.payload);
       return local.payload;
+    }
+    try {
+      const cached = JSON.parse(localStorage.getItem(`${projectPayloadStoragePrefix}${id}`) || "null");
+      if (cached && typeof cached === "object") {
+        state.projectPayloadCache.set(id, cached);
+        return cached;
+      }
+    } catch (_) {
+      // Ignore one damaged payload and try the remote copy.
     }
     const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(id)}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`project ${response.status}`);
