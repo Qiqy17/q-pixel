@@ -2602,6 +2602,12 @@ body[data-mode="beads"] #paletteGrid {
   font-size: 11px;
 }
 
+.style-sticker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
 .style-preset-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

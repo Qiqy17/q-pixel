@@ -568,7 +568,7 @@
       "styleShadowOffsetYRange", "styleShadowOffsetYLabel", "styleThicknessRange", "styleThicknessLabel",
       "stylePreviewZoomOutButton", "stylePreviewZoomFitButton", "stylePreviewZoomInButton",
       "styleStickerUploadButton", "styleStickerInput", "styleStickerList", "styleStickerSizeRange", "styleStickerSizeLabel",
-      "styleStickerOpacityRange", "styleStickerOpacityLabel", "styleStickerRemoveButton",
+      "styleStickerOpacityRange", "styleStickerOpacityLabel", "styleStickerDuplicateButton", "styleStickerRemoveButton",
       "styleTextInput", "styleTextFontSelect", "styleTextSizeRange", "styleTextSizeLabel", "styleTextWeightRange", "styleTextWeightLabel",
       "styleTextColorInput", "styleTextOpacityRange", "styleTextOpacityLabel", "styleTextStrokeColorInput",
       "styleTextStrokeWidthRange", "styleTextStrokeWidthLabel", "styleTextShadowRange", "styleTextShadowLabel",
@@ -8529,7 +8529,7 @@
     });
   }
 
-  function addStickerOverlay(item) {
+  function addStickerOverlay(item, offset = 0) {
     if (!item || !item.dataUrl) return;
     const canvas = els.materialPreviewCanvas;
     const size = els.styleStickerSizeRange ? clamp(els.styleStickerSizeRange.value, 24, 420) : 120;
@@ -8538,8 +8538,8 @@
       type: "sticker",
       name: item.name || "贴纸",
       dataUrl: item.dataUrl,
-      x: canvas ? Math.round(canvas.width * 0.56) : 420,
-      y: canvas ? Math.round(canvas.height * 0.18) : 120,
+      x: canvas ? Math.round(canvas.width * 0.56 + offset * 24) : 420 + offset * 24,
+      y: canvas ? Math.round(canvas.height * 0.18 + offset * 24) : 120 + offset * 24,
       width: size,
       height: size,
       opacity: els.styleStickerOpacityRange ? clamp(els.styleStickerOpacityRange.value, 5, 100) / 100 : 1
@@ -8547,6 +8547,7 @@
     state.beads.styleOverlays.push(overlay);
     state.beads.styleSelectedOverlayId = overlay.id;
     drawMaterialPreview();
+    return overlay;
   }
 
   function getStyleOverlayById(id) {
@@ -8573,6 +8574,23 @@
     state.beads.styleOverlays = state.beads.styleOverlays.filter((overlay) => overlay.id !== id);
     if (state.beads.styleTextOverlay && state.beads.styleTextOverlay.id === id) state.beads.styleTextOverlay = null;
     state.beads.styleSelectedOverlayId = "";
+    drawMaterialPreview();
+  }
+
+  function duplicateSelectedSticker() {
+    const selected = getStyleOverlayById(state.beads.styleSelectedOverlayId);
+    if (!selected || selected.type !== "sticker") {
+      setMessage("请先在画布中选中一张贴纸。", true);
+      return;
+    }
+    const duplicate = Object.assign({}, selected, {
+      id: makeId(),
+      x: selected.x + 24,
+      y: selected.y + 24,
+      _bounds: undefined
+    });
+    state.beads.styleOverlays.push(duplicate);
+    state.beads.styleSelectedOverlayId = duplicate.id;
     drawMaterialPreview();
   }
 
@@ -12491,9 +12509,13 @@
         if (!files.length) return;
         const current = getStyleStickerLibrary();
         let added = 0;
+        let placed = 0;
         for (const file of files) {
           try {
-            current.unshift(await makeStickerItemFromFile(file));
+            const item = await makeStickerItemFromFile(file);
+            current.unshift(item);
+            addStickerOverlay(item, placed);
+            placed += 1;
             added += 1;
           } catch {
             setMessage(`贴纸 ${file.name} 读取失败。`, true);
@@ -12501,13 +12523,14 @@
         }
         setStyleStickerLibrary(current);
         els.styleStickerInput.value = "";
-        if (added) setMessage(`已添加 ${added} 个贴纸素材。`, false);
+        if (added) setMessage(`已添加 ${added} 个贴纸素材，并放入画布。`, false);
       });
     }
     [els.styleStickerSizeRange, els.styleStickerOpacityRange].forEach((input) => {
       if (!input) return;
       input.addEventListener("input", updateSelectedStickerFromControls);
     });
+    if (els.styleStickerDuplicateButton) els.styleStickerDuplicateButton.addEventListener("click", duplicateSelectedSticker);
     if (els.styleStickerRemoveButton) els.styleStickerRemoveButton.addEventListener("click", removeSelectedSticker);
     [
       els.styleTextSizeRange,
