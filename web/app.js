@@ -452,6 +452,7 @@
   const projectPayloadStoragePrefix = "q-pixel-project-payload-v1:";
   const inventoryStorageKey = "q-pixel-inventory-v1";
   const trashStorageKey = "q-pixel-trash-projects-v1";
+  const trashPayloadStoragePrefix = "q-pixel-trash-payload-v1:";
   const stylePresetStorageKey = "q-pixel-style-presets-v1";
   const styleStickerStorageKey = "q-pixel-style-stickers-v1";
   const exportPresetStorageKey = "q-pixel-export-presets-v1";
@@ -11230,7 +11231,17 @@
   function getTrashProjects() {
     try {
       const parsed = JSON.parse(localStorage.getItem(trashStorageKey) || "[]");
-      return Array.isArray(parsed) ? parsed.map((item) => Object.assign(normalizeProject(item), { deletedAt: item.deletedAt || new Date().toISOString() })) : [];
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map((item) => {
+        const normalized = normalizeProject(item);
+        if (!normalized.payload) {
+          try {
+            const payload = JSON.parse(localStorage.getItem(`${trashPayloadStoragePrefix}${normalized.id}`) || "null");
+            if (payload && typeof payload === "object") normalized.payload = payload;
+          } catch {}
+        }
+        return Object.assign(normalized, { deletedAt: item.deletedAt || new Date().toISOString() });
+      });
     } catch {
       return [];
     }
@@ -11242,7 +11253,28 @@
       .map((item) => Object.assign(normalizeProject(item), { deletedAt: item.deletedAt || new Date().toISOString() }))
       .filter((item) => now - (new Date(item.deletedAt).getTime() || now) <= 90 * 24 * 60 * 60 * 1000)
       .slice(0, 120);
-    localStorage.setItem(trashStorageKey, JSON.stringify(keep));
+    const index = keep.map((item) => {
+      const summary = Object.assign({}, item);
+      if (item.payload) {
+        try { localStorage.setItem(`${trashPayloadStoragePrefix}${item.id}`, JSON.stringify(item.payload)); } catch {}
+        delete summary.payload;
+      }
+      return summary;
+    });
+    try {
+      localStorage.setItem(trashStorageKey, JSON.stringify(index));
+    } catch {
+      const compact = index.map((item) => Object.assign({}, item, { payload: undefined }));
+      try { localStorage.setItem(trashStorageKey, JSON.stringify(compact)); } catch {}
+      setMessage("回收站空间不足，已保留文件索引；请及时永久删除不需要的文件。", true);
+    }
+    const activeIds = new Set(keep.map((item) => item.id));
+    for (let indexPosition = localStorage.length - 1; indexPosition >= 0; indexPosition -= 1) {
+      const key = localStorage.key(indexPosition);
+      if (key && key.startsWith(trashPayloadStoragePrefix) && !activeIds.has(key.slice(trashPayloadStoragePrefix.length))) {
+        localStorage.removeItem(key);
+      }
+    }
   }
 
   function isDeletedProject(project) {
