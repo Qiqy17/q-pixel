@@ -4979,7 +4979,8 @@
   }
 
   function normalizeImportedCode(code) {
-    if (!code || code === "H1") return null;
+    if (!code) return null;
+    if (code === "H1") return "H1";
     return beadPalette.some((color) => color.code === code) ? code : null;
   }
 
