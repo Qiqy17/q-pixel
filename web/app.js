@@ -8144,6 +8144,7 @@
     ctx.restore();
 
     ctx.drawImage(art, pad, pad);
+    drawStyleHollowCellEffects(ctx, pattern, pad, pad, cell, intensity);
 
     ctx.save();
     beginMaterialShapePath(ctx, pattern, pad, pad, cell);
@@ -9234,6 +9235,44 @@
       }
     }
     return art;
+  }
+
+  function drawStyleHollowCellEffects(ctx, pattern, x, y, cell, intensity) {
+    if (!pattern || !Array.isArray(pattern.cells)) return;
+    const inset = Math.max(1, cell * 0.12);
+    const edge = Math.max(1, cell * 0.08);
+    for (let row = 0; row < pattern.height; row += 1) {
+      for (let col = 0; col < pattern.width; col += 1) {
+        if (pattern.cells[row][col] !== "H1") continue;
+        const px = x + col * cell;
+        const py = y + row * cell;
+        ctx.save();
+        ctx.globalAlpha = 0.72 * intensity;
+        ctx.shadowColor = "rgba(18, 28, 42, .42)";
+        ctx.shadowBlur = Math.max(2, cell * 0.28);
+        ctx.shadowOffsetX = Math.max(1, cell * 0.12);
+        ctx.shadowOffsetY = Math.max(1, cell * 0.16);
+        ctx.fillStyle = "rgba(20, 30, 44, .10)";
+        ctx.fillRect(px + inset, py + inset, Math.max(1, cell - inset * 2), Math.max(1, cell - inset * 2));
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.strokeStyle = "rgba(255, 255, 255, .42)";
+        ctx.lineWidth = edge;
+        ctx.beginPath();
+        ctx.moveTo(px + inset, py + cell - inset);
+        ctx.lineTo(px + inset, py + inset);
+        ctx.lineTo(px + cell - inset, py + inset);
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(18, 28, 42, .30)";
+        ctx.beginPath();
+        ctx.moveTo(px + cell - inset, py + inset);
+        ctx.lineTo(px + cell - inset, py + cell - inset);
+        ctx.lineTo(px + inset, py + cell - inset);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
   }
 
   function updateStylePreviewLabels(values) {
