@@ -11240,9 +11240,19 @@
     const now = Date.now();
     const keep = projects
       .map((item) => Object.assign(normalizeProject(item), { deletedAt: item.deletedAt || new Date().toISOString() }))
-      .filter((item) => now - (new Date(item.deletedAt).getTime() || now) <= 30 * 24 * 60 * 60 * 1000)
+      .filter((item) => now - (new Date(item.deletedAt).getTime() || now) <= 90 * 24 * 60 * 60 * 1000)
       .slice(0, 120);
     localStorage.setItem(trashStorageKey, JSON.stringify(keep));
+  }
+
+  function isDeletedProject(project) {
+    return Boolean(project && project.deleted === true && project.deletedAt);
+  }
+
+  function ingestRemoteTrash(projects) {
+    const remoteTrash = (projects || []).filter(isDeletedProject);
+    if (!remoteTrash.length) return;
+    setTrashProjects([...remoteTrash, ...getTrashProjects()]);
   }
 
   function setProjects(projects, options = {}) {
@@ -11294,7 +11304,11 @@
       const existing = map.get(project.id);
       map.set(project.id, mergeProjectRecords(existing, project, conflictCopies));
     });
-    return Array.from(map.values()).concat(conflictCopies).sort((a, b) => projectSortTime(b) - projectSortTime(a)).slice(0, 120);
+    return Array.from(map.values())
+      .filter((project) => !isDeletedProject(project))
+      .concat(conflictCopies)
+      .sort((a, b) => projectSortTime(b) - projectSortTime(a))
+      .slice(0, 120);
   }
 
   function normalizedProjectsForSyncCompare(projects) {
@@ -11342,6 +11356,7 @@
     const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(id)}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`project ${response.status}`);
     const project = normalizeProject(await response.json());
+    if (isDeletedProject(project)) return null;
     if (project.payload) {
       state.projectPayloadCache.set(id, project.payload);
       const projects = getProjects().map((item) => item.id === id ? Object.assign({}, item, project) : item);
@@ -11395,6 +11410,19 @@
     });
   }
 
+  function deleteRemoteProject(id) {
+    if (!window.fetch || !id) return Promise.resolve(null);
+    return fetch(`${syncApiBase}/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`project-delete ${response.status}`);
+        return response.json().catch(() => ({ ok: true }));
+      })
+      .catch(() => {
+        setMessage("远程永久删除失败，已保留本机回收站记录。", true);
+        return null;
+      });
+  }
+
   function saveProjectsToRemote(projects) {
     if (!window.fetch) return Promise.resolve(null);
     return fetch(`${syncApiBase}/api/projects`, {
@@ -11418,6 +11446,15 @@
     try {
       const health = manual ? await fetchSyncHealth().catch(() => null) : null;
       const remoteProjects = await fetchRemoteProjects();
+      const remoteTrash = await Promise.all(remoteProjects.filter(isDeletedProject).map(async (project) => {
+        try {
+          const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(project.id)}`, { cache: "no-store" });
+          return response.ok ? normalizeProject(await response.json()) : project;
+        } catch {
+          return project;
+        }
+      }));
+      ingestRemoteTrash(remoteTrash);
       const merged = mergeProjects(localProjects, remoteProjects);
       const localResult = storeProjectsLocally(merged);
       if (merged.length && projectsDifferForSync(merged, remoteProjects) && merged.every((project) => project.payload)) saveProjectsToRemote(merged);
@@ -11926,7 +11963,12 @@
     if (!project) return;
     const restored = Object.assign({}, project);
     delete restored.deletedAt;
-    setProjects([restored, ...getProjects().filter((item) => item.id !== id)]);
+    delete restored.deleted;
+    const now = new Date().toISOString();
+    restored.updatedAt = now;
+    restored.savedAt = now;
+    setProjects([restored, ...getProjects().filter((item) => item.id !== id)], { remote: false });
+    saveProjectToRemote(restored);
     setTrashProjects(trash.filter((item) => item.id !== id));
     renderTrashList();
     renderHomeProjects();
@@ -11936,6 +11978,7 @@
 
   function permanentlyDeleteTrashProject(id) {
     setTrashProjects(getTrashProjects().filter((item) => item.id !== id));
+    deleteRemoteProject(id);
     renderTrashList();
     setMessage("已永久删除。", false);
   }
@@ -12092,11 +12135,14 @@
     const projects = getProjects();
     const project = projects.find((item) => item.id === id);
     if (project) {
-      setTrashProjects([Object.assign({}, project, { deletedAt: new Date().toISOString() }), ...getTrashProjects().filter((item) => item.id !== id)]);
+      const deletedAt = new Date().toISOString();
+      const tombstone = Object.assign({}, project, { deleted: true, deletedAt, updatedAt: deletedAt, savedAt: deletedAt });
+      setTrashProjects([tombstone, ...getTrashProjects().filter((item) => item.id !== id)]);
+      saveProjectToRemote(tombstone);
     }
-    setProjects(projects.filter((item) => item.id !== id));
+    setProjects(projects.filter((item) => item.id !== id), { remote: false });
     if (state.beads.projectId === id) state.beads.projectId = null;
-    setMessage("已移入回收站，30 天内可恢复。", false);
+    setMessage("已移入回收站，近 90 天内可恢复。", false);
     closeProjectActionModal();
     renderProjectList();
     renderHomeProjects();

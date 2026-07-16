@@ -2,7 +2,7 @@
 import json
 import os
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock
@@ -30,7 +30,7 @@ class QPixelHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.send_header("Cache-Control", "no-store")
         super().end_headers()
@@ -103,6 +103,23 @@ class QPixelHandler(SimpleHTTPRequestHandler):
             tmp.write_text(json.dumps(payload[:200], ensure_ascii=False), encoding="utf-8")
             os.replace(tmp, PROJECTS_FILE)
         self.send_json({"ok": True, "count": len(payload[:200])})
+
+    def do_DELETE(self):
+        project_id = get_project_id_from_path(urlparse(self.path).path)
+        if not project_id:
+            self.send_error(404)
+            return
+        with WRITE_LOCK:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            backup_projects_file()
+            path = project_file_path(project_id)
+            if path.exists():
+                path.unlink()
+            remaining = [project for project in self.read_projects() if str(project.get("id")) != project_id]
+            tmp = PROJECTS_FILE.with_suffix(".tmp")
+            tmp.write_text(json.dumps(remaining[:200], ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, PROJECTS_FILE)
+        self.send_json({"ok": True, "id": project_id})
 
     def generate_ai_image(self):
         length = int(self.headers.get("Content-Length") or "0")
@@ -336,6 +353,12 @@ def merge_projects(existing, incoming):
         project = normalize_project(project)
         if not project:
             continue
+        if project.get("deleted") and project.get("deletedAt"):
+            try:
+                if datetime.fromisoformat(str(project["deletedAt"]).replace("Z", "+00:00")).replace(tzinfo=None) < datetime.now() - timedelta(days=90):
+                    continue
+            except ValueError:
+                pass
         current = merged.get(project["id"])
         if current is None or project_sort_time(project) >= project_sort_time(current):
             if current and not project.get("payload") and current.get("payload"):
