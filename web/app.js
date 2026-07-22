@@ -416,6 +416,7 @@
         exportMargin: 42,
         exportBackgroundColor: "#ffffff",
         exportTransparentBackground: false,
+        exportH1Opacity: 0,
         exportMirror: false,
         exportPdf: false,
         albumTileSize: 52,
@@ -609,6 +610,7 @@
       "exportRegionExportSelectedButton", "exportRegionExportAllButton", "exportRegionNudgeInput",
       "exportRegionNudgeUpButton", "exportRegionNudgeDownButton", "exportRegionNudgeLeftButton", "exportRegionNudgeRightButton",
       "exportAppInfoToggle", "exportPresetNameInput", "exportPresetSaveButton", "exportPresetList",
+      "exportH1OpacityRange", "exportH1OpacityLabel",
       "guideDoneButton", "guideLineSelect", "guideDeleteButton"
     ].forEach((id) => {
       els[id] = document.getElementById(id);
@@ -803,6 +805,9 @@
     if (els.exportAutoCellToggle) els.exportAutoCellToggle.checked = state.beads.exportSettings.exportAutoCellSize !== false;
     if (els.exportPixelStyleSelect) els.exportPixelStyleSelect.value = state.beads.exportSettings.exportPixelStyle || "current";
     if (els.exportTransparentToggle) els.exportTransparentToggle.checked = Boolean(state.beads.exportSettings.exportTransparentBackground);
+    state.beads.exportSettings.exportH1Opacity = clamp(state.beads.exportSettings.exportH1Opacity == null ? 0 : state.beads.exportSettings.exportH1Opacity, 0, 100);
+    if (els.exportH1OpacityRange) els.exportH1OpacityRange.value = String(state.beads.exportSettings.exportH1Opacity);
+    if (els.exportH1OpacityLabel) els.exportH1OpacityLabel.textContent = `${state.beads.exportSettings.exportH1Opacity}%`;
     if (els.albumOverviewToggle) els.albumOverviewToggle.checked = state.beads.exportSettings.albumIncludeOverview !== false;
     if (els.albumPageTitleToggle) els.albumPageTitleToggle.checked = state.beads.exportSettings.albumShowPageTitle !== false;
     if (els.exportMirrorToggle) els.exportMirrorToggle.checked = state.beads.exportSettings.exportMirror;
@@ -2016,7 +2021,24 @@
           ctx.fillStyle = color.hex;
         }
         if (code === "H1") {
-          // H1 is transparent in Mard: leave the cell unpainted while still allowing code/grid display.
+          const h1Opacity = options.export ? clamp(options.h1Opacity == null ? 0 : options.h1Opacity, 0, 100) / 100 : 0;
+          if (h1Opacity > 0) {
+            ctx.save();
+            ctx.globalAlpha = h1Opacity;
+            ctx.fillStyle = color.hex;
+            if (forcedRound) {
+              ctx.beginPath();
+              ctx.arc(px + cellSize / 2, py + cellSize / 2, Math.max(0.5, fillSize / 2), 0, Math.PI * 2);
+              ctx.fill();
+            } else if (cellRadius > 0.2 || cellGap > 0.2 || forcedSoft) {
+              ctx.beginPath();
+              roundedRect(ctx, drawX, drawY, fillSize, fillSize, forcedSoft ? Math.min(fillSize / 3, cellSize * 0.18) : cellRadius);
+              ctx.fill();
+            } else {
+              ctx.fillRect(px, py, cellSize, cellSize);
+            }
+            ctx.restore();
+          }
         } else if (forcedRound) {
           ctx.beginPath();
           ctx.arc(px + cellSize / 2, py + cellSize / 2, Math.max(0.5, fillSize / 2), 0, Math.PI * 2);
@@ -7011,6 +7033,7 @@
       pixelStyle: settings.exportPixelStyle || "current",
       cellGap: settings.exportPixelStyle && settings.exportPixelStyle !== "current" ? 0 : isPixelPatternActive(pattern) ? state.params.gap : 0,
       cellRadius: settings.exportPixelStyle && settings.exportPixelStyle !== "current" ? 0 : isPixelPatternActive(pattern) ? state.params.radius : 0,
+      h1Opacity: settings.exportH1Opacity,
       export: true
     });
 
@@ -13440,7 +13463,8 @@
       ["watermarkRowGap", els.watermarkRowGapRange],
       ["watermarkColGap", els.watermarkColGapRange],
       ["watermarkOffsetX", els.watermarkOffsetXRange],
-      ["watermarkOffsetY", els.watermarkOffsetYRange]
+      ["watermarkOffsetY", els.watermarkOffsetYRange],
+      ["exportH1Opacity", els.exportH1OpacityRange]
     ].forEach(([key, input]) => {
       if (!input) return;
       input.addEventListener("input", () => {

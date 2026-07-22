@@ -375,6 +375,35 @@
         const beadBlob = await window.QPixelTest.exportBlob(beadCanvas);
         if (!beadBlob || beadBlob.size <= 3000) throw new Error("small bead blob");
         const beadDataUrl = await blobToDataUrl(beadBlob);
+        const h1Pattern = { width: 2, height: 2, cells: [["H1", "H1"], ["H1", "H1"]] };
+        const h1ExportSettings = {
+          exportScale: 1,
+          exportAutoCellSize: false,
+          exportCellSize: 24,
+          exportMargin: 12,
+          exportBackgroundColor: "#000000",
+          exportTransparentBackground: false,
+          showInfo: false,
+          showAppInfo: false,
+          showGrid: false,
+          showCenterLines: false,
+          showCodes: false,
+          showAxisNumbers: false,
+          showOuterBorder: false,
+          showUsage: false
+        };
+        const h1Hidden = window.QPixelTest.makeBeadExportCanvas(h1Pattern, Object.assign({}, h1ExportSettings, { exportH1Opacity: 0 }));
+        const h1Half = window.QPixelTest.makeBeadExportCanvas(h1Pattern, Object.assign({}, h1ExportSettings, { exportH1Opacity: 50 }));
+        const h1Full = window.QPixelTest.makeBeadExportCanvas(h1Pattern, Object.assign({}, h1ExportSettings, { exportH1Opacity: 100 }));
+        const h1Center = (canvas) => {
+          const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+          let brightest = 0;
+          for (let index = 0; index < pixels.length; index += 4) brightest = Math.max(brightest, pixels[index], pixels[index + 1], pixels[index + 2]);
+          return brightest;
+        };
+        if (!(h1Center(h1Hidden) < h1Center(h1Half) && h1Center(h1Half) < h1Center(h1Full))) {
+          throw new Error("H1 export opacity failed");
+        }
         const hiResCanvas = window.QPixelTest.makeBeadExportCanvas(generated.pattern, { exportScale: 8 });
         if (!hiResCanvas || hiResCanvas.width < standardCanvas.width * 7.8 || hiResCanvas.height < standardCanvas.height * 6.4) {
           throw new Error(`hi-res export scale failed ${standardCanvas.width}x${standardCanvas.height} -> ${hiResCanvas && hiResCanvas.width}x${hiResCanvas && hiResCanvas.height}`);
