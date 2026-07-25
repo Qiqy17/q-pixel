@@ -288,8 +288,10 @@ def project_summary(project):
         return None
     payload = project.get("payload") if isinstance(project.get("payload"), dict) else {}
     pattern = payload.get("pattern") if isinstance(payload.get("pattern"), dict) else {}
-    summary = {key: value for key, value in project.items() if key != "payload"}
+    history = project.get("history") if isinstance(project.get("history"), list) else []
+    summary = {key: value for key, value in project.items() if key not in {"payload", "history"}}
     summary["hasPayload"] = bool(project.get("payload"))
+    summary["historyCount"] = len(history)
     summary["width"] = summary.get("width") or pattern.get("width") or 0
     summary["height"] = summary.get("height") or pattern.get("height") or 0
     summary["payloadSize"] = len(json.dumps(project.get("payload") or {}, ensure_ascii=False))

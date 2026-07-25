@@ -11236,10 +11236,22 @@
     }
     const newer = projectSortTime(incoming) >= projectSortTime(current) ? incoming : current;
     const older = newer === incoming ? current : incoming;
+    const payloadSource = newer.payload ? newer : older.payload ? older : null;
+    const payload = payloadSource ? payloadSource.payload : null;
+    const history = normalizeProjectHistory([...(newer.history || []), ...(older.history || [])]);
+    const remoteSource = timeValue(newer.remoteUpdatedAt) >= timeValue(older.remoteUpdatedAt) ? newer : older;
     return Object.assign({}, newer, {
-      payload: newer.payload || older.payload || null,
-      history: normalizeProjectHistory([...(newer.history || []), ...(older.history || [])]),
-      syncFingerprint: newer.syncFingerprint || older.syncFingerprint || (newer.payload ? payloadFingerprint(newer.payload) : "")
+      payload,
+      payloadUpdatedAt: payloadSource
+        ? (payloadSource.payloadUpdatedAt || (payload && payload.savedAt) || payloadSource.updatedAt || payloadSource.savedAt || "")
+        : "",
+      history,
+      historyCount: Math.max(history.length, Number(newer.historyCount || 0), Number(older.historyCount || 0)),
+      syncFingerprint: payloadSource
+        ? (payloadSource.syncFingerprint || (payload ? payloadFingerprint(payload) : ""))
+        : (newer.syncFingerprint || older.syncFingerprint || ""),
+      remoteUpdatedAt: remoteSource.remoteUpdatedAt || "",
+      remoteSyncFingerprint: remoteSource.remoteSyncFingerprint || ""
     });
   }
 
@@ -11248,9 +11260,12 @@
     try {
       const parsed = JSON.parse(localStorage.getItem(storageKey) || "[]");
       const projects = Array.isArray(parsed) ? parsed.map(normalizeProject) : [];
+      const hasEmbeddedHistoryPayloads = Array.isArray(parsed) && parsed.some((project) =>
+        Array.isArray(project && project.history) && project.history.some((version) => version && version.payload)
+      );
       state.projectCache = projects;
       state.projectCacheReady = true;
-      if (projects.some((project) => project.payload)) storeProjectsLocally(projects);
+      if (projects.some((project) => project.payload) || hasEmbeddedHistoryPayloads) storeProjectsLocally(projects);
       return projects;
     } catch {
       state.projectCacheReady = true;
@@ -11282,6 +11297,8 @@
       localStorage.setItem(storageKey, JSON.stringify(normalized.map((project) => {
         const index = Object.assign({}, project);
         delete index.payload;
+        index.historyCount = Math.max(Number(index.historyCount || 0), normalizeProjectHistory(index.history).length);
+        delete index.history;
         return index;
       })));
       return { ok: true, localStorage: true, count: normalized.length };
@@ -11365,9 +11382,11 @@
   function normalizeProject(project) {
     project = project && typeof project === "object" ? project : {};
     const payload = project && project.payload ? project.payload : null;
+    const history = normalizeProjectHistory(project.history);
     const now = new Date().toISOString();
     const createdAt = project.createdAt || (payload && payload.createdAt) || project.savedAt || now;
     const savedAt = project.savedAt || (payload && payload.savedAt) || now;
+    const updatedAt = project.updatedAt || savedAt;
     const id = project.id || (payload && payload.id) || makeId();
     if (payload) state.projectPayloadCache.set(id, payload);
     return Object.assign({}, project, {
@@ -11375,7 +11394,7 @@
       title: project.title || (payload && payload.title) || "未命名",
       createdAt,
       savedAt,
-      updatedAt: project.updatedAt || savedAt,
+      updatedAt,
       width: project.width || (payload && payload.pattern && payload.pattern.width) || 0,
       height: project.height || (payload && payload.pattern && payload.pattern.height) || 0,
       thumbnail: project.thumbnail || "",
@@ -11383,7 +11402,11 @@
       openCount: Math.max(0, Number(project.openCount || 0)),
       designDates: project.designDates && typeof project.designDates === "object" ? project.designDates : {},
       syncFingerprint: project.syncFingerprint || (payload ? payloadFingerprint(payload) : ""),
-      history: normalizeProjectHistory(project.history),
+      payloadUpdatedAt: project.payloadUpdatedAt || (payload ? (payload.savedAt || updatedAt) : ""),
+      remoteUpdatedAt: project.remoteUpdatedAt || "",
+      remoteSyncFingerprint: project.remoteSyncFingerprint || "",
+      historyCount: Math.max(history.length, Number(project.historyCount || 0)),
+      history,
       payload
     });
   }
@@ -11410,6 +11433,15 @@
     return (projects || [])
       .map(normalizeProject)
       .filter((project) => project && !isInternalTestProject(project))
+      .map((project) => ({
+        id: project.id,
+        updatedAt: project.updatedAt || project.savedAt || "",
+        deleted: Boolean(project.deleted),
+        deletedAt: project.deletedAt || "",
+        syncFingerprint: project.syncFingerprint || "",
+        historyCount: Math.max(Number(project.historyCount || 0), normalizeProjectHistory(project.history).length),
+        hasPayload: Boolean(project.hasPayload || project.payload)
+      }))
       .sort((a, b) => String(a.id || "").localeCompare(String(b.id || "")));
   }
 
@@ -11417,48 +11449,117 @@
     return JSON.stringify(normalizedProjectsForSyncCompare(left)) !== JSON.stringify(normalizedProjectsForSyncCompare(right));
   }
 
+  function markRemoteProject(project) {
+    const normalized = normalizeProject(project);
+    return Object.assign({}, normalized, {
+      hasPayload: project && project.hasPayload != null ? Boolean(project.hasPayload) : Boolean(normalized.payload),
+      remoteUpdatedAt: normalized.updatedAt || normalized.savedAt || "",
+      remoteSyncFingerprint: normalized.syncFingerprint || ""
+    });
+  }
+
   async function fetchRemoteProjects() {
     try {
       const response = await fetch(`${syncApiBase}/api/projects/index`, { cache: "no-store" });
       if (!response.ok) throw new Error(`sync-index ${response.status}`);
       const projects = await response.json();
-      return Array.isArray(projects) ? projects.map(normalizeProject).filter((project) => !isInternalTestProject(project)) : [];
+      return Array.isArray(projects) ? projects.map(markRemoteProject).filter((project) => !isInternalTestProject(project)) : [];
     } catch {
       const response = await fetch(`${syncApiBase}/api/projects`, { cache: "no-store" });
       if (!response.ok) throw new Error(`sync ${response.status}`);
       const projects = await response.json();
-      return Array.isArray(projects) ? projects.map(normalizeProject).filter((project) => !isInternalTestProject(project)) : [];
+      return Array.isArray(projects) ? projects.map(markRemoteProject).filter((project) => !isInternalTestProject(project)) : [];
     }
+  }
+
+  function timeValue(value) {
+    const time = new Date(value || 0).getTime();
+    return Number.isFinite(time) ? time : 0;
+  }
+
+  function shouldUseCachedProjectPayload(project, payload) {
+    if (!project || !payload) return false;
+    const payloadTime = timeValue(project.payloadUpdatedAt || payload.savedAt || project.savedAt || project.updatedAt);
+    const remoteTime = timeValue(project.remoteUpdatedAt);
+    const localFingerprint = payloadFingerprint(payload);
+    const baseFingerprint = project.syncFingerprint || "";
+    const remoteFingerprint = project.remoteSyncFingerprint || "";
+    const hasLocalChanges = Boolean(baseFingerprint && localFingerprint !== baseFingerprint);
+    if (!hasLocalChanges && remoteTime && payloadTime && remoteTime > payloadTime) return false;
+    if (!hasLocalChanges && remoteFingerprint && localFingerprint !== remoteFingerprint) return false;
+    return true;
+  }
+
+  async function fetchRemoteProjectRecord(id) {
+    const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(id)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`project ${response.status}`);
+    const project = markRemoteProject(await response.json());
+    if (isDeletedProject(project)) return null;
+    if (project.payload) {
+      const fingerprint = payloadFingerprint(project.payload);
+      project.syncFingerprint = fingerprint;
+      project.remoteSyncFingerprint = fingerprint;
+      project.payloadUpdatedAt = project.updatedAt || project.savedAt || project.payload.savedAt || "";
+      project.historyCount = Math.max(project.historyCount || 0, normalizeProjectHistory(project.history).length);
+    }
+    return project;
   }
 
   async function fetchRemoteProjectPayload(id) {
     if (!id || !window.fetch) return null;
-    if (state.projectPayloadCache.has(id)) return state.projectPayloadCache.get(id);
     const local = getProjects().find((item) => item.id === id);
-    if (local && local.payload) {
-      state.projectPayloadCache.set(id, local.payload);
-      return local.payload;
-    }
+    let cachedPayload = local && local.payload ? local.payload : state.projectPayloadCache.get(id) || null;
     try {
-      const cached = JSON.parse(localStorage.getItem(`${projectPayloadStoragePrefix}${id}`) || "null");
-      if (cached && typeof cached === "object") {
-        state.projectPayloadCache.set(id, cached);
-        return cached;
+      if (!cachedPayload) {
+        const cached = JSON.parse(localStorage.getItem(`${projectPayloadStoragePrefix}${id}`) || "null");
+        if (cached && typeof cached === "object") cachedPayload = cached;
       }
     } catch (_) {
-      // Ignore one damaged payload and try the remote copy.
+      // Ignore one damaged local payload and try the remote copy.
     }
-    const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(id)}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`project ${response.status}`);
-    const project = normalizeProject(await response.json());
-    if (isDeletedProject(project)) return null;
+    if (cachedPayload && shouldUseCachedProjectPayload(Object.assign({}, local || {}, { payload: cachedPayload }), cachedPayload)) {
+      state.projectPayloadCache.set(id, cachedPayload);
+      return cachedPayload;
+    }
+    let project = null;
+    try {
+      project = await fetchRemoteProjectRecord(id);
+    } catch (error) {
+      if (cachedPayload) {
+        state.projectPayloadCache.set(id, cachedPayload);
+        return cachedPayload;
+      }
+      throw error;
+    }
+    if (!project) return null;
     if (project.payload) {
       state.projectPayloadCache.set(id, project.payload);
-      const projects = getProjects().map((item) => item.id === id ? Object.assign({}, item, project) : item);
+      const projects = getProjects().map((item) => item.id === id
+        ? Object.assign({}, item, project, {
+          editSeconds: Math.max(Number(item.editSeconds || 0), Number(project.editSeconds || 0)),
+          openCount: Math.max(Number(item.openCount || 0), Number(project.openCount || 0)),
+          designDates: Object.assign({}, project.designDates || {}, item.designDates || {})
+        })
+        : item);
       storeProjectsLocally(projects);
       return project.payload;
     }
     return null;
+  }
+
+  async function hydrateProjectHistory(id) {
+    const local = getProjects().find((item) => item.id === id);
+    if (!local) return null;
+    if (normalizeProjectHistory(local.history).length >= Number(local.historyCount || 0)) return local;
+    const remote = await fetchRemoteProjectRecord(id);
+    if (!remote) return local;
+    const history = normalizeProjectHistory(remote.history);
+    const updated = Object.assign({}, local, {
+      history,
+      historyCount: Math.max(history.length, Number(remote.historyCount || 0))
+    });
+    storeProjectsLocally(getProjects().map((item) => item.id === id ? updated : item));
+    return updated;
   }
 
   function normalizeSyncHealth(health) {
@@ -11490,15 +11591,49 @@
     return health;
   }
 
+  function prepareProjectForRemote(project) {
+    const outgoing = Object.assign({}, normalizeProject(project));
+    delete outgoing.remoteUpdatedAt;
+    delete outgoing.remoteSyncFingerprint;
+    if (outgoing.payload) {
+      outgoing.syncFingerprint = payloadFingerprint(outgoing.payload);
+      outgoing.payloadUpdatedAt = outgoing.updatedAt || outgoing.savedAt || outgoing.payload.savedAt || new Date().toISOString();
+      outgoing.hasPayload = true;
+    }
+    outgoing.historyCount = Math.max(Number(outgoing.historyCount || 0), normalizeProjectHistory(outgoing.history).length);
+    return outgoing;
+  }
+
+  function markProjectsSynced(outgoingProjects) {
+    const synced = new Map((outgoingProjects || []).map((project) => [project.id, project]));
+    if (!synced.size) return;
+    const projects = getProjects().map((project) => {
+      const outgoing = synced.get(project.id);
+      if (!outgoing) return project;
+      return Object.assign({}, project, {
+        hasPayload: Boolean(outgoing.payload || project.hasPayload),
+        syncFingerprint: outgoing.syncFingerprint || project.syncFingerprint || "",
+        remoteSyncFingerprint: outgoing.syncFingerprint || project.remoteSyncFingerprint || "",
+        remoteUpdatedAt: outgoing.updatedAt || outgoing.savedAt || project.remoteUpdatedAt || "",
+        payloadUpdatedAt: outgoing.payloadUpdatedAt || project.payloadUpdatedAt || ""
+      });
+    });
+    storeProjectsLocally(projects);
+  }
+
   function saveProjectToRemote(project) {
     if (!window.fetch || !project || !project.id) return Promise.resolve(null);
+    const outgoing = prepareProjectForRemote(project);
     return fetch(`${syncApiBase}/api/projects/${encodeURIComponent(project.id)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(normalizeProject(project))
+      body: JSON.stringify(outgoing)
     }).then((response) => {
       if (!response.ok) throw new Error(`project-save ${response.status}`);
-      return response.json().catch(() => ({ ok: true }));
+      return response.json().catch(() => ({ ok: true })).then((result) => {
+        markProjectsSynced([outgoing]);
+        return result;
+      });
     }).catch(() => {
       setMessage("电脑同步服务暂时不可用，已先保存到当前设备。", true);
       return null;
@@ -11520,13 +11655,20 @@
 
   function saveProjectsToRemote(projects) {
     if (!window.fetch) return Promise.resolve(null);
+    const outgoing = projects
+      .map(prepareProjectForRemote)
+      .filter((project) => !isInternalTestProject(project))
+      .slice(0, 120);
     return fetch(`${syncApiBase}/api/projects`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(projects.map(normalizeProject).filter((project) => !isInternalTestProject(project)).slice(0, 120))
+      body: JSON.stringify(outgoing)
     }).then((response) => {
       if (!response.ok) throw new Error(`sync ${response.status}`);
-      return response.json().catch(() => ({ ok: true }));
+      return response.json().catch(() => ({ ok: true })).then((result) => {
+        markProjectsSynced(outgoing);
+        return result;
+      });
     }).catch(() => {
       setMessage("电脑同步服务暂时不可用，已先保存到当前设备。", true);
       return null;
@@ -11816,7 +11958,8 @@
     if (els.projectActionCreated) els.projectActionCreated.textContent = formatDateTime(project.createdAt || project.savedAt);
     if (els.projectActionUpdated) els.projectActionUpdated.textContent = formatDateTime(project.updatedAt || project.savedAt);
     if (els.projectActionHistoryButton) {
-      els.projectActionHistoryButton.disabled = !normalizeProjectHistory(project.history).length;
+      const historyCount = Math.max(normalizeProjectHistory(project.history).length, Number(project.historyCount || 0));
+      els.projectActionHistoryButton.disabled = !historyCount;
       els.projectActionHistoryButton.title = els.projectActionHistoryButton.disabled ? "这个设计还没有历史版本" : "查看历史版本";
     }
     els.projectActionModal.classList.remove("hidden");
@@ -11863,13 +12006,23 @@
     });
   }
 
-  function openProjectHistoryModal(id) {
-    const project = getProjects().find((item) => item.id === id);
+  async function openProjectHistoryModal(id) {
+    let project = getProjects().find((item) => item.id === id);
     if (!project || !els.projectHistoryModal) return;
     state.activeHistoryProjectId = id;
     if (els.projectHistoryTitle) els.projectHistoryTitle.textContent = `${project.title || "未命名"} · 历史版本`;
-    renderProjectHistoryList(project);
     els.projectHistoryModal.classList.remove("hidden");
+    if (!normalizeProjectHistory(project.history).length && Number(project.historyCount || 0) > 0) {
+      if (els.projectHistoryList) {
+        els.projectHistoryList.innerHTML = '<div class="project-history-empty">正在读取历史版本...</div>';
+      }
+      try {
+        project = await hydrateProjectHistory(id) || project;
+      } catch {
+        setMessage("历史版本读取失败，请检查电脑同步服务。", true);
+      }
+    }
+    renderProjectHistoryList(project);
   }
 
   function closeProjectHistoryModal() {
@@ -11902,14 +12055,12 @@
       setMessage("没有找到这个设计文件，当前设计没有变化。", true);
       return;
     }
-    let currentPayload = project.payload;
-    if (!currentPayload) {
-      setMessage("正在读取当前版本，然后恢复历史版本...", false);
-      try {
-        currentPayload = await fetchRemoteProjectPayload(projectId);
-      } catch {
-        currentPayload = null;
-      }
+    let currentPayload = null;
+    setMessage("正在读取当前版本，然后恢复历史版本...", false);
+    try {
+      currentPayload = await fetchRemoteProjectPayload(projectId);
+    } catch {
+      currentPayload = null;
     }
     const restored = currentPayload
       ? restoreProjectHistoryVersionForTest(Object.assign({}, project, { payload: currentPayload }), versionId)
@@ -11934,9 +12085,9 @@
   async function duplicateProject(id) {
     const source = getProjects().find((item) => item.id === id);
     if (!source) return;
-    let payload = source.payload;
+    let payload = null;
     try {
-      payload = payload || await fetchRemoteProjectPayload(id);
+      payload = await fetchRemoteProjectPayload(id);
     } catch {
       payload = null;
     }
@@ -11969,10 +12120,8 @@
   async function useProjectAsTemplate(id) {
     const source = getProjects().find((item) => item.id === id);
     if (!source) return;
-    let payload = source.payload;
-    if (!payload) {
-      try { payload = await fetchRemoteProjectPayload(id); } catch { payload = null; }
-    }
+    let payload = null;
+    try { payload = await fetchRemoteProjectPayload(id); } catch { payload = null; }
     if (!payload) {
       setMessage("这个设计文件还没有完整内容，无法套用模板。", true);
       return;
@@ -12208,9 +12357,9 @@
       return;
     }
     setMessage("正在打开设计文件...", false);
-    let payload = project.payload;
+    let payload = null;
     try {
-      payload = payload || await fetchRemoteProjectPayload(id);
+      payload = await fetchRemoteProjectPayload(id);
     } catch {
       payload = null;
     }
@@ -12323,9 +12472,9 @@
       button.querySelector("strong").textContent = project.title || "未命名";
       button.querySelector("em").textContent = `${project.width || "-"} x ${project.height || "-"} · ${formatShortDate(project.updatedAt || project.savedAt)}`;
       button.addEventListener("click", async () => {
-        let payload = project.payload;
+        let payload = null;
         try {
-          payload = payload || await fetchRemoteProjectPayload(project.id);
+          payload = await fetchRemoteProjectPayload(project.id);
         } catch {
           payload = null;
         }
@@ -12347,7 +12496,10 @@
 
   function makeProjectBadges(project) {
     const badges = [];
-    const historyCount = Array.isArray(project && project.history) ? project.history.length : 0;
+    const historyCount = Math.max(
+      Array.isArray(project && project.history) ? project.history.length : 0,
+      Number(project && project.historyCount || 0)
+    );
     if (historyCount) badges.push(`历史 ${historyCount}`);
     if (project && project.conflictOf) badges.push("冲突副本");
     if (!badges.length) return null;
@@ -13842,6 +13994,8 @@
       undoEdit,
       mergeProjectsForTest: mergeProjects,
       payloadFingerprintForTest: payloadFingerprint,
+      shouldUseCachedProjectPayloadForTest: shouldUseCachedProjectPayload,
+      prepareProjectForRemoteForTest: prepareProjectForRemote,
       withProjectHistoryForTest: withProjectHistory,
       restoreProjectHistoryVersionForTest,
       formatSyncHealthMessageForTest: formatSyncHealthMessage,

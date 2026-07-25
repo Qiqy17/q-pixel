@@ -686,11 +686,82 @@
           throw new Error("sync conflict copy failed");
         }
         const summaryMerged = window.QPixelTest.mergeProjectsForTest(
-          [{ id: "summary-merge", title: "完整", updatedAt: "2026-01-01T00:00:00.000Z", savedAt: "2026-01-01T00:00:00.000Z", history: nextHistoryProject.history, payload: basePayload }],
-          [{ id: "summary-merge", title: "摘要", updatedAt: "2026-01-02T00:00:00.000Z", savedAt: "2026-01-02T00:00:00.000Z", width: 16, height: 16, hasPayload: true }]
+          [{
+            id: "summary-merge",
+            title: "完整",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            savedAt: "2026-01-01T00:00:00.000Z",
+            payloadUpdatedAt: "2026-01-01T00:00:00.000Z",
+            syncFingerprint: window.QPixelTest.payloadFingerprintForTest(basePayload),
+            history: nextHistoryProject.history,
+            payload: basePayload
+          }],
+          [{
+            id: "summary-merge",
+            title: "摘要",
+            updatedAt: "2026-01-02T00:00:00.000Z",
+            savedAt: "2026-01-02T00:00:00.000Z",
+            remoteUpdatedAt: "2026-01-02T00:00:00.000Z",
+            remoteSyncFingerprint: "remote-summary-fingerprint",
+            width: 16,
+            height: 16,
+            hasPayload: true,
+            historyCount: 12
+          }]
         );
-        if (summaryMerged.length !== 1 || !summaryMerged[0].payload || !summaryMerged[0].history.length) {
+        if (summaryMerged.length !== 1 || !summaryMerged[0].payload || !summaryMerged[0].history.length || summaryMerged[0].historyCount !== 12) {
           throw new Error("summary merge should preserve payload and history");
+        }
+        if (window.QPixelTest.shouldUseCachedProjectPayloadForTest(summaryMerged[0], summaryMerged[0].payload)) {
+          throw new Error("newer remote summary should invalidate old merged payload");
+        }
+        const cachedPayload = {
+          id: "cached-sync",
+          savedAt: "2026-01-01T00:00:00.000Z",
+          pattern: { width: 16, height: 16, cells: emptyCells }
+        };
+        const cachedFingerprint = window.QPixelTest.payloadFingerprintForTest(cachedPayload);
+        if (window.QPixelTest.shouldUseCachedProjectPayloadForTest({
+          id: "cached-sync",
+          savedAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-02T00:00:00.000Z",
+          payloadUpdatedAt: "2026-01-01T00:00:00.000Z",
+          remoteUpdatedAt: "2026-01-02T00:00:00.000Z",
+          syncFingerprint: cachedFingerprint,
+          remoteSyncFingerprint: "remote-new-version"
+        }, cachedPayload)) {
+          throw new Error("stale cached payload should refresh from remote");
+        }
+        const locallyEditedPayload = Object.assign({}, cachedPayload, {
+          savedAt: "2026-01-03T00:00:00.000Z",
+          pattern: { width: 16, height: 16, cells: filledCells }
+        });
+        if (!window.QPixelTest.shouldUseCachedProjectPayloadForTest({
+          id: "cached-sync",
+          savedAt: "2026-01-03T00:00:00.000Z",
+          updatedAt: "2026-01-03T00:00:00.000Z",
+          payloadUpdatedAt: "2026-01-03T00:00:00.000Z",
+          remoteUpdatedAt: "2026-01-02T00:00:00.000Z",
+          syncFingerprint: cachedFingerprint,
+          remoteSyncFingerprint: "remote-new-version"
+        }, locallyEditedPayload)) {
+          throw new Error("unsynced local payload should not be overwritten");
+        }
+        const remoteReady = window.QPixelTest.prepareProjectForRemoteForTest({
+          id: "remote-ready",
+          title: "同步指纹",
+          savedAt: "2026-01-03T00:00:00.000Z",
+          updatedAt: "2026-01-03T00:00:00.000Z",
+          remoteUpdatedAt: "2025-12-31T00:00:00.000Z",
+          payload: locallyEditedPayload
+        });
+        if (!remoteReady.syncFingerprint || remoteReady.remoteUpdatedAt || remoteReady.syncFingerprint !== window.QPixelTest.payloadFingerprintForTest(locallyEditedPayload)) {
+          throw new Error("remote save fingerprint normalization failed");
+        }
+        await window.QPixelTest.setProjectsForTest([nextHistoryProject]);
+        const compactLocalIndex = JSON.parse(localStorage.getItem("q-pixel-local-projects-v1") || "[]");
+        if (!compactLocalIndex[0] || compactLocalIndex[0].history || compactLocalIndex[0].historyCount !== nextHistoryProject.history.length) {
+          throw new Error("local project index should omit history payloads");
         }
         const healthMessage = window.QPixelTest.formatSyncHealthMessageForTest({ ok: true, projectsOk: true, projectCount: 37, backupCount: 4 });
         if (!/37/.test(healthMessage) || !/备份 4/.test(healthMessage)) {
@@ -724,9 +795,10 @@
           updatedAt: "2026-07-13T00:00:00.000Z",
           width: 22,
           height: 18,
-          hasPayload: true
+          hasPayload: true,
+          historyCount: 7
         });
-        if (summaryProject.payload || summaryProject.width !== 22 || summaryProject.height !== 18) {
+        if (summaryProject.payload || summaryProject.width !== 22 || summaryProject.height !== 18 || summaryProject.historyCount !== 7) {
           throw new Error("summary project normalization failed");
         }
         const fullProject = window.QPixelTest.normalizeProjectForTest({

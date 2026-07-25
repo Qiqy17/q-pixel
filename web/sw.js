@@ -1,4 +1,4 @@
-const CACHE_NAME = "q-pixel-ipad-v20260715-ai-prompt-2";
+const CACHE_NAME = "q-pixel-ipad-v20260725-project-sync-1";
 const APP_SHELL = [
   "./",
   "./index.html",
