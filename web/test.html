@@ -44,11 +44,17 @@
     <section id="importChoiceModal" class="hidden">
       <span id="importChoiceFileName"></span>
       <button id="importChoiceCancelButton" type="button">取消</button>
+      <div id="importEntryPanel">
+        <canvas id="importEntryPreviewCanvas" width="320" height="220"></canvas>
+        <button id="importQuickButton" type="button"><strong>快速导入，直接编辑</strong></button>
+        <button id="importAdvancedButton" type="button"><strong>进入高级优化</strong></button>
+      </div>
+      <div id="importWizardShell" class="hidden"><div id="importWizardScroll"></div><button id="importWizardUseCurrentButton" type="button">使用当前结果并进入编辑</button></div>
       <button id="importModeFidelityButton" type="button">高保真</button>
       <button id="importModeBalancedButton" type="button">均衡</button>
       <button id="importModeSimpleButton" type="button">易制作</button>
-      <button id="importCalibrateButton" type="button"><strong>像素校准后导入</strong></button>
-      <button id="importDirectButton" type="button"><strong>直接导入</strong></button>
+      <button id="importCalibrateButton" type="button"><strong>进入像素精度调整</strong></button>
+      <button id="importDirectButton" type="button"><strong>使用自动识别结果</strong></button>
     </section>
     <section id="calibrationModal" class="hidden">
       <button id="calibrationBackButton" type="button">返回</button>
@@ -492,8 +498,12 @@
         if (!calibratedPattern || calibratedPattern.width !== 12 || calibratedPattern.height !== 9) {
           throw new Error("calibrated pattern size failed");
         }
-        if (!window.QPixelTest.getImportChoiceLabels().includes("像素校准后导入")) {
+        if (!window.QPixelTest.getImportChoiceLabels().includes("进入像素精度调整")) {
           throw new Error("import calibration choice missing");
+        }
+        const entryLabels = window.QPixelTest.getImportEntryLabels();
+        if (!entryLabels.includes("快速导入，直接编辑") || !entryLabels.includes("进入高级优化")) {
+          throw new Error("optional import entry choices missing");
         }
         const modeLabels = window.QPixelTest.getImportModeLabels();
         if (!modeLabels.includes("高保真") || !modeLabels.includes("均衡") || !modeLabels.includes("易制作")) {
@@ -561,11 +571,21 @@
         const optimizedCount = window.QPixelTest.optimizePatternColors(20);
         const afterColorCount = window.QPixelTest.countPatternColors(window.QPixelTest.getActivePattern());
         if (beforeColorCount <= 20) throw new Error("synthetic pattern should start above color limit");
-        if (optimizedCount <= 0 || afterColorCount > 21) {
+        if (optimizedCount <= 0 || afterColorCount > 20) {
           throw new Error(`color optimization failed ${beforeColorCount} -> ${afterColorCount}`);
         }
         if (!window.QPixelTest.calculateUsage(window.QPixelTest.getActivePattern()).some((item) => item.code === "A1")) {
           throw new Error("locked color was removed during optimization");
+        }
+        const strictPattern = {
+          width: 26,
+          height: 1,
+          name: "严格色号测试",
+          cells: [colorCodes.slice()]
+        };
+        const strictResult = window.QPixelTest.reducePatternToColorLimit(strictPattern, 20, new Set(colorCodes));
+        if (window.QPixelTest.countPatternColors(strictResult) > 20) {
+          throw new Error("locked colors bypassed strict color limit");
         }
         window.QPixelTest.undoEdit();
         if (window.QPixelTest.countPatternColors(window.QPixelTest.getActivePattern()) !== beforeColorCount) {

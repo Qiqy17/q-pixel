@@ -40,7 +40,7 @@ AI 生图窗口现在可以直接选择 Hugging Face、即梦 AI（火山引擎�
 
 ```zsh
 export OPENAI_API_KEY="你的 OpenAI API key"
-python3 /Users/mac/GitHub/q-pixel/scripts/qpixel_sync_server.py
+python3 /Users/mac/GitHub/q-pixel/scripts/qpixel_ipad_https_server.py --http --port 8766
 ```
 
 桌面/iPad 服务：

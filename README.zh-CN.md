@@ -72,16 +72,17 @@ scripts/qpixel_ipad_https_server.py
 
 同步逻辑会按作品的 `updatedAt`、`savedAt`、`createdAt` 判断新旧，避免电脑应用、电脑网页和平板网页互相覆盖旧版本。
 
-## 编译 macOS 桌面壳
+## 构建并校验 macOS App
 
 ```sh
-swiftc macos/QPixel.swift -o QPixel -framework AppKit -framework WebKit
+./scripts/build_macos_app.sh
+./scripts/verify_release.sh
 ```
 
-编译出的 `QPixel` 可执行文件放入：
+备份当前桌面 App、安装已校验的新包并更新唯一的本地同步服务：
 
-```text
-Q像素.app/Contents/MacOS/QPixel
+```sh
+./scripts/install_local_app.sh
 ```
 
 ## 测试
@@ -90,7 +91,7 @@ Q像素.app/Contents/MacOS/QPixel
 
 ```sh
 node --check web/app.js
-python3 -m py_compile scripts/qpixel_ipad_https_server.py scripts/qpixel_sync_server.py
+python3 -m py_compile scripts/qpixel_ipad_https_server.py scripts/qpixel_openai.py
 swiftc macos/QPixel.swift -o /tmp/QPixel-test-build -framework AppKit -framework WebKit
 ```
 

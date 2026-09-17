@@ -17,6 +17,10 @@
   --radius: 10px;
 }
 
+.hidden {
+  display: none !important;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -2216,14 +2220,6 @@ body[data-mode="beads"] #paletteGrid {
   padding-top: 2px;
 }
 
-.usage-list {
-  display: grid;
-  gap: 6px;
-  max-height: 180px;
-  overflow: auto;
-  padding-right: 2px;
-}
-
 .project-list {
   display: grid;
   gap: 8px;
@@ -2305,42 +2301,6 @@ body[data-mode="beads"] #paletteGrid {
 
 .switch-row.compact {
   padding: 7px 0;
-}
-
-.usage-item {
-  display: grid;
-  grid-template-columns: 22px 54px minmax(0, 1fr) auto 48px;
-  gap: 8px;
-  align-items: center;
-  padding: 7px 8px;
-  border: 1px solid var(--panel-line);
-  border-radius: 8px;
-  background: var(--panel-soft);
-  font-size: 12px;
-}
-
-.usage-swatch {
-  width: 22px;
-  height: 22px;
-  border-radius: 5px;
-  border: 1px solid rgba(0, 0, 0, .16);
-}
-
-.usage-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-weight: 800;
-}
-
-.usage-name {
-  color: var(--muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.usage-count {
-  font-weight: 900;
-  color: var(--green);
 }
 
 .message {
@@ -2825,7 +2785,8 @@ body[data-mode="beads"] #paletteGrid {
   z-index: 110;
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: clamp(8px, 2vw, 24px);
+  overflow: hidden;
   background: rgba(0, 0, 0, .74);
 }
 
@@ -2888,7 +2849,140 @@ body[data-mode="beads"] #paletteGrid {
 }
 
 .import-choice-card {
-  width: min(520px, calc(100vw - 34px));
+  width: min(1120px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  max-height: calc(100dvh - 16px);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  overflow: hidden;
+  box-sizing: border-box;
+  padding: clamp(16px, 2.4vw, 28px);
+}
+
+.import-choice-card.is-entry {
+  width: min(760px, calc(100vw - 16px));
+}
+
+.import-choice-card .project-action-head {
+  grid-template-columns: 1fr;
+  min-width: 0;
+}
+
+.import-entry-panel {
+  min-height: 0;
+  display: grid;
+  gap: 12px;
+  overflow: auto;
+}
+
+.import-entry-preview {
+  min-height: 0;
+  border: 1px solid var(--panel-line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #eef2f7;
+}
+
+.import-entry-preview canvas {
+  display: block;
+  width: 100%;
+  height: clamp(180px, 38dvh, 380px);
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.import-entry-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.import-entry-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.import-entry-actions button,
+.wizard-settings > button:not(.text-button),
+.import-wizard-step > button:not(.text-button) {
+  min-height: 72px;
+  display: grid;
+  gap: 7px;
+  padding: 14px;
+  border: 1px solid var(--panel-line);
+  border-radius: 10px;
+  background: #f8fafc;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.import-entry-actions strong,
+.wizard-settings > button strong,
+.import-wizard-step > button strong {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 950;
+}
+
+.import-entry-actions span,
+.wizard-settings > button span,
+.import-wizard-step > button span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.import-wizard-shell {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.import-wizard-shell.hidden,
+.import-entry-panel.hidden {
+  display: none;
+}
+
+.import-wizard-scroll {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 2px 4px 12px 2px;
+}
+
+.wizard-workbench {
+  grid-template-columns: minmax(0, 1.2fr) minmax(300px, .8fr);
+  align-items: start;
+}
+
+.wizard-settings {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.import-wizard-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--panel-line);
+  background: #fff;
+}
+
+.import-wizard-actions span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.import-wizard-actions button {
+  min-height: 44px;
 }
 
 .wizard-steps {
@@ -2939,7 +3033,7 @@ body[data-mode="beads"] #paletteGrid {
 .wizard-preview canvas {
   display: block;
   width: 100%;
-  height: 150px;
+  height: clamp(180px, 44dvh, 430px);
   border: 1px solid var(--panel-line);
   border-radius: 9px;
   background: #fff;
@@ -2992,6 +3086,76 @@ body[data-mode="beads"] #paletteGrid {
   cursor: pointer;
   text-align: left;
   transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+}
+
+@media (max-width: 820px) {
+  .wizard-workbench {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wizard-preview canvas {
+    height: clamp(150px, 27dvh, 250px);
+  }
+}
+
+@media (max-width: 560px), (max-height: 620px) {
+  .import-choice-card {
+    padding: 14px;
+    border-radius: 10px;
+  }
+
+  .project-action-close {
+    top: 10px;
+    right: 10px;
+  }
+
+  .import-choice-card .project-action-head {
+    padding-right: 38px;
+  }
+
+  .import-choice-card .project-action-head h2 {
+    margin-bottom: 4px;
+    font-size: 18px;
+  }
+
+  .import-choice-card .project-action-head p {
+    margin-top: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .import-entry-actions,
+  .wizard-preview,
+  .layer-import-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .import-entry-preview canvas {
+    height: clamp(140px, 28dvh, 220px);
+  }
+
+  .wizard-preview canvas {
+    height: clamp(120px, 22dvh, 180px);
+  }
+
+  .wizard-steps {
+    margin-bottom: 8px;
+  }
+
+  .wizard-steps span {
+    padding: 7px 2px;
+    font-size: 11px;
+  }
+
+  .import-wizard-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .import-wizard-actions button {
+    width: 100%;
+  }
 }
 
 .layer-import-options button {
@@ -3215,18 +3379,6 @@ body[data-mode="beads"] #paletteGrid {
 
 .quality-summary {
   padding: 7px 0 2px;
-}
-
-.usage-stock {
-  width: 48px;
-  min-height: 25px;
-  padding: 0 4px;
-  border: 1px solid var(--panel-line);
-  border-radius: 5px;
-  background: #fff;
-  color: var(--text);
-  text-align: center;
-  font-size: 11px;
 }
 
 .material-quality-check {

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.qpixel.localserver</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__PYTHON__</string>
+    <string>-B</string>
+    <string>-u</string>
+    <string>__RESOURCES__/qpixel_ipad_https_server.py</string>
+    <string>--http</string>
+    <string>--host</string><string>0.0.0.0</string>
+    <string>--cert-host</string><string>127.0.0.1</string>
+    <string>--port</string><string>8766</string>
+  </array>
+  <key>WorkingDirectory</key><string>__RESOURCES__</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/tmp/qpixel_localserver.log</string>
+  <key>StandardErrorPath</key><string>/tmp/qpixel_localserver.err.log</string>
+</dict>
+</plist>

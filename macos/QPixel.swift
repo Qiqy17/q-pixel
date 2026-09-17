@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             defer: false
         )
         window.title = "Q像素"
-        window.minSize = NSSize(width: 980, height: 640)
+        window.minSize = NSSize(width: 420, height: 520)
         placeWindowOnMainScreen()
         window.contentView = webView
         window.makeKeyAndOrderFront(nil)

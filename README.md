@@ -18,7 +18,7 @@ Q Pixel is a local pixel-art and bead-pattern editor. It includes the web app, t
 - `web/` - HTML, CSS, JavaScript, service worker, manifest, offline page, and browser regression page.
 - `macos/QPixel.swift` - macOS AppKit/WebKit wrapper for the desktop app.
 - `scripts/` - local HTTP/sync server scripts and launch helpers.
-- `assets/` - app icon and generated test images.
+- `assets/` - generated test images; the production icon is tracked in `web/icon.svg`.
 
 ## Run Locally
 
@@ -40,16 +40,17 @@ For tablet sync, use the app service script in `scripts/qpixel_ipad_https_server
 ~/Documents/Q像素/qpixel-projects.json
 ```
 
-## Build macOS Wrapper
+## Build and verify the macOS app
 
 ```sh
-swiftc macos/QPixel.swift -o QPixel -framework AppKit -framework WebKit
+./scripts/build_macos_app.sh
+./scripts/verify_release.sh
 ```
 
-The built `QPixel` executable belongs inside:
+To back up the currently installed app, install the verified package, and refresh the single local service:
 
-```text
-Q像素.app/Contents/MacOS/QPixel
+```sh
+./scripts/install_local_app.sh
 ```
 
 ## Test
@@ -58,7 +59,7 @@ Syntax and service checks:
 
 ```sh
 node --check web/app.js
-python3 -m py_compile scripts/qpixel_ipad_https_server.py scripts/qpixel_sync_server.py
+python3 -m py_compile scripts/qpixel_ipad_https_server.py scripts/qpixel_openai.py
 swiftc macos/QPixel.swift -o /tmp/QPixel-test-build -framework AppKit -framework WebKit
 ```
 

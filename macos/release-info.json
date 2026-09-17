@@ -1,0 +1,6 @@
+{
+  "version": "__VERSION__",
+  "build": "__BUILD__",
+  "gitCommit": "__GIT_COMMIT__",
+  "builtAt": "__BUILT_AT__"
+}

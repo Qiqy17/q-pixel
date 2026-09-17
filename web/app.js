@@ -448,6 +448,7 @@
   let previousCalibrationBeforeRecalibration = null;
   let importWizard = null;
   let importAiAssist = null;
+  let importSessionSerial = 0;
 
   const storageKey = "q-pixel-local-projects-v1";
   const projectPayloadStoragePrefix = "q-pixel-project-payload-v1:";
@@ -520,13 +521,14 @@
       "beadHeightNumber", "beadLockRatio", "generateBeadsButton", "recalibrateImageButton", "usePixelButton",
       "showCodesToggle", "showGridToggle", "codeFontScaleRange", "codeFontScaleNumber",
       "importSummary", "importChoiceSummary",
-      "importWizardStep1", "importWizardStep2", "importWizardStep3", "importWizardColorSummary", "importWizardFinalSummary", "importWizardColorLimitInput", "importWizardCalibrationButton", "importWizardSkipCalibrationButton", "importWizardOptimizeButton", "importWizardKeepColorsButton", "importWizardApplyButton", "importWizardRestartButton", "importWizardOriginalCanvas", "importWizardPatternCanvas", "importWizardFinalOriginalCanvas", "importWizardFinalPatternCanvas", "importAiAssistButton", "importAiAssistStatus", "importAiAssistApplyRecommendationButton", "importAiAssistApplySubjectButton", "importAiAssistSymmetryButton", "importAiAssistUndoButton",
+      "importEntryPanel", "importEntryPreviewCanvas", "importQuickButton", "importAdvancedButton", "importWizardShell", "importWizardScroll", "importWizardUseCurrentButton",
+      "importWizardStep1", "importWizardStep2", "importWizardStep3", "importWizardStep4", "importWizardColorSummary", "importWizardFinalSummary", "importWizardColorLimitInput", "importWizardCalibrationButton", "importWizardSkipCalibrationButton", "importWizardOptimizeButton", "importWizardKeepColorsButton", "importWizardApplyButton", "importWizardRestartButton", "importWizardOriginalCanvas", "importWizardPatternCanvas", "importWizardFinalOriginalCanvas", "importWizardFinalPatternCanvas", "importAiAssistButton", "importAiAssistStatus", "importAiAssistApplyRecommendationButton", "importAiAssistApplySubjectButton", "importAiAssistSymmetryButton", "importAiAssistUndoButton",
       "qualitySummary", "qualityCheckButton", "exportMaterialsButton", "buildModeToggle", "buildProgress", "clearBuildProgressButton",
       "paletteSelect", "paletteGrid", "cellTargetPaletteGrid", "selectionColorTargetPaletteGrid",
       "replaceFromSelect", "replaceToSelect", "replaceAllButton", "usageSummary",
-      "usageList", "exportChartButton", "toolBrushButton", "toolPickerButton",
+      "exportChartButton", "toolBrushButton", "toolPickerButton",
       "toolEraserButton", "toolBucketButton", "toolSelectButton", "toolRectFillButton",
-      "toolRectClearButton", "toolOutlineButton", "toolShapeButton", "toolPaletteButton", "toolClearLayerButton", "toolBaseboardButton",
+      "toolRectClearButton", "toolOutlineButton", "toolShapeButton", "toolPaletteButton", "toolClearLayerButton",
       "toolGuideButton",
       "undoTopButton", "redoTopButton", "recentColorStack", "brushBadge", "eraserBadge",
       "toolOptionsPanel", "brushSizeRange", "brushSizeLabel", "brushDoneButton", "eraserSizeRange", "eraserSizeLabel", "eraserDoneButton",
@@ -535,7 +537,7 @@
       "guideVerticalButton", "guideHorizontalButton", "guideSolidButton", "guideDashedButton", "guideColorInput", "guideOpacityRange", "guideOpacityLabel", "guideClearButton",
       "selectRectButton", "selectLassoButton", "selectionReplaceButton",
       "selectionAddButton", "selectionSubtractButton", "selectionFillButton", "selectionClearButton",
-      "selectionCopyButton", "selectionPasteButton", "selectionMoveButton", "selectionMirrorButton", "selectionRotateButton",
+      "selectionCopyButton", "selectionPasteButton", "selectionMoveButton", "selectionMirrorButton",
       "selectionColorsButton", "selectionOutlineButton", "selectionColorPanel", "selectionColorList",
       "selectionColorTargetSelect", "selectionSmallColorLimitInput", "selectionColorMergeSmallButton",
       "shapeSquareButton", "shapeCircleButton", "shapeTriangleButton", "shapePolygonButton",
@@ -559,7 +561,7 @@
       "exportBeadPixelButton", "exportAlbumButton", "projectList", "projectFileInput",
       "exportPreviewModal", "exportPreviewCanvas", "exportPreviewCloseButton",
       "exportPreviewRefreshButton", "exportPreviewPngButton", "exportPreviewAlbumButton",
-      "exportPreviewPdfButton", "exportPreviewMirrorButton", "exportPreviewOpenButton", "materialPreviewButton", "charmPreviewButton",
+      "exportPreviewPdfButton", "exportPreviewMirrorButton", "exportPreviewOpenButton", "materialPreviewButton",
       "exportPreviewZoomOutButton", "exportPreviewZoomFitButton", "exportPreviewZoomInButton",
       "materialPreviewModal", "materialPreviewCloseButton", "materialPreviewCanvas", "materialModeSelect",
       "materialBaseSelect", "materialIntensityRange", "materialIntensityLabel", "materialBackgroundSelect", "materialCategoryList", "materialOptionList", "materialColorPresetList", "materialCustomColorInput", "materialPickerSummary", "materialLightSelect", "materialDecorSelect", "materialQualityCheckButton", "materialQualitySummary", "materialExportButton",
@@ -575,8 +577,6 @@
       "styleTextColorInput", "styleTextOpacityRange", "styleTextOpacityLabel", "styleTextStrokeColorInput",
       "styleTextStrokeWidthRange", "styleTextStrokeWidthLabel", "styleTextShadowRange", "styleTextShadowLabel",
       "styleTextApplyButton", "styleTextRemoveButton", "stylePresetNameInput", "stylePresetSaveButton", "stylePresetList",
-      "charmPreviewModal", "charmPreviewCloseButton", "charmPreviewCanvas", "charmHolePositionSelect", "charmHoleSizeRange",
-      "charmHoleSizeLabel", "charmKeyringSelect", "charmCordSelect", "charmLinkSelect", "charmExportButton",
       "toolRailGrip", "toolRailBGrip", "toolRailCollapseButton", "toolRailBCollapseButton", "colorStripGrip", "projectActionModal", "projectActionCloseButton",
       "projectActionThumb", "projectActionTitle", "projectActionCreated", "projectActionUpdated",
       "projectActionOpenButton", "projectActionHistoryButton", "projectActionTemplateButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
@@ -590,7 +590,7 @@
       "calibrationNudgeLeftButton", "calibrationNudgeUpButton",
       "calibrationNudgeDownButton", "calibrationNudgeRightButton",
       "calibrationColumnsInput", "calibrationCellSizeInput", "calibrationAiToggle",
-      "colorOptimizeLimitInput", "colorOptimizeButton", "colorOptimizeUndoButton", "restoreOptimizeButton", "restoreLightButton", "restoreBalancedButton", "restoreDetailButton",
+      "colorOptimizeLimitInput", "colorOptimizeButton", "colorOptimizeUndoButton", "restoreLightButton", "restoreBalancedButton", "restoreDetailButton",
       "sourceCompareToggle", "sourceCompareOpacityRange", "sourceCompareOpacityLabel", "lockedColorSummary",
       "trashModal", "trashCloseButton", "trashList",
       "usageLayoutWrapButton", "usageLayoutGridButton", "usageFontSizeRange", "usageFontSizeLabel",
@@ -2380,10 +2380,6 @@
     return new Set(Array.isArray(state.beads.lockedColorCodes) ? state.beads.lockedColorCodes : []);
   }
 
-  function isLockedColorCode(code) {
-    return Boolean(code && getLockedColorSet().has(code));
-  }
-
   function getCellNeighborCodes(cells, row, col) {
     return [
       cells[row - 1] && cells[row - 1][col],
@@ -2477,30 +2473,48 @@
     return Object.assign({}, targetPattern, { cells });
   }
 
-  function reducePatternToColorLimit(pattern, limit, lockedCodes) {
+  function selectKeptColorCodes(pattern, limit, lockedCodes) {
     const target = clamp(limit || 28, 2, beadPalette.length);
-    const locked = lockedCodes || new Set();
-    const currentUsage = calculateUsage(pattern);
-    if (currentUsage.length <= target) return pattern;
+    const usage = calculateUsage(pattern);
+    const inUse = new Set(usage.map((item) => item.code));
     const analysis = analyzeColorImportance(pattern).sort((a, b) => b.importance - a.importance);
     const colorStats = new Map(analysis.map((item) => [item.code, item]));
-    const kept = [];
-    locked.forEach((code) => {
-      if (currentUsage.some((item) => item.code === code) && kept.length < target) kept.push(code);
-    });
+    const roles = state.beads.lockedColorRoles || {};
+    const roleScore = (code) => {
+      const values = roles[code] || [];
+      return (values.includes("轮廓") ? 200000 : 0) + (values.includes("高光") ? 100000 : 0);
+    };
+    const protectedCodes = Array.from(lockedCodes || [])
+      .filter((code) => inUse.has(code))
+      .sort((left, right) => {
+        const leftStats = colorStats.get(left) || { importance: 0, count: 0 };
+        const rightStats = colorStats.get(right) || { importance: 0, count: 0 };
+        return roleScore(right) - roleScore(left)
+          || rightStats.importance - leftStats.importance
+          || rightStats.count - leftStats.count;
+      });
+    const kept = protectedCodes.slice(0, target);
     const darkest = analysis
-      .slice()
       .filter((item) => !kept.includes(item.code))
-      .sort((a, b) => colorBrightness(a.color.rgb) - colorBrightness(b.color.rgb))
+      .sort((a, b) => colorBrightness(a.color.rgb) - colorBrightness(b.color.rgb) || b.importance - a.importance)
       .slice(0, Math.max(0, Math.min(3, target - kept.length)))
       .map((item) => item.code);
     [...darkest, ...analysis.map((item) => item.code)].forEach((code) => {
       if (kept.length < target && !kept.includes(code)) kept.push(code);
     });
+    return { kept, colorStats };
+  }
+
+  function reducePatternToColorLimit(pattern, limit, lockedCodes) {
+    const target = clamp(limit || 28, 2, beadPalette.length);
+    const locked = lockedCodes || new Set();
+    const currentUsage = calculateUsage(pattern);
+    if (currentUsage.length <= target) return pattern;
+    const { kept, colorStats } = selectKeptColorCodes(pattern, target, locked);
     const keptSet = new Set(kept);
     const replacements = new Map();
     currentUsage.forEach((item) => {
-      if (!keptSet.has(item.code) && !locked.has(item.code)) {
+      if (!keptSet.has(item.code)) {
         replacements.set(item.code, getNearestKeptCode(item.code, kept, colorStats));
       }
     });
@@ -2512,7 +2526,7 @@
         if (replacements.has(code)) cells[row][col] = replacements.get(code);
       }
     }
-    const smoothed = smoothOptimizedCells(cells, locked);
+    const smoothed = smoothOptimizedCells(cells, keptSet);
     return Object.assign({}, pattern, { cells: smoothed.cells });
   }
 
@@ -3104,32 +3118,6 @@
         ? `当前 ${usage.length} 种颜色，共 ${total} 颗；详细统计在底部色号栏。`
         : "导出前先预览图纸、色号统计和水印。";
     }
-    if (els.usageList) {
-      els.usageList.innerHTML = "";
-      usage.forEach((item) => {
-        const row = document.createElement("div");
-        row.className = "usage-item";
-        row.innerHTML = `
-          <span class="usage-swatch"></span>
-          <span class="usage-code"></span>
-          <span class="usage-name"></span>
-          <span class="usage-count"></span>
-          <input class="usage-stock" type="number" min="0" inputmode="numeric" title="已有库存">
-        `;
-        row.querySelector(".usage-swatch").style.backgroundColor = item.color.hex;
-        row.querySelector(".usage-code").textContent = item.code;
-        row.querySelector(".usage-name").textContent = item.color.name;
-        row.querySelector(".usage-count").textContent = `${item.count} 需`;
-        const stockInput = row.querySelector(".usage-stock");
-        stockInput.value = String(getInventoryStock(item.code));
-        stockInput.addEventListener("change", () => {
-          state.inventory[item.code] = Math.max(0, Math.floor(Number(stockInput.value || 0)));
-          saveInventory();
-          renderUsage();
-        });
-        els.usageList.appendChild(row);
-      });
-    }
     populateReplaceControls(usage);
     renderQualitySummary();
     renderBuildProgress();
@@ -3491,10 +3479,16 @@
       return;
     }
 
+    const sessionId = ++importSessionSerial;
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
+      if (sessionId !== importSessionSerial) {
+        URL.revokeObjectURL(url);
+        return;
+      }
       state.importSession = {
+        id: sessionId,
         file,
         image: img,
         url,
@@ -3505,9 +3499,14 @@
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
+      if (sessionId !== importSessionSerial) return;
       setMessage("图片读取失败，请换一张图片。", true);
     };
     img.src = url;
+  }
+
+  function isCurrentImportSession(sessionId) {
+    return Boolean(state.importSession && state.importSession.id === sessionId && importSessionSerial === sessionId);
   }
 
   function closeImportChoiceModal() {
@@ -3626,15 +3625,19 @@
 
   function runImportAiAssist() {
     if (!importWizard || !state.importSession || (importAiAssist && importAiAssist.running)) return;
+    const sessionId = state.importSession.id;
+    const session = state.importSession;
     const basePattern = importWizard.pattern || buildImportWizardPattern();
     if (!basePattern) return;
-    importAiAssist = {
+    const assist = {
       running: true,
+      sessionId,
       previousPattern: Object.assign({}, basePattern, { cells: cloneCells(basePattern.cells) }),
       recommendation: null,
       repairedPattern: null,
       error: ""
     };
+    importAiAssist = assist;
     if (els.importAiAssistButton) els.importAiAssistButton.disabled = true;
     if (els.importAiAssistStatus) {
       els.importAiAssistStatus.classList.remove("hidden");
@@ -3642,30 +3645,33 @@
     }
     window.setTimeout(async () => {
       try {
-        const subject = extractSubjectFromImage(state.importSession.image);
-        importAiAssist.subject = subject;
+        if (!isCurrentImportSession(sessionId) || importAiAssist !== assist || !importWizard) return;
+        const subject = extractSubjectFromImage(session.image);
+        assist.subject = subject;
         let analysisPattern = basePattern;
         if (subject.dataUrl && subject.confidence >= 0.72) {
-          importAiAssist.subjectImage = await loadImageFromDataUrl(subject.dataUrl);
+          assist.subjectImage = await loadImageFromDataUrl(subject.dataUrl);
+          if (!isCurrentImportSession(sessionId) || importAiAssist !== assist || !importWizard) return;
           analysisPattern = state.importCalibration && state.importCalibration.enabled
-            ? createPatternFromSourceWithCalibration(importAiAssist.subjectImage, state.importCalibration, state.importSession.name, { clean: false })
-            : createPatternFromSource(importAiAssist.subjectImage, basePattern.width, basePattern.height, state.importSession.name, { clean: false });
+            ? createPatternFromSourceWithCalibration(assist.subjectImage, state.importCalibration, session.name, { clean: false })
+            : createPatternFromSource(assist.subjectImage, basePattern.width, basePattern.height, session.name, { clean: false });
         }
         const roleAnalysis = analyzeLockedColorRoles(analysisPattern);
         const locked = new Set(roleAnalysis.codes);
         const cleaned = cleanPixelArtPattern(analysisPattern, locked);
         const repaired = protectLockedCells(analysisPattern, cleaned, locked);
         const symmetry = repairSymmetryGaps(repaired);
-        importAiAssist.recommendation = recommendImportPrecision(state.importSession.image, analysisPattern);
-        importAiAssist.analysisPattern = analysisPattern;
-        importAiAssist.repairedPattern = repaired;
-        importAiAssist.symmetryPattern = symmetry.pattern;
-        importAiAssist.symmetryChanged = symmetry.changed;
+        if (!isCurrentImportSession(sessionId) || importAiAssist !== assist || !importWizard) return;
+        assist.recommendation = recommendImportPrecision(session.image, analysisPattern);
+        assist.analysisPattern = analysisPattern;
+        assist.repairedPattern = repaired;
+        assist.symmetryPattern = symmetry.pattern;
+        assist.symmetryChanged = symmetry.changed;
         importWizard.pattern = repaired;
         state.beads.lockedColorCodes = roleAnalysis.codes;
         state.beads.lockedColorRoles = roleAnalysis.roles;
         const changed = countPatternDifferences(basePattern, repaired);
-        const recommendation = importAiAssist.recommendation;
+        const recommendation = assist.recommendation;
         if (els.importAiAssistStatus) {
           const subjectText = subject.dataUrl && subject.confidence >= 0.72 ? `主体清理 ${Math.round(subject.removedRatio * 100)}%` : "保留原背景";
           els.importAiAssistStatus.textContent = `分析完成：${subjectText} · 推荐 ${recommendation.width} x ${recommendation.height} · 轮廓 ${recommendation.outlineScore}% · 高光 ${recommendation.highlightScore}% · 修复 ${changed} 格 · 色号难度 ${recommendation.colorDifficulty} 种。`;
@@ -3676,11 +3682,14 @@
         if (els.importAiAssistUndoButton) els.importAiAssistUndoButton.classList.remove("hidden");
         renderImportWizardStep();
       } catch (error) {
-        importAiAssist.error = error && error.message ? error.message : "分析失败";
-        if (els.importAiAssistStatus) els.importAiAssistStatus.textContent = `AI还原助手失败：${importAiAssist.error}，当前图纸未改变。`;
+        if (importAiAssist !== assist) return;
+        assist.error = error && error.message ? error.message : "分析失败";
+        if (els.importAiAssistStatus) els.importAiAssistStatus.textContent = `AI还原助手失败：${assist.error}，当前图纸未改变。`;
       } finally {
-        importAiAssist.running = false;
-        if (els.importAiAssistButton) els.importAiAssistButton.disabled = false;
+        if (importAiAssist === assist) {
+          assist.running = false;
+          if (els.importAiAssistButton) els.importAiAssistButton.disabled = false;
+        }
       }
     }, 40);
   }
@@ -3775,7 +3784,7 @@
   }
 
   function renderImportWizardStep() {
-    if (!importWizard) return;
+    if (!importWizard || !state.importSession || importWizard.sessionId !== state.importSession.id) return;
     const step = importWizard.step;
     [1, 2, 3, 4].forEach((number) => {
       const panel = els[`importWizardStep${number}`];
@@ -3802,10 +3811,14 @@
       const colors = pattern ? countPatternColors(pattern) : 0;
       const rawColors = raw ? countPatternColors(raw) : colors;
       const changed = pattern && raw ? countPatternDifferences(raw, pattern) : 0;
+      const optimization = importWizard.optimization;
       els.importWizardFinalSummary.textContent = pattern
-        ? `最终图纸 ${pattern.width} x ${pattern.height} 格 · 色号 ${colors} 种（原始 ${rawColors} 种）· 变化 ${changed} 格 · 可返回调整，确认后才应用。`
+        ? optimization
+          ? `最终图纸 ${pattern.width} x ${pattern.height} 格 · 色号 ${optimization.after}/${optimization.limit} 种（优化前 ${optimization.before} 种）· 优先保护 ${optimization.protectedCount} 色 · 变化 ${optimization.changed} 格。`
+          : `最终图纸 ${pattern.width} x ${pattern.height} 格 · 保留 ${colors} 种色号（原始 ${rawColors} 种）· 变化 ${changed} 格 · 未执行色号压缩。`
         : "最终图纸预览和统计将在这里显示。";
     }
+    if (els.importWizardScroll) els.importWizardScroll.scrollTop = 0;
   }
 
   function countPatternDifferences(left, right) {
@@ -3822,10 +3835,13 @@
   }
 
   function startImportWizard() {
+    if (!state.importSession) return;
     importWizard = {
       step: 1,
+      sessionId: state.importSession.id,
       rawPattern: null,
       pattern: null,
+      optimization: null,
       previousLockedColorCodes: Array.isArray(state.beads.lockedColorCodes) ? state.beads.lockedColorCodes.slice() : [],
       previousLockedColorRoles: Object.assign({}, state.beads.lockedColorRoles || {})
     };
@@ -3836,6 +3852,21 @@
     if (els.importAiAssistApplySubjectButton) els.importAiAssistApplySubjectButton.classList.add("hidden");
     state.importCalibration = null;
     setImportMode(getImportMode());
+    renderImportWizardStep();
+  }
+
+  function setImportChoiceView(view) {
+    const advanced = view === "advanced";
+    if (els.importEntryPanel) els.importEntryPanel.classList.toggle("hidden", advanced);
+    if (els.importWizardShell) els.importWizardShell.classList.toggle("hidden", !advanced);
+    const card = els.importChoiceModal && els.importChoiceModal.querySelector(".import-choice-card");
+    if (card) card.classList.toggle("is-entry", !advanced);
+  }
+
+  function openAdvancedImportWizard() {
+    if (!state.importSession) return;
+    if (!importWizard || importWizard.sessionId !== state.importSession.id) startImportWizard();
+    setImportChoiceView("advanced");
     renderImportWizardStep();
   }
 
@@ -3868,24 +3899,73 @@
     if (!pattern) return;
     const analysis = analyzeLockedColorRoles(pattern);
     const locked = new Set(analysis.codes);
-    state.beads.lockedColorCodes = analysis.codes;
-    state.beads.lockedColorRoles = analysis.roles;
     const limit = clamp(els.importWizardColorLimitInput && els.importWizardColorLimitInput.value, 2, beadPalette.length);
-    importWizard.pattern = reducePatternToColorLimit(pattern, limit, locked);
+    const optimized = reducePatternToColorLimit(pattern, limit, locked);
+    const after = countPatternColors(optimized);
+    if (after > limit) {
+      if (els.importWizardColorSummary) els.importWizardColorSummary.textContent = `优化未达到 ${limit} 色上限，请调整设置后重试。`;
+      return;
+    }
+    const remainingCodes = new Set(calculateUsage(optimized).map((item) => item.code));
+    state.beads.lockedColorCodes = analysis.codes.filter((code) => remainingCodes.has(code));
+    state.beads.lockedColorRoles = Object.fromEntries(
+      Object.entries(analysis.roles).filter(([code]) => remainingCodes.has(code))
+    );
+    importWizard.pattern = optimized;
+    importWizard.optimization = {
+      limit,
+      before: countPatternColors(pattern),
+      after,
+      protectedCount: state.beads.lockedColorCodes.length,
+      changed: countPatternDifferences(pattern, optimized)
+    };
     importWizard.step = 4;
     renderImportWizardStep();
   }
 
   function wizardKeepColors() {
     if (!importWizard || !importWizard.pattern) buildImportWizardPattern();
+    if (importWizard) importWizard.optimization = null;
     importWizard.step = 4;
     renderImportWizardStep();
+  }
+
+  function applyCurrentWizardResult() {
+    if (!importWizard) return;
+    if (!importWizard.pattern) buildImportWizardPattern();
+    applyWizardImport();
+  }
+
+  function importPatternAsLayer(pattern, name) {
+    if (!pattern || !ensurePatternForCanvasEdit()) {
+      setMessage("请先生成图纸或可编辑像素画，再导入图层。", true);
+      return false;
+    }
+    pushHistory();
+    const layer = makeLayer(name || "导入图片", cloneCells(pattern.cells), true, false, "");
+    state.beads.layers.push(layer);
+    state.beads.activeLayerId = layer.id;
+    syncCompositePattern();
+    render();
+    setMessage(`“${name || "导入图片"}”已作为新图层导入。`, false);
+    markUnsavedChanges();
+    return true;
   }
 
   function applyWizardImport() {
     const session = state.importSession;
     const pattern = importWizard && importWizard.pattern;
     if (!session || !pattern) return;
+    if (session.mode === "layer") {
+      importPatternAsLayer(pattern, session.name);
+      if (session.url) URL.revokeObjectURL(session.url);
+      state.importSession = null;
+      importAiAssist = null;
+      importWizard = null;
+      closeImportChoiceModal();
+      closeCalibrationModal();
+      return;
+    }
     if (state.image && state.image !== session.image && state.image.src && state.image.src.startsWith("blob:")) URL.revokeObjectURL(state.image.src);
     state.image = session.image;
     state.imageName = session.name;
@@ -3914,6 +3994,7 @@
 
   function cancelImportSession() {
     if (state.importSession && state.importSession.url) URL.revokeObjectURL(state.importSession.url);
+    importSessionSerial += 1;
     if (recalibrationSession) {
       state.importCalibration = previousCalibrationBeforeRecalibration;
       previousCalibrationBeforeRecalibration = null;
@@ -3922,6 +4003,7 @@
       state.importCalibration = null;
     }
     state.importSession = null;
+    importAiAssist = null;
     if (importWizard) {
       state.beads.lockedColorCodes = importWizard.previousLockedColorCodes || [];
       state.beads.lockedColorRoles = importWizard.previousLockedColorRoles || {};
@@ -3934,10 +4016,13 @@
 
   function openImportChoiceModal() {
     if (!state.importSession) return;
-    if (!importWizard) startImportWizard();
     if (els.importChoiceFileName) els.importChoiceFileName.textContent = state.importSession.name;
     if (els.importChoiceModal) els.importChoiceModal.classList.remove("hidden");
-    renderImportWizardStep();
+    importWizard = null;
+    importAiAssist = null;
+    state.importCalibration = null;
+    setImportChoiceView("entry");
+    drawWizardPreviewCanvas(els.importEntryPreviewCanvas, state.importSession.image, null);
   }
 
   function importImageElementAsLayer(image, name) {
@@ -3946,17 +4031,10 @@
       return false;
     }
     const pattern = createPatternFromSource(image, state.beads.pattern.width, state.beads.pattern.height, name || "导入图片图层");
-    pushHistory();
-    const layer = makeLayer(name || "导入图片", pattern.cells, true, false, "");
-    state.beads.layers.push(layer);
-    state.beads.activeLayerId = layer.id;
-    syncCompositePattern();
-    render();
-    setMessage("图片已作为新图层导入。", false);
-    return true;
+    return importPatternAsLayer(pattern, name || "导入图片");
   }
 
-  function applyImportedImageDirectly() {
+  function applyQuickImport() {
     const session = state.importSession;
     if (!session) return;
     closeImportChoiceModal();
@@ -3964,6 +4042,8 @@
       importImageElementAsLayer(session.image, session.name);
       URL.revokeObjectURL(session.url);
       state.importSession = null;
+      importWizard = null;
+      importAiAssist = null;
       return;
     }
     if (state.image !== session.image && state.image && state.image.src && state.image.src.startsWith("blob:")) {
@@ -4000,6 +4080,8 @@
     renderImportSummary();
     markUnsavedChanges();
     state.importSession = null;
+    importWizard = null;
+    importAiAssist = null;
   }
 
   function openCalibrationModal() {
@@ -4027,7 +4109,9 @@
       ? Object.assign({}, state.importCalibration)
       : null;
     recalibrationSession = true;
+    const sessionId = ++importSessionSerial;
     state.importSession = {
+      id: sessionId,
       image: state.image,
       url: "",
       name: state.imageName || "当前图片",
@@ -4918,31 +5002,6 @@
     return state.beads.pattern || null;
   }
 
-  function importLayerImage(file) {
-    if (!file || !ensurePatternForCanvasEdit()) {
-      setMessage("请先生成图纸或可编辑像素画，再导入图层图片。", true);
-      return;
-    }
-    if (!file.type || !file.type.startsWith("image/")) {
-      setMessage("请选择图片文件。", true);
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = () => {
-      const pattern = createPatternFromSource(img, state.beads.pattern.width, state.beads.pattern.height, file.name || "导入图层");
-      URL.revokeObjectURL(url);
-      pushHistory();
-      addLayer(file.name || "导入图层", pattern.cells);
-      setMessage("图片已作为新图层导入。", false);
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(url);
-      setMessage("图层图片读取失败。", true);
-    };
-    img.src = url;
-  }
-
   function importLayerFile(file) {
     if (!file) return;
     const name = (file.name || "").toLowerCase();
@@ -5812,26 +5871,11 @@
     }
 
     const locked = getLockedColorSet();
-    const safeTarget = Math.max(target, locked.size + 1);
-    const analysis = analyzeColorImportance(state.beads.pattern).sort((a, b) => b.importance - a.importance);
-    const colorStats = new Map(analysis.map((item) => [item.code, item]));
-    const kept = [];
-    locked.forEach((code) => {
-      if (currentUsage.some((item) => item.code === code) && kept.length < safeTarget) kept.push(code);
-    });
-    const darkest = analysis
-      .slice()
-      .filter((item) => !kept.includes(item.code))
-      .sort((a, b) => colorBrightness(a.color.rgb) - colorBrightness(b.color.rgb))
-      .slice(0, Math.min(3, Math.max(0, safeTarget - kept.length)))
-      .map((item) => item.code);
-    [...darkest, ...analysis.map((item) => item.code)].forEach((code) => {
-      if (kept.length < safeTarget && !kept.includes(code)) kept.push(code);
-    });
+    const { kept, colorStats } = selectKeptColorCodes(state.beads.pattern, target, locked);
     const keptSet = new Set(kept);
     const replacements = new Map();
     currentUsage.forEach((item) => {
-      if (!keptSet.has(item.code) && !locked.has(item.code)) replacements.set(item.code, getNearestKeptCode(item.code, kept, colorStats));
+      if (!keptSet.has(item.code)) replacements.set(item.code, getNearestKeptCode(item.code, kept, colorStats));
     });
     if (!replacements.size) return 0;
 
@@ -5841,14 +5885,14 @@
     for (let row = 0; row < state.beads.pattern.height; row += 1) {
       for (let col = 0; col < state.beads.pattern.width; col += 1) {
         const code = cells[row][col];
-        if (replacements.has(code) && !locked.has(code)) {
+        if (replacements.has(code)) {
           cells[row][col] = replacements.get(code);
           changed += 1;
         }
       }
     }
 
-    const smoothed = smoothOptimizedCells(cells, locked);
+    const smoothed = smoothOptimizedCells(cells, keptSet);
     for (let row = 0; row < cells.length; row += 1) {
       cells[row] = smoothed.cells[row].slice();
     }
@@ -5861,7 +5905,8 @@
     syncCompositePattern();
     render();
     const after = countPatternColors(state.beads.pattern);
-    setMessage(`已将 ${currentUsage.length} 种色号优化为 ${after} 种，已保护轮廓/高光锁定色。`, after > safeTarget);
+    const protectedCount = kept.filter((code) => locked.has(code)).length;
+    setMessage(`已将 ${currentUsage.length} 种色号优化为 ${after} 种，优先保留 ${protectedCount} 个轮廓/高光色。`, after > target);
     return changed;
   }
 
@@ -7066,19 +7111,6 @@
     return canvas;
   }
 
-  function scaleCanvasForExport(source, requestedScale) {
-    const maxSide = 16000;
-    const scale = Math.max(1, Math.min(Number(requestedScale) || 1, maxSide / Math.max(source.width, source.height)));
-    if (scale <= 1.01) return source;
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(source.width * scale);
-    canvas.height = Math.round(source.height * scale);
-    const ctx = canvas.getContext("2d");
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
-    return canvas;
-  }
-
   function measureUsageFooter(usage, gridWidth, settings) {
     const scale = settings._renderScale || 1;
     const fontSize = clamp(settings.usageFontSize || 16 * scale, 10 * scale, 28 * scale);
@@ -7921,10 +7953,6 @@
     return new Blob([bytes], { type: "application/pdf" });
   }
 
-  function makeSimplePdfFromCanvas(canvas) {
-    return makePdfFromCanvases([canvas]);
-  }
-
   function isPixelPatternActive(pattern) {
     return (pattern && pattern.sourceLabel === "像素画结果") || state.beads.sourceLabel === "像素画结果";
   }
@@ -8125,202 +8153,6 @@
     return state.beads.pattern;
   }
 
-  function drawMaterialPreview() {
-    const pattern = getMaterialPattern();
-    if (!pattern || !els.materialPreviewCanvas) return false;
-    const mode = els.materialModeSelect ? els.materialModeSelect.value : "normal";
-    const base = els.materialBaseSelect ? els.materialBaseSelect.value : "transparent";
-    const background = els.materialBackgroundSelect ? els.materialBackgroundSelect.value : "studio";
-    const light = els.materialLightSelect ? els.materialLightSelect.value : "soft";
-    const decor = els.materialDecorSelect ? els.materialDecorSelect.value : "none";
-    const intensity = els.materialIntensityRange ? clamp(els.materialIntensityRange.value, 20, 100) / 100 : 0.7;
-    const maxSide = 760;
-    const cell = Math.max(4, Math.min(18, Math.floor(maxSide / Math.max(pattern.width, pattern.height))));
-    const pad = 34;
-    const canvas = els.materialPreviewCanvas;
-    canvas.width = pattern.width * cell + pad * 2;
-    canvas.height = pattern.height * cell + pad * 2;
-    const ctx = canvas.getContext("2d");
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    drawMaterialSceneBackground(ctx, canvas.width, canvas.height, background);
-    drawMaterialBase(ctx, canvas.width, canvas.height, base);
-
-    const art = document.createElement("canvas");
-    art.width = pattern.width * cell;
-    art.height = pattern.height * cell;
-    const artCtx = art.getContext("2d");
-    for (let row = 0; row < pattern.height; row += 1) {
-      for (let col = 0; col < pattern.width; col += 1) {
-        const code = pattern.cells[row][col];
-        if (!code || code === "H1") continue;
-        const color = getPaletteColor(code);
-        const x = col * cell;
-        const y = row * cell;
-        artCtx.fillStyle = mode === "black-glitter" && colorBrightness(color.rgb) < 150 ? "#08090b" : color.hex;
-        artCtx.fillRect(x, y, cell, cell);
-      }
-    }
-
-    ctx.save();
-    ctx.globalAlpha = mode === "3d" ? 0.34 : 0.22;
-    ctx.filter = `blur(${Math.max(3, cell * 0.34)}px)`;
-    ctx.drawImage(art, pad + cell * 0.36, pad + cell * 0.48);
-    ctx.restore();
-
-    ctx.drawImage(art, pad, pad);
-    drawStyleHollowCellEffects(ctx, pattern, pad, pad, cell, intensity);
-
-    ctx.save();
-    beginMaterialShapePath(ctx, pattern, pad, pad, cell);
-    ctx.clip();
-    ctx.globalCompositeOperation = "source-over";
-
-    if (mode === "normal") {
-      const gloss = ctx.createLinearGradient(pad, pad, pad + art.width, pad + art.height);
-      gloss.addColorStop(0, `rgba(255,255,255,${0.18 * intensity})`);
-      gloss.addColorStop(0.45, "rgba(255,255,255,0)");
-      gloss.addColorStop(1, `rgba(0,0,0,${0.08 * intensity})`);
-      ctx.fillStyle = gloss;
-      ctx.fillRect(pad, pad, art.width, art.height);
-    }
-
-    if (mode === "parchment") {
-      ctx.fillStyle = `rgba(255,255,255,${0.28 * intensity})`;
-      ctx.fillRect(pad, pad, art.width, art.height);
-      ctx.strokeStyle = `rgba(120,98,75,${0.12 * intensity})`;
-      ctx.lineWidth = Math.max(1, cell * 0.09);
-      for (let y = pad - art.width; y < pad + art.height; y += cell * 1.6) {
-        ctx.beginPath();
-        ctx.moveTo(pad, y);
-        ctx.lineTo(pad + art.width, y + art.width * 0.18);
-        ctx.stroke();
-      }
-    }
-
-    if (mode === "coarse-towel" || mode === "fine-towel") {
-      const step = mode === "coarse-towel" ? cell * 0.82 : cell * 0.48;
-      ctx.lineWidth = mode === "coarse-towel" ? Math.max(1.4, cell * 0.18) : Math.max(0.9, cell * 0.1);
-      ctx.strokeStyle = `rgba(255,255,255,${0.36 * intensity})`;
-      for (let x = pad - art.height; x < pad + art.width; x += step) {
-        ctx.beginPath();
-        ctx.moveTo(x, pad);
-        ctx.lineTo(x + art.height, pad + art.height);
-        ctx.stroke();
-      }
-      ctx.strokeStyle = `rgba(20,20,20,${0.08 * intensity})`;
-      for (let x = pad - art.height + step / 2; x < pad + art.width; x += step) {
-        ctx.beginPath();
-        ctx.moveTo(x, pad);
-        ctx.lineTo(x + art.height, pad + art.height);
-        ctx.stroke();
-      }
-    }
-
-    if (mode === "wavy") {
-      ctx.strokeStyle = `rgba(255,255,255,${0.34 * intensity})`;
-      ctx.lineWidth = Math.max(1, cell * 0.12);
-      for (let y = pad + cell * 0.5; y < pad + art.height; y += cell * 0.8) {
-        ctx.beginPath();
-        ctx.moveTo(pad, y);
-        for (let x = pad; x <= pad + art.width; x += cell) {
-          ctx.quadraticCurveTo(x + cell * 0.5, y - cell * 0.28, x + cell, y);
-        }
-        ctx.stroke();
-      }
-    }
-
-    if (mode === "glitter" || mode === "black-glitter") {
-      const sparkleCount = Math.max(60, Math.floor(pattern.width * pattern.height / 5));
-      for (let i = 0; i < sparkleCount; i += 1) {
-        const x = pad + ((i * 37) % Math.max(1, art.width));
-        const y = pad + ((i * 53) % Math.max(1, art.height));
-        const size = Math.max(1, ((i % 5) + 1) * cell * 0.08);
-        ctx.fillStyle = mode === "black-glitter" ? `rgba(235,245,255,${0.6 * intensity})` : `rgba(255,255,255,${0.78 * intensity})`;
-        ctx.beginPath();
-        ctx.arc(x, y, size, 0, Math.PI * 2);
-        ctx.fill();
-        if (i % 4 === 0) {
-          ctx.fillRect(x - size * 1.7, y - size * 0.35, size * 3.4, size * 0.7);
-          ctx.fillRect(x - size * 0.35, y - size * 1.7, size * 0.7, size * 3.4);
-        }
-      }
-    }
-
-    if (mode === "holes") {
-      ctx.globalCompositeOperation = "destination-out";
-      for (let row = 0; row < pattern.height; row += 1) {
-        for (let col = 0; col < pattern.width; col += 1) {
-          if (!pattern.cells[row][col]) continue;
-          ctx.beginPath();
-          ctx.arc(pad + col * cell + cell / 2, pad + row * cell + cell / 2, Math.max(1, cell * 0.16), 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      ctx.globalCompositeOperation = "source-atop";
-    }
-
-    ctx.restore();
-
-    if (mode === "cross-stitch") {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(pad, pad, art.width, art.height);
-      ctx.clip();
-      for (let row = 0; row < pattern.height; row += 1) {
-        for (let col = 0; col < pattern.width; col += 1) {
-          const code = pattern.cells[row][col];
-          if (!code) continue;
-          const color = getPaletteColor(code);
-          const x = pad + col * cell;
-          const y = pad + row * cell;
-          ctx.strokeStyle = color.hex;
-          ctx.lineWidth = Math.max(1, cell * 0.14);
-          ctx.lineCap = "round";
-          ctx.beginPath();
-          ctx.moveTo(x + cell * 0.18, y + cell * 0.18);
-          ctx.lineTo(x + cell * 0.82, y + cell * 0.82);
-          ctx.moveTo(x + cell * 0.82, y + cell * 0.18);
-          ctx.lineTo(x + cell * 0.18, y + cell * 0.82);
-          ctx.stroke();
-        }
-      }
-      ctx.restore();
-    }
-
-    if (mode === "3d") {
-      ctx.save();
-      beginMaterialShapePath(ctx, pattern, pad, pad, cell);
-      ctx.clip();
-      ctx.globalCompositeOperation = "source-over";
-      const shine = ctx.createLinearGradient(pad, pad, pad, pad + art.height);
-      shine.addColorStop(0, `rgba(255,255,255,${0.22 * intensity})`);
-      shine.addColorStop(0.55, "rgba(255,255,255,0)");
-      shine.addColorStop(1, `rgba(0,0,0,${0.18 * intensity})`);
-      ctx.fillStyle = shine;
-      ctx.fillRect(pad, pad, art.width, art.height);
-      ctx.restore();
-    }
-
-    drawMaterialLight(ctx, pad, pad, art.width, art.height, light, intensity);
-    drawMaterialDecor(ctx, canvas.width, canvas.height, decor, intensity);
-
-    if (mode === "holes") {
-      ctx.save();
-      ctx.strokeStyle = `rgba(35,35,35,${0.18 * intensity})`;
-      ctx.lineWidth = Math.max(0.5, cell * 0.05);
-      for (let row = 0; row < pattern.height; row += 1) {
-        for (let col = 0; col < pattern.width; col += 1) {
-          if (!pattern.cells[row][col]) continue;
-          ctx.beginPath();
-          ctx.arc(pad + col * cell + cell / 2, pad + row * cell + cell / 2, Math.max(1, cell * 0.16), 0, Math.PI * 2);
-          ctx.stroke();
-        }
-      }
-      ctx.restore();
-    }
-    return true;
-  }
-
   function auditMaterialPreview() {
     if (!els.materialPreviewCanvas || !getMaterialPattern()) {
       if (els.materialQualitySummary) els.materialQualitySummary.textContent = "请先生成图纸，再检查样式预览。";
@@ -8355,48 +8187,6 @@
     const quality = variance > 180 ? "层次正常" : variance > 55 ? "层次偏弱" : "画面偏平";
     if (els.materialQualitySummary) els.materialQualitySummary.textContent = `${quality} · 画面有效像素 ${Math.round(opaque / count * 100)}% · 明暗变化 ${Math.round(variance)} · ${active.join(" · ")}`;
     return { valid: true, variance, opaqueRatio: opaque / count, active };
-  }
-
-  function drawMaterialSceneBackground(ctx, width, height, background) {
-    if (background === "transparent") return;
-    if (background === "dark") {
-      const gradient = ctx.createLinearGradient(0, 0, width, height);
-      gradient.addColorStop(0, "#222734");
-      gradient.addColorStop(1, "#0f1218");
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, width, height);
-      return;
-    }
-    if (background === "felt") {
-      ctx.fillStyle = "#bfc1bb";
-      ctx.fillRect(0, 0, width, height);
-      ctx.globalAlpha = 0.22;
-      ctx.strokeStyle = "#f7f5ef";
-      for (let i = -height; i < width; i += 11) {
-        ctx.beginPath();
-        ctx.moveTo(i, 0);
-        ctx.lineTo(i + height, height);
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-      return;
-    }
-    if (background === "paper") {
-      ctx.fillStyle = "#f8f2e7";
-      ctx.fillRect(0, 0, width, height);
-      ctx.globalAlpha = 0.12;
-      for (let i = 0; i < 140; i += 1) {
-        ctx.fillStyle = i % 2 ? "#c7b99f" : "#ffffff";
-        ctx.fillRect((i * 47) % width, (i * 29) % height, 1.5, 1.5);
-      }
-      ctx.globalAlpha = 1;
-      return;
-    }
-    const gradient = ctx.createRadialGradient(width * 0.42, height * 0.28, 20, width * 0.5, height * 0.5, Math.max(width, height) * 0.78);
-    gradient.addColorStop(0, "#ffffff");
-    gradient.addColorStop(1, "#e9edf4");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
   }
 
   function drawMaterialLight(ctx, x, y, width, height, light, intensity) {
@@ -9147,46 +8937,6 @@
     }
   }
 
-  function drawMaterialBase(ctx, width, height, base) {
-    if (base === "transparent") return;
-    if (base === "black") {
-      ctx.fillStyle = "#101318";
-      ctx.fillRect(0, 0, width, height);
-      return;
-    }
-    if (base === "felt") {
-      ctx.fillStyle = "#c9c9c3";
-      ctx.fillRect(0, 0, width, height);
-      ctx.globalAlpha = 0.25;
-      ctx.strokeStyle = "#f6f4ed";
-      for (let i = -height; i < width; i += 13) {
-        ctx.beginPath();
-        ctx.moveTo(i, 0);
-        ctx.lineTo(i + height, height);
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-      return;
-    }
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, width, height);
-  }
-
-  function getMaterialLabel(mode) {
-    return {
-      normal: "普通烫",
-      parchment: "蒸笼布/烘焙纸烫",
-      "coarse-towel": "粗纹毛巾烫",
-      "fine-towel": "细纹毛巾烫",
-      glitter: "银闪格丽特",
-      "black-glitter": "黑闪格丽特",
-      holes: "保孔烫",
-      wavy: "仙度瑞拉波纹",
-      "cross-stitch": "十字绣",
-      "3d": "拼豆立体"
-    }[mode] || "普通烫";
-  }
-
   function drawMaterialPreview() {
     const pattern = getMaterialPattern();
     if (!pattern || !els.materialPreviewCanvas) return false;
@@ -9259,44 +9009,6 @@
       }
     }
     return art;
-  }
-
-  function drawStyleHollowCellEffects(ctx, pattern, x, y, cell, intensity) {
-    if (!pattern || !Array.isArray(pattern.cells)) return;
-    const inset = Math.max(1, cell * 0.12);
-    const edge = Math.max(1, cell * 0.08);
-    for (let row = 0; row < pattern.height; row += 1) {
-      for (let col = 0; col < pattern.width; col += 1) {
-        if (pattern.cells[row][col] !== "H1") continue;
-        const px = x + col * cell;
-        const py = y + row * cell;
-        ctx.save();
-        ctx.globalAlpha = 0.72 * intensity;
-        ctx.shadowColor = "rgba(18, 28, 42, .42)";
-        ctx.shadowBlur = Math.max(2, cell * 0.28);
-        ctx.shadowOffsetX = Math.max(1, cell * 0.12);
-        ctx.shadowOffsetY = Math.max(1, cell * 0.16);
-        ctx.fillStyle = "rgba(20, 30, 44, .10)";
-        ctx.fillRect(px + inset, py + inset, Math.max(1, cell - inset * 2), Math.max(1, cell - inset * 2));
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 0;
-        ctx.strokeStyle = "rgba(255, 255, 255, .42)";
-        ctx.lineWidth = edge;
-        ctx.beginPath();
-        ctx.moveTo(px + inset, py + cell - inset);
-        ctx.lineTo(px + inset, py + inset);
-        ctx.lineTo(px + cell - inset, py + inset);
-        ctx.stroke();
-        ctx.strokeStyle = "rgba(18, 28, 42, .30)";
-        ctx.beginPath();
-        ctx.moveTo(px + cell - inset, py + inset);
-        ctx.lineTo(px + cell - inset, py + cell - inset);
-        ctx.lineTo(px + inset, py + cell - inset);
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
   }
 
   function updateStylePreviewLabels(values) {
@@ -10737,183 +10449,6 @@
 
   function closeMaterialPreview() {
     if (els.materialPreviewModal) els.materialPreviewModal.classList.add("hidden");
-  }
-
-  function openCharmPreview() {
-    if (!getMaterialPattern()) {
-      setMessage("请先载入图片或生成图纸。", true);
-      return;
-    }
-    if (!drawCharmPreview()) {
-      setMessage("挂件预览生成失败，请重试。", true);
-      return;
-    }
-    els.charmPreviewModal.classList.remove("hidden");
-  }
-
-  function closeCharmPreview() {
-    if (els.charmPreviewModal) els.charmPreviewModal.classList.add("hidden");
-  }
-
-  function drawCharmPreview() {
-    const pattern = getMaterialPattern();
-    if (!pattern || !els.charmPreviewCanvas) return false;
-    const holePosition = els.charmHolePositionSelect ? els.charmHolePositionSelect.value : "top-center";
-    const holeSize = els.charmHoleSizeRange ? clamp(els.charmHoleSizeRange.value, 1, 8) : 3;
-    const keyring = els.charmKeyringSelect ? els.charmKeyringSelect.value : "silver-ring";
-    const cord = els.charmCordSelect ? els.charmCordSelect.value : "none";
-    const link = els.charmLinkSelect ? els.charmLinkSelect.value : "single";
-    if (els.charmHoleSizeLabel) els.charmHoleSizeLabel.textContent = String(holeSize);
-    const canvas = els.charmPreviewCanvas;
-    canvas.width = 900;
-    canvas.height = 640;
-    const ctx = canvas.getContext("2d");
-    drawMaterialSceneBackground(ctx, canvas.width, canvas.height, "studio");
-    const cell = Math.max(4, Math.min(14, Math.floor(420 / Math.max(pattern.width, pattern.height))));
-    const art = makeSolidPatternCanvas(pattern, cell);
-    const x = Math.round((canvas.width - art.width) / 2);
-    const y = Math.round((canvas.height - art.height) / 2 + 45);
-    ctx.save();
-    ctx.globalAlpha = 0.26;
-    ctx.filter = "blur(14px)";
-    ctx.drawImage(art, x + 16, y + 22);
-    ctx.restore();
-    ctx.save();
-    ctx.shadowColor = "rgba(20,24,32,.28)";
-    ctx.shadowBlur = 18;
-    ctx.shadowOffsetY = 12;
-    ctx.drawImage(art, x, y);
-    ctx.restore();
-    drawCharmGloss(ctx, x, y, art.width, art.height);
-    const holes = getCharmHolePoints(holePosition, link, x, y, art.width, art.height);
-    holes.forEach((point) => drawCharmHole(ctx, point.x, point.y, holeSize * cell * 0.18));
-    if (keyring !== "none") drawKeyring(ctx, holes, keyring, cell);
-    if (cord !== "none") drawCord(ctx, holes, cord, cell);
-    ctx.fillStyle = "#172033";
-    ctx.font = "900 22px -apple-system, BlinkMacSystemFont, sans-serif";
-    ctx.fillText("Q像素挂件预览", 28, 38);
-    ctx.font = "700 14px -apple-system, BlinkMacSystemFont, sans-serif";
-    ctx.fillStyle = "#667085";
-    ctx.fillText(`${getCharmLabel(keyring)} · ${getCharmLabel(cord)} · ${getCharmLabel(holePosition)}`, 28, 64);
-    return true;
-  }
-
-  function makeSolidPatternCanvas(pattern, cell) {
-    const canvas = document.createElement("canvas");
-    canvas.width = pattern.width * cell;
-    canvas.height = pattern.height * cell;
-    const ctx = canvas.getContext("2d");
-    for (let row = 0; row < pattern.height; row += 1) {
-      for (let col = 0; col < pattern.width; col += 1) {
-        const code = pattern.cells[row][col];
-        if (!code || code === "H1") continue;
-        ctx.fillStyle = getPaletteColor(code).hex;
-        ctx.fillRect(col * cell, row * cell, cell, cell);
-      }
-    }
-    return canvas;
-  }
-
-  function getCharmHolePoints(position, link, x, y, width, height) {
-    if (position === "dual-top" || link === "double") return [{ x: x + width * 0.38, y: y + Math.max(12, height * 0.05) }, { x: x + width * 0.62, y: y + Math.max(12, height * 0.05) }];
-    if (position === "top-left" || link === "side") return [{ x: x + width * 0.24, y: y + Math.max(12, height * 0.08) }];
-    if (position === "top-right") return [{ x: x + width * 0.76, y: y + Math.max(12, height * 0.08) }];
-    return [{ x: x + width * 0.5, y: y + Math.max(12, height * 0.04) }];
-  }
-
-  function drawCharmHole(ctx, x, y, radius) {
-    ctx.save();
-    ctx.globalCompositeOperation = "destination-out";
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.globalCompositeOperation = "source-over";
-    ctx.strokeStyle = "rgba(255,255,255,.9)";
-    ctx.lineWidth = Math.max(2, radius * 0.35);
-    ctx.beginPath();
-    ctx.arc(x, y, radius + ctx.lineWidth * 0.45, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.strokeStyle = "rgba(0,0,0,.18)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(x, y, radius + 1, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  function drawKeyring(ctx, holes, type, cell) {
-    const color = type === "gold-ring" ? "#d7a83a" : "#c8d0d8";
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(4, cell * 0.35);
-    ctx.lineCap = "round";
-    holes.forEach((hole) => {
-      if (type === "ball-chain") {
-        for (let i = 0; i < 14; i += 1) {
-          ctx.fillStyle = color;
-          ctx.beginPath();
-          ctx.arc(hole.x + Math.sin(i * 0.8) * cell * 1.4, hole.y - cell * (2 + i * 0.58), Math.max(2, cell * 0.22), 0, Math.PI * 2);
-          ctx.fill();
-        }
-      } else if (type === "lobster") {
-        ctx.beginPath();
-        ctx.moveTo(hole.x, hole.y);
-        ctx.quadraticCurveTo(hole.x + cell * 1.3, hole.y - cell * 2.2, hole.x, hole.y - cell * 3.6);
-        ctx.quadraticCurveTo(hole.x - cell * 1.6, hole.y - cell * 2.2, hole.x, hole.y);
-        ctx.stroke();
-        ctx.strokeRect(hole.x - cell * 0.45, hole.y - cell * 4.5, cell * 0.9, cell * 0.9);
-      } else {
-        ctx.beginPath();
-        ctx.arc(hole.x, hole.y - cell * 2.1, cell * 1.6, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    });
-    ctx.restore();
-  }
-
-  function drawCord(ctx, holes, type, cell) {
-    const colors = type === "rainbow" ? ["#ef4444", "#f59e0b", "#22c55e", "#3b82f6", "#a855f7"] : [type === "pink" ? "#f3a8c8" : "#20242c"];
-    ctx.save();
-    ctx.lineWidth = Math.max(4, cell * 0.28);
-    holes.forEach((hole) => {
-      colors.forEach((color, index) => {
-        ctx.strokeStyle = color;
-        ctx.beginPath();
-        ctx.moveTo(hole.x + (index - colors.length / 2) * 2, hole.y - cell * 0.5);
-        ctx.bezierCurveTo(hole.x - cell * 1.4, hole.y - cell * 5, hole.x + cell * 2.5, hole.y - cell * 7, hole.x + cell * 0.2, hole.y - cell * 9);
-        ctx.stroke();
-      });
-    });
-    ctx.restore();
-  }
-
-  function drawCharmGloss(ctx, x, y, width, height) {
-    ctx.save();
-    ctx.globalCompositeOperation = "screen";
-    const gradient = ctx.createLinearGradient(x, y, x + width, y + height);
-    gradient.addColorStop(0, "rgba(255,255,255,.42)");
-    gradient.addColorStop(0.35, "rgba(255,255,255,.08)");
-    gradient.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = gradient;
-    ctx.fillRect(x, y, width, height);
-    ctx.restore();
-  }
-
-  function getCharmLabel(value) {
-    return {
-      "silver-ring": "银色圆环",
-      "gold-ring": "金色圆环",
-      "ball-chain": "珠链",
-      lobster: "龙虾扣",
-      none: "无",
-      black: "黑色手绳",
-      pink: "粉色手绳",
-      rainbow: "彩虹手绳",
-      "top-center": "顶部居中",
-      "top-left": "左上角",
-      "top-right": "右上角",
-      "dual-top": "顶部双孔"
-    }[value] || value;
   }
 
   function makeBeadPixelCanvas(pattern, options) {
@@ -12639,6 +12174,9 @@
     });
     els.homeOpenProjectButton.addEventListener("click", () => els.projectFileInput.click());
     if (els.importChoiceCancelButton) els.importChoiceCancelButton.addEventListener("click", cancelImportSession);
+    if (els.importQuickButton) els.importQuickButton.addEventListener("click", applyQuickImport);
+    if (els.importAdvancedButton) els.importAdvancedButton.addEventListener("click", openAdvancedImportWizard);
+    if (els.importWizardUseCurrentButton) els.importWizardUseCurrentButton.addEventListener("click", applyCurrentWizardResult);
     [
       ["importModeFidelityButton", "fidelity"],
       ["importModeBalancedButton", "balanced"],
@@ -12730,7 +12268,6 @@
     els.exportPreviewPdfButton.addEventListener("click", exportPreviewPdf);
     if (els.materialPreviewButton) els.materialPreviewButton.addEventListener("click", openMaterialPreview);
     if (els.materialPreviewCloseButton) els.materialPreviewCloseButton.addEventListener("click", closeMaterialPreview);
-    if (els.charmPreviewCloseButton) els.charmPreviewCloseButton.addEventListener("click", closeCharmPreview);
     if (els.materialModeSelect) els.materialModeSelect.addEventListener("change", drawMaterialPreview);
     if (els.materialBaseSelect) els.materialBaseSelect.addEventListener("change", drawMaterialPreview);
     if (els.materialQualityCheckButton) els.materialQualityCheckButton.addEventListener("click", auditMaterialPreview);
@@ -12861,21 +12398,6 @@
     if (els.materialPreviewModal) {
       els.materialPreviewModal.addEventListener("click", (event) => {
         if (event.target === els.materialPreviewModal) closeMaterialPreview();
-      });
-    }
-    [els.charmHolePositionSelect, els.charmHoleSizeRange, els.charmKeyringSelect, els.charmCordSelect, els.charmLinkSelect].forEach((input) => {
-      if (!input) return;
-      input.addEventListener(input.tagName === "INPUT" ? "input" : "change", drawCharmPreview);
-    });
-    if (els.charmExportButton) {
-      els.charmExportButton.addEventListener("click", () => {
-        drawCharmPreview();
-        saveCanvasAsPng(els.charmPreviewCanvas, `Q像素-挂件预览-${formatStamp(new Date())}.png`, "请选择挂件预览保存位置。", "挂件预览已保存。");
-      });
-    }
-    if (els.charmPreviewModal) {
-      els.charmPreviewModal.addEventListener("click", (event) => {
-        if (event.target === els.charmPreviewModal) closeCharmPreview();
       });
     }
     els.toolRailCollapseButton.addEventListener("click", () => {
@@ -13117,7 +12639,6 @@
         if (!changed && state.beads.pattern) render();
       });
     }
-    if (els.restoreOptimizeButton) els.restoreOptimizeButton.addEventListener("click", () => restoreOptimizePattern("balanced"));
     if (els.restoreLightButton) els.restoreLightButton.addEventListener("click", () => restoreOptimizePattern("light"));
     if (els.restoreBalancedButton) els.restoreBalancedButton.addEventListener("click", () => restoreOptimizePattern("balanced"));
     if (els.restoreDetailButton) els.restoreDetailButton.addEventListener("click", () => restoreOptimizePattern("detail"));
@@ -13351,15 +12872,6 @@
         const target = els.selectionColorTargetSelect ? els.selectionColorTargetSelect.value : state.beads.selectedCode;
         const changed = mergeSmallColorsInSelection(els.selectionSmallColorLimitInput && els.selectionSmallColorLimitInput.value, target);
         setMessage(changed ? `已在选区内合并 ${changed} 格小用量色号。` : "选区内没有符合条件的小用量色号。", !changed);
-      });
-    }
-    if (els.selectionRotateButton) {
-      els.selectionRotateButton.addEventListener("click", () => {
-        pushHistory();
-        const changed = rotateSelection();
-        if (!changed) state.beads.undoStack.pop();
-        setMessage(changed ? `已旋转 ${changed} 格。` : "请先选择一个正方形区域。", !changed);
-        render();
       });
     }
     shapeTypes.map((type) => {
@@ -13991,6 +13503,7 @@
       restorePixelArtDetails,
       restorePixelArtDetailsForMode: (pattern, mode) => restorePixelArtDetails(pattern, mode),
       optimizePatternColors,
+      reducePatternToColorLimit,
       undoEdit,
       mergeProjectsForTest: mergeProjects,
       payloadFingerprintForTest: payloadFingerprint,
@@ -14041,6 +13554,9 @@
         if (els.importDirectButton) labels.push((els.importDirectButton.querySelector("strong") || els.importDirectButton).textContent.trim());
         return labels;
       },
+      getImportEntryLabels: () => [els.importQuickButton, els.importAdvancedButton]
+        .filter(Boolean)
+        .map((button) => (button.querySelector("strong") || button).textContent.trim()),
       replacePatternColor,
       replaceColorEverywhere,
       replaceSingleVisibleCell,

@@ -13,4 +13,5 @@ if [[ -z "$IP" ]]; then
 fi
 
 export QPIXEL_IP="$IP"
-exec /usr/bin/python3 qpixel_ipad_https_server.py --cert-host "$IP" --port 8766
+PYTHON_BIN="$(command -v python3)"
+exec "$PYTHON_BIN" -B qpixel_ipad_https_server.py --cert-host "$IP" --port 8766
