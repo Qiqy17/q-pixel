@@ -1,6 +1,8 @@
 (function () {
   "use strict";
 
+  const importEngine = window.QPixelImportEngine || null;
+
   // Mard 221 全色色板，来源：Vicold.Pindoudou / data/Mard.txt (Apache-2.0)。
   const rawBeadPalette = [
     ["A1","A1","#FAF5CD"], ["A2","A2","#FCFED6"], ["A3","A3","#FCFF92"], ["A4","A4","#F7EC5C"],
@@ -310,6 +312,8 @@
     beads: {
       restorationFingerprint: "",
       importMode: "fidelity",
+      importRecipe: null,
+      importProcessedSource: null,
       sourceCompareEnabled: false,
       sourceCompareOpacity: 38,
       buildMode: false,
@@ -449,6 +453,7 @@
   let importWizard = null;
   let importAiAssist = null;
   let importSessionSerial = 0;
+  let importPreviewTimer = 0;
 
   const storageKey = "q-pixel-local-projects-v1";
   const projectPayloadStoragePrefix = "q-pixel-project-payload-v1:";
@@ -521,8 +526,9 @@
       "beadHeightNumber", "beadLockRatio", "generateBeadsButton", "recalibrateImageButton", "usePixelButton",
       "showCodesToggle", "showGridToggle", "codeFontScaleRange", "codeFontScaleNumber",
       "importSummary", "importChoiceSummary",
-      "importEntryPanel", "importEntryPreviewCanvas", "importQuickButton", "importAdvancedButton", "importWizardShell", "importWizardScroll", "importWizardUseCurrentButton",
+      "importEntryPanel", "importEntryPreviewCanvas", "importEntryAnalysis", "importQuickButton", "importAdvancedButton", "importWizardShell", "importWizardScroll", "importWizardUseCurrentButton",
       "importWizardStep1", "importWizardStep2", "importWizardStep3", "importWizardStep4", "importWizardColorSummary", "importWizardFinalSummary", "importWizardColorLimitInput", "importWizardCalibrationButton", "importWizardSkipCalibrationButton", "importWizardOptimizeButton", "importWizardKeepColorsButton", "importWizardApplyButton", "importWizardRestartButton", "importWizardOriginalCanvas", "importWizardPatternCanvas", "importWizardFinalOriginalCanvas", "importWizardFinalPatternCanvas", "importAiAssistButton", "importAiAssistStatus", "importAiAssistApplyRecommendationButton", "importAiAssistApplySubjectButton", "importAiAssistSymmetryButton", "importAiAssistUndoButton",
+      "importTypeAnalysis", "importTypeAutoButton", "importTypePixelButton", "importTypeIllustrationButton", "importTypePhotoButton", "importExposureRange", "importExposureLabel", "importContrastRange", "importContrastLabel", "importSaturationRange", "importSaturationLabel", "importBackgroundToggle", "importBackgroundToleranceRange", "importBackgroundToleranceLabel", "importAdjustResetButton", "importDitherSelect", "importCleanupStrengthSelect", "importCandidateFidelityButton", "importCandidateBalancedButton", "importCandidateSimpleButton", "importCandidateSummary",
       "qualitySummary", "qualityCheckButton", "exportMaterialsButton", "buildModeToggle", "buildProgress", "clearBuildProgressButton",
       "paletteSelect", "paletteGrid", "cellTargetPaletteGrid", "selectionColorTargetPaletteGrid",
       "replaceFromSelect", "replaceToSelect", "replaceAllButton", "usageSummary",
@@ -998,6 +1004,9 @@
   }
 
   function labDistance(a, b) {
+    if (importEngine && typeof importEngine.deltaE2000 === "function") {
+      return importEngine.deltaE2000(a, b);
+    }
     return Math.sqrt(
       Math.pow(a.l - b.l, 2) +
       Math.pow(a.a - b.a, 2) +
@@ -1308,7 +1317,7 @@
     const ctx = canvas.getContext("2d");
     clearPreview(ctx, canvas);
 
-    if (!state.image) {
+    if (!state.image && !state.beads.importProcessedSource) {
       showEmptyState("拖入图片或选择图片", "支持 PNG、JPG、WebP 等常见图片格式");
       els.canvasSize.textContent = "未载入图片";
       return;
@@ -2540,6 +2549,24 @@
     return reducePatternToColorLimit(restorePixelArtDetails(cleaned), 28, locked);
   }
 
+  function applyAdaptiveImportModeToPattern(rawPattern, mode, imageType, cleanupStrength) {
+    const safeMode = ["fidelity", "balanced", "simple"].includes(mode) ? mode : "balanced";
+    if (safeMode === "fidelity") {
+      updateLockedColorsFromPattern(rawPattern);
+      return rawPattern;
+    }
+    if (imageType === "pixelArt" && safeMode === "balanced") {
+      updateLockedColorsFromPattern(rawPattern);
+      return restorePixelArtDetails(rawPattern, "light");
+    }
+    let pattern = applyImportModeToPattern(rawPattern, safeMode);
+    if (cleanupStrength === "strong" && safeMode !== "fidelity") {
+      const locked = getLockedColorSet();
+      pattern = protectLockedCells(rawPattern, cleanPixelArtPattern(pattern, locked), locked);
+    }
+    return pattern;
+  }
+
   function analyzeColorImportance(pattern) {
     const usage = calculateUsage(pattern);
     const stats = new Map(usage.map((item) => [item.code, {
@@ -3472,6 +3499,174 @@
     els.fileInput.click();
   }
 
+  function importTypeLabel(type) {
+    const labels = importEngine && importEngine.TYPE_LABELS;
+    return labels && labels[type] ? labels[type] : ({ pixelArt: "像素画", illustration: "插画 / AI 图", photo: "照片" }[type] || "插画 / AI 图");
+  }
+
+  function getEffectiveImportType(session) {
+    if (!session) return "illustration";
+    if (session.selectedType && session.selectedType !== "auto") return session.selectedType;
+    return session.analysis && session.analysis.type || "illustration";
+  }
+
+  function analyzeImportSession(session) {
+    if (!session) return null;
+    try {
+      session.analysis = importEngine
+        ? importEngine.analyzeSource(session.image, 320)
+        : { type: "illustration", confidence: 0.4, uncertain: true, scores: { pixelArt: 0.3, illustration: 0.4, photo: 0.3 }, features: {} };
+      session.analysisError = "";
+    } catch (error) {
+      session.analysis = { type: "illustration", confidence: 0.35, uncertain: true, scores: { pixelArt: 0.25, illustration: 0.5, photo: 0.25 }, features: {} };
+      session.analysisError = error && error.message ? error.message : "分析失败";
+    }
+    session.selectedType = "auto";
+    session.settings = importEngine
+      ? importEngine.defaultSettings(getEffectiveImportType(session))
+      : { type: "illustration", exposure: 0, contrast: 100, saturation: 100, removeBackground: false, backgroundTolerance: 24, dither: "off", denoise: 0 };
+    session.processingVersion = (session.processingVersion || 0) + 1;
+    session.processedCache = null;
+    return session.analysis;
+  }
+
+  function formatImportAnalysis(session) {
+    const analysis = session && session.analysis;
+    if (!analysis) return "正在本机分析图片类型…";
+    const scores = analysis.scores || {};
+    const selected = session.selectedType && session.selectedType !== "auto" ? `手动选择：${importTypeLabel(session.selectedType)}` : `自动识别：${importTypeLabel(analysis.type)}`;
+    const confidence = Math.round((analysis.confidence || 0) * 100);
+    const scoreText = ["pixelArt", "illustration", "photo"]
+      .map((type) => `${importTypeLabel(type)} ${Math.round((scores[type] || 0) * 100)}%`)
+      .join(" · ");
+    const warning = analysis.uncertain ? " · 类型不确定，可手动切换比较" : "";
+    const error = session.analysisError ? ` · ${session.analysisError}，已使用安全配置` : "";
+    const gifNotice = session.name && /\.gif$/i.test(session.name) ? " · GIF 将按第一帧静态导入" : "";
+    return `${selected} · 可信度 ${confidence}% · ${scoreText}${warning}${error}${gifNotice}`;
+  }
+
+  function renderImportAnalysis() {
+    const session = state.importSession;
+    if (!session) return;
+    const text = formatImportAnalysis(session);
+    [els.importEntryAnalysis, els.importTypeAnalysis].forEach((element) => {
+      if (!element) return;
+      element.textContent = text;
+      element.dataset.confidence = session.analysis && session.analysis.confidence >= 0.45 ? "ok" : "low";
+    });
+    if (els.importQuickButton) {
+      const span = els.importQuickButton.querySelector("span");
+      if (span) span.textContent = `按${importTypeLabel(getEffectiveImportType(session))}的均衡参数生成，可直接进入编辑`;
+    }
+    document.querySelectorAll("[data-import-type]").forEach((button) => {
+      button.classList.toggle("active", button.dataset.importType === (session.selectedType || "auto"));
+    });
+  }
+
+  function syncImportAdjustmentControls() {
+    const session = state.importSession;
+    if (!session || !session.settings) return;
+    const settings = session.settings;
+    if (els.importExposureRange) els.importExposureRange.value = String(settings.exposure || 0);
+    if (els.importExposureLabel) els.importExposureLabel.textContent = String(settings.exposure || 0);
+    if (els.importContrastRange) els.importContrastRange.value = String(settings.contrast || 100);
+    if (els.importContrastLabel) els.importContrastLabel.textContent = `${settings.contrast || 100}%`;
+    if (els.importSaturationRange) els.importSaturationRange.value = String(settings.saturation == null ? 100 : settings.saturation);
+    if (els.importSaturationLabel) els.importSaturationLabel.textContent = `${settings.saturation == null ? 100 : settings.saturation}%`;
+    if (els.importBackgroundToggle) els.importBackgroundToggle.checked = Boolean(settings.removeBackground);
+    if (els.importBackgroundToleranceRange) els.importBackgroundToleranceRange.value = String(settings.backgroundTolerance || 24);
+    if (els.importBackgroundToleranceLabel) els.importBackgroundToleranceLabel.textContent = String(settings.backgroundTolerance || 24);
+    if (els.importDitherSelect) els.importDitherSelect.value = settings.dither || "off";
+  }
+
+  function invalidateImportProcessing() {
+    const session = state.importSession;
+    if (!session) return;
+    session.processingVersion = (session.processingVersion || 0) + 1;
+    session.processedCache = null;
+    if (importWizard) {
+      importWizard.rawPattern = null;
+      importWizard.pattern = null;
+      importWizard.optimization = null;
+      importWizard.candidates = {};
+    }
+  }
+
+  function selectImportType(type, resetSettings = true) {
+    const session = state.importSession;
+    if (!session) return;
+    session.selectedType = ["pixelArt", "illustration", "photo"].includes(type) ? type : "auto";
+    const effective = getEffectiveImportType(session);
+    if (resetSettings || !session.settings) {
+      session.settings = importEngine ? importEngine.defaultSettings(effective) : Object.assign({}, session.settings || {}, { type: effective });
+    } else {
+      session.settings.type = effective;
+    }
+    invalidateImportProcessing();
+    renderImportAnalysis();
+    syncImportAdjustmentControls();
+    scheduleImportPreview();
+  }
+
+  function readImportAdjustmentControls() {
+    const session = state.importSession;
+    if (!session || !session.settings) return;
+    session.settings.type = getEffectiveImportType(session);
+    session.settings.exposure = clamp(els.importExposureRange && els.importExposureRange.value, -100, 100);
+    session.settings.contrast = clamp(els.importContrastRange && els.importContrastRange.value, 50, 150);
+    session.settings.saturation = clamp(els.importSaturationRange && els.importSaturationRange.value, 0, 200);
+    session.settings.removeBackground = Boolean(els.importBackgroundToggle && els.importBackgroundToggle.checked);
+    session.settings.backgroundTolerance = clamp(els.importBackgroundToleranceRange && els.importBackgroundToleranceRange.value, 4, 90);
+    session.settings.dither = ["off", "auto", "on"].includes(els.importDitherSelect && els.importDitherSelect.value) ? els.importDitherSelect.value : "off";
+    invalidateImportProcessing();
+    syncImportAdjustmentControls();
+    scheduleImportPreview();
+  }
+
+  function getProcessedImportSource(maxSide = 1800) {
+    const session = state.importSession;
+    if (!session || !session.image || !importEngine) return session && session.image;
+    const settings = Object.assign({}, session.settings || {}, { type: getEffectiveImportType(session) });
+    const key = `${maxSide}:${JSON.stringify(settings)}`;
+    if (session.processedCache && session.processedCache.key === key) return session.processedCache.source;
+    const source = importEngine.processSource(session.image, settings, maxSide);
+    session.processedCache = { key, source };
+    if (source.qPixelProcessing && source.qPixelProcessing.backgroundRejected) {
+      session.settings.removeBackground = false;
+      if (els.importTypeAnalysis) {
+        els.importTypeAnalysis.textContent = `${formatImportAnalysis(session)} · 背景清理范围过大，已安全取消`;
+        els.importTypeAnalysis.dataset.confidence = "low";
+      }
+    }
+    return source;
+  }
+
+  function scaleCalibrationForSource(calibration, original, processed) {
+    if (!calibration || !processed || !original) return calibration;
+    const originalWidth = original.naturalWidth || original.width || processed.width;
+    const originalHeight = original.naturalHeight || original.height || processed.height;
+    const scaleX = processed.width / Math.max(1, originalWidth);
+    const scaleY = processed.height / Math.max(1, originalHeight);
+    return Object.assign({}, calibration, {
+      offsetX: calibration.offsetX * scaleX,
+      offsetY: calibration.offsetY * scaleY,
+      cellSize: calibration.cellSize * ((scaleX + scaleY) / 2)
+    });
+  }
+
+  function scheduleImportPreview() {
+    window.clearTimeout(importPreviewTimer);
+    const session = state.importSession;
+    if (!session || !importWizard) return;
+    const sessionId = session.id;
+    const version = session.processingVersion;
+    importPreviewTimer = window.setTimeout(() => {
+      if (!isCurrentImportSession(sessionId) || !state.importSession || state.importSession.processingVersion !== version || !importWizard) return;
+      buildImportWizardPattern();
+      renderImportWizardStep();
+    }, 150);
+  }
+
   function loadFile(file, options = {}) {
     if (!file) return;
     if (!file.type || !file.type.startsWith("image/")) {
@@ -3495,6 +3690,7 @@
         name: file.name || "未命名图片",
         mode: options.mode || "main"
       };
+      analyzeImportSession(state.importSession);
       openImportChoiceModal();
     };
     img.onerror = () => {
@@ -3517,17 +3713,23 @@
     if (els.calibrationModal) els.calibrationModal.classList.add("hidden");
   }
 
-  function buildImportWizardPattern() {
+  function buildImportWizardPattern(modeOverride) {
     if (!importWizard || !state.importSession) return null;
     const session = state.importSession;
+    const processedSource = getProcessedImportSource(1800) || session.image;
     const sourceWidth = session.image.naturalWidth || session.image.width;
     const sourceHeight = session.image.naturalHeight || session.image.height;
     const rawPattern = state.importCalibration && state.importCalibration.enabled
-      ? createPatternFromSourceWithCalibration(session.image, state.importCalibration, session.name, { clean: false })
-      : createPatternFromSource(session.image, state.beads.width || 48, state.beads.height || 48, session.name, { clean: false });
-    const pattern = applyImportModeToPattern(rawPattern, getImportMode());
+      ? createPatternFromSourceWithCalibration(processedSource, scaleCalibrationForSource(state.importCalibration, session.image, processedSource), session.name, { clean: false })
+      : createPatternFromSource(processedSource, state.beads.width || 48, state.beads.height || 48, session.name, { clean: false });
+    const mode = ["fidelity", "balanced", "simple"].includes(modeOverride) ? modeOverride : getImportMode();
+    const cleanup = els.importCleanupStrengthSelect ? els.importCleanupStrengthSelect.value : "balanced";
+    const pattern = applyAdaptiveImportModeToPattern(rawPattern, mode, getEffectiveImportType(session), cleanup);
     importWizard.rawPattern = rawPattern;
     importWizard.pattern = pattern;
+    importWizard.activeCandidate = mode;
+    importWizard.candidates = importWizard.candidates || {};
+    importWizard.candidates[mode] = Object.assign({}, pattern, { cells: cloneCells(pattern.cells) });
     importWizard.sourceWidth = sourceWidth;
     importWizard.sourceHeight = sourceHeight;
     return pattern;
@@ -3783,9 +3985,38 @@
     }
   }
 
+  function countIsolatedPatternCells(pattern) {
+    if (!pattern || !pattern.cells) return 0;
+    let isolated = 0;
+    for (let row = 0; row < pattern.height; row += 1) {
+      for (let col = 0; col < pattern.width; col += 1) {
+        const code = pattern.cells[row][col];
+        if (!code) continue;
+        const same = getNeighborCodes(pattern.cells, row, col).filter((neighbor) => neighbor === code).length;
+        if (!same) isolated += 1;
+      }
+    }
+    return isolated;
+  }
+
+  function selectImportCandidate(mode) {
+    if (!importWizard || !["fidelity", "balanced", "simple"].includes(mode)) return;
+    state.beads.importMode = mode;
+    syncImportModeControls();
+    importWizard.optimization = null;
+    importWizard.activeCandidate = mode;
+    const cached = importWizard.candidates && importWizard.candidates[mode];
+    importWizard.pattern = cached
+      ? Object.assign({}, cached, { cells: cloneCells(cached.cells) })
+      : buildImportWizardPattern(mode);
+    renderImportWizardStep();
+  }
+
   function renderImportWizardStep() {
     if (!importWizard || !state.importSession || importWizard.sessionId !== state.importSession.id) return;
     const step = importWizard.step;
+    renderImportAnalysis();
+    syncImportAdjustmentControls();
     [1, 2, 3, 4].forEach((number) => {
       const panel = els[`importWizardStep${number}`];
       if (panel) panel.classList.toggle("hidden", step !== number);
@@ -3817,8 +4048,17 @@
           ? `最终图纸 ${pattern.width} x ${pattern.height} 格 · 色号 ${optimization.after}/${optimization.limit} 种（优化前 ${optimization.before} 种）· 优先保护 ${optimization.protectedCount} 色 · 变化 ${optimization.changed} 格。`
           : `最终图纸 ${pattern.width} x ${pattern.height} 格 · 保留 ${colors} 种色号（原始 ${rawColors} 种）· 变化 ${changed} 格 · 未执行色号压缩。`
         : "最终图纸预览和统计将在这里显示。";
+      const isolated = countIsolatedPatternCells(pattern);
+      if (els.importCandidateSummary && pattern) {
+        const labels = { fidelity: "高保真", balanced: "均衡", simple: "易制作" };
+        els.importCandidateSummary.textContent = `${labels[importWizard.activeCandidate || getImportMode()]}方案 · ${countPatternColors(pattern)} 种色号 · ${countPatternCells(pattern)} 颗豆 · ${isolated} 个无同色邻格。三个方案均从原图独立生成。`;
+      }
     }
-    if (els.importWizardScroll) els.importWizardScroll.scrollTop = 0;
+    document.querySelectorAll("[data-candidate-mode]").forEach((button) => {
+      button.classList.toggle("active", button.dataset.candidateMode === (importWizard.activeCandidate || getImportMode()));
+    });
+    if (els.importWizardScroll && importWizard.lastRenderedStep !== step) els.importWizardScroll.scrollTop = 0;
+    importWizard.lastRenderedStep = step;
   }
 
   function countPatternDifferences(left, right) {
@@ -3842,6 +4082,8 @@
       rawPattern: null,
       pattern: null,
       optimization: null,
+      candidates: {},
+      activeCandidate: "balanced",
       previousLockedColorCodes: Array.isArray(state.beads.lockedColorCodes) ? state.beads.lockedColorCodes.slice() : [],
       previousLockedColorRoles: Object.assign({}, state.beads.lockedColorRoles || {})
     };
@@ -3851,7 +4093,10 @@
     if (els.importAiAssistApplyRecommendationButton) els.importAiAssistApplyRecommendationButton.classList.add("hidden");
     if (els.importAiAssistApplySubjectButton) els.importAiAssistApplySubjectButton.classList.add("hidden");
     state.importCalibration = null;
-    setImportMode(getImportMode());
+    state.beads.importMode = "balanced";
+    renderImportAnalysis();
+    syncImportAdjustmentControls();
+    setImportMode("balanced");
     renderImportWizardStep();
   }
 
@@ -3919,6 +4164,9 @@
       protectedCount: state.beads.lockedColorCodes.length,
       changed: countPatternDifferences(pattern, optimized)
     };
+    importWizard.activeCandidate = getImportMode();
+    importWizard.candidates = importWizard.candidates || {};
+    importWizard.candidates[importWizard.activeCandidate] = Object.assign({}, optimized, { cells: cloneCells(optimized.cells) });
     importWizard.step = 4;
     renderImportWizardStep();
   }
@@ -3926,6 +4174,11 @@
   function wizardKeepColors() {
     if (!importWizard || !importWizard.pattern) buildImportWizardPattern();
     if (importWizard) importWizard.optimization = null;
+    if (importWizard) {
+      importWizard.activeCandidate = getImportMode();
+      importWizard.candidates = importWizard.candidates || {};
+      importWizard.candidates[importWizard.activeCandidate] = Object.assign({}, importWizard.pattern, { cells: cloneCells(importWizard.pattern.cells) });
+    }
     importWizard.step = 4;
     renderImportWizardStep();
   }
@@ -3966,6 +4219,10 @@
       closeCalibrationModal();
       return;
     }
+    const processedSource = getProcessedImportSource(1800);
+    const recipe = makeImportRecipe(session, importWizard.activeCandidate || getImportMode());
+    const hadPattern = Boolean(state.beads.pattern);
+    if (hadPattern) pushHistory();
     if (state.image && state.image !== session.image && state.image.src && state.image.src.startsWith("blob:")) URL.revokeObjectURL(state.image.src);
     state.image = session.image;
     state.imageName = session.name;
@@ -3978,11 +4235,14 @@
     state.beads.pixelSignature = "";
     state.beads.restorationFingerprint = "";
     state.beads.sourceCompareEnabled = true;
+    state.beads.importRecipe = recipe;
+    state.beads.importProcessedSource = processedSource;
+    updateLockedColorsFromPattern(pattern);
     ensureLayers();
-    clearHistory();
+    if (!hadPattern) clearHistory();
     if (els.imageStatus) els.imageStatus.textContent = session.name;
     setMode("beads");
-    setMessage(`已应用${getImportModeLabel()}导入结果：${pattern.width} x ${pattern.height} 图纸。`, false);
+    setMessage(`已应用${importTypeLabel(getEffectiveImportType(session))} · ${getImportModeLabel(importWizard.activeCandidate)}结果：${pattern.width} x ${pattern.height} 图纸。`, false);
     renderImportSummary();
     markUnsavedChanges();
     state.importSession = null;
@@ -4023,6 +4283,8 @@
     state.importCalibration = null;
     setImportChoiceView("entry");
     drawWizardPreviewCanvas(els.importEntryPreviewCanvas, state.importSession.image, null);
+    renderImportAnalysis();
+    syncImportAdjustmentControls();
   }
 
   function importImageElementAsLayer(image, name) {
@@ -4034,54 +4296,94 @@
     return importPatternAsLayer(pattern, name || "导入图片");
   }
 
+  function makeImportRecipe(session, mode) {
+    if (!session) return null;
+    return {
+      algorithmVersion: importEngine ? importEngine.VERSION : "legacy",
+      detectedType: session.analysis && session.analysis.type || "illustration",
+      selectedType: session.selectedType || "auto",
+      confidence: Number((session.analysis && session.analysis.confidence || 0).toFixed(4)),
+      mode: mode || getImportMode(),
+      adjustments: Object.assign({}, session.settings || {}, { type: getEffectiveImportType(session) }),
+      cleanupStrength: els.importCleanupStrengthSelect ? els.importCleanupStrengthSelect.value : "balanced",
+      colorLimit: clamp(els.importWizardColorLimitInput && els.importWizardColorLimitInput.value, 2, beadPalette.length),
+      calibrated: Boolean(state.importCalibration && state.importCalibration.enabled),
+      createdAt: new Date().toISOString()
+    };
+  }
+
+  function buildQuickImportPattern(session, targetWidth, targetHeight) {
+    const source = getProcessedImportSource(1800) || session.image;
+    let width = targetWidth;
+    let height = targetHeight;
+    if (!width || !height) {
+      const gridEstimate = getEffectiveImportType(session) === "pixelArt" ? estimatePixelArtGrid(session.image) : null;
+      if (gridEstimate) {
+        width = gridEstimate.width;
+        height = gridEstimate.height;
+      } else {
+        const sourceWidth = session.image.naturalWidth || session.image.width;
+        const sourceHeight = session.image.naturalHeight || session.image.height;
+        width = clamp(state.beads.width || 48, bounds.beadSize.min, bounds.beadSize.max);
+        height = clamp(Math.round(width * sourceHeight / Math.max(1, sourceWidth)), bounds.beadSize.min, bounds.beadSize.max);
+      }
+    }
+    const raw = createPatternFromSource(source, width, height, session.name, { clean: false });
+    return applyAdaptiveImportModeToPattern(raw, "balanced", getEffectiveImportType(session), "balanced");
+  }
+
   function applyQuickImport() {
     const session = state.importSession;
     if (!session) return;
-    closeImportChoiceModal();
     if (session.mode === "layer") {
-      importImageElementAsLayer(session.image, session.name);
+      const pattern = buildQuickImportPattern(session, state.beads.pattern && state.beads.pattern.width, state.beads.pattern && state.beads.pattern.height);
+      importPatternAsLayer(pattern, session.name);
       URL.revokeObjectURL(session.url);
       state.importSession = null;
       importWizard = null;
       importAiAssist = null;
+      closeImportChoiceModal();
       return;
     }
     if (state.image !== session.image && state.image && state.image.src && state.image.src.startsWith("blob:")) {
       URL.revokeObjectURL(state.image.src);
     }
+    const pattern = buildQuickImportPattern(session);
+    if (!pattern || !pattern.cells || !pattern.cells.length) {
+      setMessage("快速导入没有生成有效图纸，请进入高级优化检查设置。", true);
+      return;
+    }
+    const hadPattern = Boolean(state.beads.pattern);
+    if (hadPattern) pushHistory();
     state.image = session.image;
     state.imageName = session.name;
     state.importCalibration = null;
-    state.beads.pattern = null;
+    state.beads.pattern = pattern;
+    state.beads.width = pattern.width;
+    state.beads.height = pattern.height;
     state.beads.layers = [];
     state.beads.activeLayerId = "";
     state.beads.pixelSignature = "";
     state.beads.restorationFingerprint = "";
     state.beads.sourceCompareEnabled = false;
-    state.beads.lockedColorCodes = [];
-    state.beads.lockedColorRoles = {};
+    updateLockedColorsFromPattern(pattern);
+    state.beads.importRecipe = makeImportRecipe(session, "balanced");
+    state.beads.importProcessedSource = getProcessedImportSource(1800);
     state.view.zoom = 1;
     state.view.panX = 0;
     state.view.panY = 0;
-    const gridEstimate = estimatePixelArtGrid(session.image);
-    if (gridEstimate) {
-      state.beads.width = gridEstimate.width;
-      state.beads.height = gridEstimate.height;
-    }
     if (els.imageStatus) els.imageStatus.textContent = state.imageName;
-    setMessage(gridEstimate ? `已按图片自动匹配 ${gridEstimate.width} x ${gridEstimate.height} 像素精度。` : "图片已载入，可调节参数。", false);
-    if (state.mode === "beads") {
-      generateBeadsFromImage(false);
-    } else {
-      syncBeadControls();
-      render();
-    }
+    ensureLayers();
+    if (!hadPattern) clearHistory();
+    setMode("beads");
+    setMessage(`已按${importTypeLabel(getEffectiveImportType(session))}的均衡参数生成 ${pattern.width} x ${pattern.height} 图纸。`, false);
     state.beads.sourceCompareEnabled = true;
     renderImportSummary();
     markUnsavedChanges();
     state.importSession = null;
     importWizard = null;
     importAiAssist = null;
+    closeImportChoiceModal();
   }
 
   function openCalibrationModal() {
@@ -4117,6 +4419,11 @@
       name: state.imageName || "当前图片",
       mode: "main"
     };
+    analyzeImportSession(state.importSession);
+    if (state.beads.importRecipe && state.beads.importRecipe.adjustments) {
+      state.importSession.selectedType = state.beads.importRecipe.selectedType || "auto";
+      state.importSession.settings = Object.assign({}, state.beads.importRecipe.adjustments);
+    }
     state.importCalibration = state.importCalibration && state.importCalibration.enabled
       ? Object.assign({}, state.importCalibration)
       : makeDefaultCalibration(width, height, estimatePixelArtGrid(state.image));
@@ -4239,17 +4546,23 @@
   function completeCalibrationImport() {
     const session = state.importSession;
     if (!session || !state.importCalibration) return;
-    const rawPattern = createPatternFromSourceWithCalibration(session.image, state.importCalibration, session.name, { clean: false });
+    const processedSource = getProcessedImportSource(1800) || session.image;
+    const scaledCalibration = scaleCalibrationForSource(state.importCalibration, session.image, processedSource);
+    const rawPattern = createPatternFromSourceWithCalibration(processedSource, scaledCalibration, session.name, { clean: false });
     if (importWizard) {
       importWizard.rawPattern = rawPattern;
-      importWizard.pattern = applyImportModeToPattern(rawPattern, getImportMode());
+      importWizard.pattern = applyAdaptiveImportModeToPattern(rawPattern, getImportMode(), getEffectiveImportType(session), els.importCleanupStrengthSelect && els.importCleanupStrengthSelect.value);
+      importWizard.candidates = {};
+      importWizard.candidates[getImportMode()] = Object.assign({}, importWizard.pattern, { cells: cloneCells(importWizard.pattern.cells) });
       closeCalibrationModal();
       importWizard.step = 3;
       if (els.importChoiceModal) els.importChoiceModal.classList.remove("hidden");
       renderImportWizardStep();
       return;
     }
-    const pattern = session.mode === "layer" ? cleanPixelArtPattern(rawPattern) : applyImportModeToPattern(rawPattern, getImportMode());
+    const pattern = session.mode === "layer"
+      ? applyAdaptiveImportModeToPattern(rawPattern, "balanced", getEffectiveImportType(session), "balanced")
+      : applyAdaptiveImportModeToPattern(rawPattern, getImportMode(), getEffectiveImportType(session), "balanced");
     closeCalibrationModal();
     closeImportChoiceModal();
     if (session.mode === "layer") {
@@ -4289,6 +4602,8 @@
     if (state.image !== session.image && state.image && state.image.src && state.image.src.startsWith("blob:")) {
       URL.revokeObjectURL(state.image.src);
     }
+    const hadPattern = Boolean(state.beads.pattern);
+    if (hadPattern) pushHistory();
     state.image = session.image;
     state.imageName = session.name;
     state.importCalibration = Object.assign({}, state.importCalibration);
@@ -4301,8 +4616,11 @@
     state.beads.pixelSignature = "";
     state.beads.restorationFingerprint = "";
     state.beads.sourceCompareEnabled = true;
+    state.beads.importRecipe = makeImportRecipe(session, getImportMode());
+    state.beads.importProcessedSource = processedSource;
+    updateLockedColorsFromPattern(pattern);
     ensureLayers();
-    clearHistory();
+    if (!hadPattern) clearHistory();
     if (els.imageStatus) els.imageStatus.textContent = session.name;
     setMode("beads");
     setMessage(`已按校准网格和${getImportModeLabel()}模式生成 ${pattern.width} x ${pattern.height} 图纸。`, false);
@@ -4492,6 +4810,8 @@
     state.beads.layers = [];
     state.beads.activeLayerId = "";
     state.beads.sourceLabel = "空白画布";
+    state.beads.importRecipe = null;
+    state.beads.importProcessedSource = null;
     ensureLayers();
     syncCompositePattern();
     return state.beads.pattern;
@@ -5931,7 +6251,7 @@
     const restored = safeMode === "light"
       ? restorePixelArtDetails(state.beads.pattern, "light")
       : createRestorationPatternFromSource(
-        state.image,
+        state.beads.importProcessedSource || state.image,
         state.beads.pattern.width,
         state.beads.pattern.height,
         state.imageName,
@@ -10496,6 +10816,7 @@
       sourceLabel: state.beads.sourceLabel || state.beads.pattern.sourceLabel || "",
       savedAt: new Date().toISOString(),
       palette: "Mard-221",
+      importRecipe: state.beads.importRecipe ? JSON.parse(JSON.stringify(state.beads.importRecipe)) : null,
       pattern: {
         width: state.beads.pattern.width,
         height: state.beads.pattern.height,
@@ -10574,6 +10895,10 @@
     state.beads.projectCreatedAt = payload.createdAt || payload.savedAt || new Date().toISOString();
     if (els.imageStatus) els.imageStatus.textContent = state.beads.projectTitle;
     state.beads.sourceLabel = payload.sourceLabel || "本地源文件";
+    state.beads.importRecipe = payload.importRecipe && typeof payload.importRecipe === "object"
+      ? JSON.parse(JSON.stringify(payload.importRecipe))
+      : null;
+    state.beads.importProcessedSource = null;
     state.beads.exportSettings = Object.assign({}, state.beads.exportSettings, payload.exportSettings || {});
     state.beads.exportRegions = normalizeExportRegions(payload.exportRegions || [], state.beads.pattern);
     state.beads.eraserSize = clamp(payload.editorSettings && payload.editorSettings.eraserSize, 1, 10);
@@ -12177,6 +12502,25 @@
     if (els.importQuickButton) els.importQuickButton.addEventListener("click", applyQuickImport);
     if (els.importAdvancedButton) els.importAdvancedButton.addEventListener("click", openAdvancedImportWizard);
     if (els.importWizardUseCurrentButton) els.importWizardUseCurrentButton.addEventListener("click", applyCurrentWizardResult);
+    document.querySelectorAll("[data-import-type]").forEach((button) => {
+      button.addEventListener("click", () => selectImportType(button.dataset.importType, true));
+    });
+    [els.importExposureRange, els.importContrastRange, els.importSaturationRange, els.importBackgroundToleranceRange].forEach((input) => {
+      if (input) input.addEventListener("input", readImportAdjustmentControls);
+    });
+    if (els.importBackgroundToggle) els.importBackgroundToggle.addEventListener("change", readImportAdjustmentControls);
+    if (els.importDitherSelect) els.importDitherSelect.addEventListener("change", readImportAdjustmentControls);
+    if (els.importCleanupStrengthSelect) els.importCleanupStrengthSelect.addEventListener("change", () => {
+      invalidateImportProcessing();
+      scheduleImportPreview();
+    });
+    if (els.importAdjustResetButton) els.importAdjustResetButton.addEventListener("click", () => {
+      const session = state.importSession;
+      if (session) selectImportType(session.selectedType || "auto", true);
+    });
+    document.querySelectorAll("[data-candidate-mode]").forEach((button) => {
+      button.addEventListener("click", () => selectImportCandidate(button.dataset.candidateMode));
+    });
     [
       ["importModeFidelityButton", "fidelity"],
       ["importModeBalancedButton", "balanced"],
@@ -13461,6 +13805,11 @@
       transferSyntheticSquarePixelToBeads,
       calculateUsage,
       countPatternColors,
+      getAdaptiveImportVersion: () => importEngine && importEngine.VERSION,
+      analyzeImportImageDataForTest: (data, width, height) => importEngine && importEngine.analyzeImageData(data, width, height),
+      processImportImageDataForTest: (data, width, height, settings) => importEngine && importEngine.processImageData(data, width, height, settings),
+      deltaE2000ForTest: (left, right) => importEngine && importEngine.deltaE2000(left, right),
+      getImportRecipeForTest: () => state.beads.importRecipe ? JSON.parse(JSON.stringify(state.beads.importRecipe)) : null,
       getImportMode: () => getImportMode(),
       setImportMode: (mode) => {
         setImportMode(mode);

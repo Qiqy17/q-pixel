@@ -11,8 +11,10 @@ test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_DIR/Content
 codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 python3 -c 'import ast, pathlib, sys; [ast.parse(pathlib.Path(path).read_text(encoding="utf-8"), filename=path) for path in sys.argv[1:]]' "$RESOURCES_DIR/qpixel_ipad_https_server.py" "$RESOURCES_DIR/qpixel_openai.py"
 node --check "$RESOURCES_DIR/app.js"
+node --check "$RESOURCES_DIR/import-engine.js"
+node "$REPO_DIR/tests/import-engine.test.js"
 
-for file in index.html styles.css app.js manifest.webmanifest icon.svg offline.html sw.js qpixel_ipad_https_server.py qpixel_openai.py OPENAI_SETUP.md; do
+for file in index.html styles.css import-engine.js app.js manifest.webmanifest icon.svg offline.html sw.js qpixel_ipad_https_server.py qpixel_openai.py OPENAI_SETUP.md; do
   case "$file" in
     qpixel_*.py) source_file="$REPO_DIR/scripts/$file" ;;
     OPENAI_SETUP.md) source_file="$REPO_DIR/docs/$file" ;;

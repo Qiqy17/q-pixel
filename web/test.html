@@ -53,6 +53,28 @@
       <button id="importModeFidelityButton" type="button">高保真</button>
       <button id="importModeBalancedButton" type="button">均衡</button>
       <button id="importModeSimpleButton" type="button">易制作</button>
+      <div id="importEntryAnalysis"></div>
+      <div id="importTypeAnalysis"></div>
+      <button id="importTypeAutoButton" type="button" data-import-type="auto">自动</button>
+      <button id="importTypePixelButton" type="button" data-import-type="pixelArt">像素画</button>
+      <button id="importTypeIllustrationButton" type="button" data-import-type="illustration">插画</button>
+      <button id="importTypePhotoButton" type="button" data-import-type="photo">照片</button>
+      <input id="importExposureRange" type="range" min="-100" max="100" value="0">
+      <span id="importExposureLabel"></span>
+      <input id="importContrastRange" type="range" min="50" max="150" value="100">
+      <span id="importContrastLabel"></span>
+      <input id="importSaturationRange" type="range" min="0" max="200" value="100">
+      <span id="importSaturationLabel"></span>
+      <input id="importBackgroundToggle" type="checkbox">
+      <input id="importBackgroundToleranceRange" type="range" min="4" max="90" value="24">
+      <span id="importBackgroundToleranceLabel"></span>
+      <button id="importAdjustResetButton" type="button">恢复推荐值</button>
+      <select id="importDitherSelect"><option value="off">关闭</option><option value="auto">自动</option><option value="on">开启</option></select>
+      <select id="importCleanupStrengthSelect"><option value="light">轻度</option><option value="balanced" selected>均衡</option><option value="strong">较强</option></select>
+      <button id="importCandidateFidelityButton" type="button" data-candidate-mode="fidelity">高保真</button>
+      <button id="importCandidateBalancedButton" type="button" data-candidate-mode="balanced">均衡</button>
+      <button id="importCandidateSimpleButton" type="button" data-candidate-mode="simple">易制作</button>
+      <div id="importCandidateSummary"></div>
       <button id="importCalibrateButton" type="button"><strong>进入像素精度调整</strong></button>
       <button id="importDirectButton" type="button"><strong>使用自动识别结果</strong></button>
     </section>
@@ -77,6 +99,7 @@
     <span id="sourceCompareOpacityLabel"></span>
     <div id="lockedColorSummary"></div>
   </div>
+  <script src="./import-engine.js"></script>
   <script src="./app.js"></script>
   <script>
     async function blobToDataUrl(blob) {
@@ -147,6 +170,45 @@
         });
         if (beadClamped.width !== 500 || beadClamped.height !== 16 || beadClamped.showCodes !== false) {
           throw new Error("bead clamp failed");
+        }
+
+        if (window.QPixelTest.getAdaptiveImportVersion() !== "adaptive-import-1") {
+          throw new Error("adaptive import engine missing");
+        }
+        const importControlIds = [
+          "importTypeAutoButton", "importTypePixelButton", "importTypeIllustrationButton", "importTypePhotoButton",
+          "importExposureRange", "importContrastRange", "importSaturationRange", "importBackgroundToggle",
+          "importDitherSelect", "importCandidateFidelityButton", "importCandidateBalancedButton", "importCandidateSimpleButton"
+        ];
+        if (importControlIds.some((id) => !document.getElementById(id))) {
+          throw new Error("adaptive import controls missing");
+        }
+        const deltaReference = window.QPixelTest.deltaE2000ForTest(
+          { l: 50, a: 2.6772, b: -79.7751 },
+          { l: 50, a: 0, b: -82.7485 }
+        );
+        if (Math.abs(deltaReference - 2.0425) >= 0.0002) throw new Error("CIEDE2000 reference failed");
+        const pixelFixture = new Uint8ClampedArray(64 * 64 * 4);
+        for (let row = 0; row < 64; row += 1) {
+          for (let col = 0; col < 64; col += 1) {
+            const offset = (row * 64 + col) * 4;
+            const light = (Math.floor(row / 8) + Math.floor(col / 8)) % 2 === 0;
+            pixelFixture[offset] = light ? 240 : 20;
+            pixelFixture[offset + 1] = light ? 180 : 30;
+            pixelFixture[offset + 2] = light ? 40 : 40;
+            pixelFixture[offset + 3] = 255;
+          }
+        }
+        const pixelAnalysis = window.QPixelTest.analyzeImportImageDataForTest(pixelFixture, 64, 64);
+        if (!pixelAnalysis || pixelAnalysis.type !== "pixelArt" || pixelAnalysis.confidence < 0.45) {
+          throw new Error("pixel-art classification failed");
+        }
+        const fixtureCopy = new Uint8ClampedArray(pixelFixture);
+        const adjustedFixture = window.QPixelTest.processImportImageDataForTest(pixelFixture, 64, 64, {
+          type: "illustration", exposure: 20, contrast: 110, saturation: 90
+        });
+        if (!adjustedFixture || adjustedFixture.data[0] === fixtureCopy[0] || pixelFixture[0] !== fixtureCopy[0]) {
+          throw new Error("non-destructive image adjustment failed");
         }
 
         let exportDataUrl = "";

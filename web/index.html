@@ -1109,6 +1109,7 @@
       </div>
       <div id="importEntryPanel" class="import-entry-panel">
         <div class="import-entry-preview"><canvas id="importEntryPreviewCanvas" width="720" height="380" aria-label="待导入图片预览"></canvas></div>
+        <div class="import-analysis-card" id="importEntryAnalysis" role="status">正在本机分析图片类型…</div>
         <p class="import-entry-note">可以直接进入编辑；高级优化仅在需要调整像素精度、色号或结构时使用。</p>
         <div class="import-entry-actions">
           <button id="importQuickButton" class="recommended-choice" type="button"><strong>快速导入，直接编辑</strong><span>自动匹配一次像素精度，不强制经过优化向导</span></button>
@@ -1121,6 +1122,21 @@
           <div id="importWizardStep1" class="import-wizard-step wizard-workbench">
             <div class="wizard-preview"><div><span>原图</span><canvas id="importWizardOriginalCanvas" width="320" height="220"></canvas></div><div><span>当前图纸</span><canvas id="importWizardPatternCanvas" width="320" height="220"></canvas></div></div>
             <div class="wizard-settings">
+              <div class="import-analysis-card" id="importTypeAnalysis" role="status">等待图片分析。</div>
+              <div class="import-type-tabs" role="group" aria-label="图片类型">
+                <button id="importTypeAutoButton" class="active" type="button" data-import-type="auto">自动</button>
+                <button id="importTypePixelButton" type="button" data-import-type="pixelArt">像素画</button>
+                <button id="importTypeIllustrationButton" type="button" data-import-type="illustration">插画</button>
+                <button id="importTypePhotoButton" type="button" data-import-type="photo">照片</button>
+              </div>
+              <div class="import-adjustments">
+                <label>曝光 <strong id="importExposureLabel">0</strong><input id="importExposureRange" type="range" min="-100" max="100" value="0"></label>
+                <label>对比度 <strong id="importContrastLabel">100%</strong><input id="importContrastRange" type="range" min="50" max="150" value="100"></label>
+                <label>饱和度 <strong id="importSaturationLabel">100%</strong><input id="importSaturationRange" type="range" min="0" max="200" value="100"></label>
+                <label class="switch-row compact"><span><strong>清理连通背景</strong><em>只处理与图片边缘连通的近似背景</em></span><input id="importBackgroundToggle" type="checkbox"></label>
+                <label class="background-tolerance-row">背景容差 <strong id="importBackgroundToleranceLabel">24</strong><input id="importBackgroundToleranceRange" type="range" min="4" max="90" value="24"></label>
+                <button id="importAdjustResetButton" class="text-button secondary" type="button">恢复当前类型推荐值</button>
+              </div>
               <button id="importAiAssistButton" class="recommended-choice wizard-ai-button" type="button"><strong>AI还原助手</strong><span>点击后分析主体、推荐像素精度并修复高置信度断线</span></button>
               <div id="importAiAssistStatus" class="import-summary hidden">AI还原助手尚未运行。</div>
               <button id="importAiAssistApplyRecommendationButton" class="text-button secondary hidden" type="button">应用推荐精度</button>
@@ -1140,8 +1156,8 @@
             </div>
           </div>
           <div id="importWizardStep2" class="import-wizard-step hidden"><div class="import-summary">先用自动识别结果作为起点，也可以打开像素校准精确对齐图片网格。</div><button id="importWizardCalibrationButton" class="recommended-choice" type="button"><strong>打开像素校准</strong><span>完成后返回向导继续优化</span></button><button id="importWizardSkipCalibrationButton" type="button"><strong>跳过校准</strong><span>使用当前自动精度</span></button></div>
-          <div id="importWizardStep3" class="import-wizard-step hidden"><div class="import-summary" id="importWizardColorSummary">等待生成临时图纸。</div><label class="wizard-limit-field">最多色号<input id="importWizardColorLimitInput" type="number" min="2" max="221" value="20" inputmode="numeric"></label><div class="layer-import-options"><button id="importWizardOptimizeButton" class="recommended-choice" type="button"><strong>识别并优化色号</strong><span>自动保护轮廓和高光，减少杂色</span></button><button id="importWizardKeepColorsButton" type="button"><strong>保留当前颜色</strong><span>不做额外色号合并</span></button></div></div>
-          <div id="importWizardStep4" class="import-wizard-step hidden wizard-workbench"><div class="wizard-preview"><div><span>原图</span><canvas id="importWizardFinalOriginalCanvas" width="320" height="220"></canvas></div><div><span>最终图纸</span><canvas id="importWizardFinalPatternCanvas" width="320" height="220"></canvas></div></div><div class="wizard-settings"><div class="import-summary" id="importWizardFinalSummary">最终图纸预览和统计将在这里显示。</div><div class="layer-import-options"><button id="importWizardApplyButton" class="recommended-choice" type="button"><strong>应用到当前图纸</strong><span>确认后才会替换当前画布</span></button><button id="importWizardRestartButton" type="button"><strong>重新调整</strong><span>返回前面步骤继续修改</span></button></div></div></div>
+          <div id="importWizardStep3" class="import-wizard-step hidden"><div class="import-summary" id="importWizardColorSummary">等待生成临时图纸。</div><div class="wizard-color-grid"><label class="wizard-limit-field">最多色号<input id="importWizardColorLimitInput" type="number" min="2" max="221" value="20" inputmode="numeric"></label><label class="wizard-limit-field">抖色<select id="importDitherSelect"><option value="off">关闭</option><option value="auto">自动</option><option value="on">轻度开启</option></select></label><label class="wizard-limit-field">杂色清理<select id="importCleanupStrengthSelect"><option value="light">轻度</option><option value="balanced" selected>均衡</option><option value="strong">较强</option></select></label></div><div class="layer-import-options"><button id="importWizardOptimizeButton" class="recommended-choice" type="button"><strong>识别并优化色号</strong><span>自动保护轮廓和高光，减少杂色</span></button><button id="importWizardKeepColorsButton" type="button"><strong>保留当前颜色</strong><span>不做额外色号合并</span></button></div></div>
+          <div id="importWizardStep4" class="import-wizard-step hidden wizard-workbench"><div class="wizard-preview"><div><span>原图</span><canvas id="importWizardFinalOriginalCanvas" width="320" height="220"></canvas></div><div><span>最终图纸</span><canvas id="importWizardFinalPatternCanvas" width="320" height="220"></canvas></div></div><div class="wizard-settings"><div class="import-candidate-tabs" role="group" aria-label="候选方案"><button id="importCandidateFidelityButton" type="button" data-candidate-mode="fidelity">高保真</button><button id="importCandidateBalancedButton" class="active" type="button" data-candidate-mode="balanced">均衡</button><button id="importCandidateSimpleButton" type="button" data-candidate-mode="simple">易制作</button></div><div class="import-summary" id="importCandidateSummary">三个方案均从原图独立生成。</div><div class="import-summary" id="importWizardFinalSummary">最终图纸预览和统计将在这里显示。</div><div class="layer-import-options"><button id="importWizardApplyButton" class="recommended-choice" type="button"><strong>应用到当前图纸</strong><span>确认后才会替换当前画布</span></button><button id="importWizardRestartButton" type="button"><strong>重新调整</strong><span>返回前面步骤继续修改</span></button></div></div></div>
         </div>
         <div class="import-wizard-actions"><span>高级优化是可选步骤</span><button id="importWizardUseCurrentButton" class="text-button" type="button">使用当前结果并进入编辑</button></div>
       </div>
@@ -1350,6 +1366,7 @@
 
   <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden>
   <input id="projectFileInput" type="file" accept=".qpx,application/json" hidden>
+  <script src="./import-engine.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
