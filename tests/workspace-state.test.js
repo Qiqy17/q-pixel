@@ -5,6 +5,8 @@ const featureFlags = require("../web/feature-flags.js");
 const moduleLoader = require("../web/module-loader.js");
 const workspaceState = require("../web/core/workspace-state.js");
 const domUtils = require("../web/core/dom-utils.js");
+const qualityChecks = require("../web/workspaces/quality-checks.js");
+const workspaceController = require("../web/workspaces/workspace-controller.js");
 
 assert.deepEqual(featureFlags.normalize({ professionalWorkspace: true, unknown: true }), {
   professionalWorkspace: true,
@@ -42,12 +44,29 @@ assert.equal(workspace.inspectorOpen, false);
 workspace = workspaceState.reduce(workspace, { type: "set-stage", stage: "invalid" });
 assert.equal(workspace.stage, "make", "无效阶段不能破坏当前状态");
 
+const emptyChecks = qualityChecks.run({});
+assert.equal(emptyChecks.find((check) => check.id === "pattern-missing").status, "error");
+const populatedChecks = qualityChecks.run({
+  pattern: { width: 120, height: 90 },
+  usage: { A1: 20, B8: 10 },
+  inventory: { A1: 20, B8: 4 },
+  baseboardMode: "white",
+  hasUnsavedChanges: true
+});
+assert.equal(populatedChecks.find((check) => check.id === "inventory").status, "warning");
+assert.equal(qualityChecks.forStage(populatedChecks, "color").length, 2);
+assert.equal(qualityChecks.forStage(populatedChecks, "version")[0].action.type, "save");
+
 function makeFakeElement(tagName) {
   const listeners = {};
   return {
     tagName,
+    dataset: {},
     classList: {
       values: new Set(),
+      add(name) { this.values.add(name); },
+      remove(name) { this.values.delete(name); },
+      contains(name) { return this.values.has(name); },
       toggle(name, enabled) { enabled ? this.values.add(name) : this.values.delete(name); }
     },
     attributes: {},
@@ -85,6 +104,32 @@ Promise.all([firstLoad, secondLoad]).then(() => {
   assert.equal(element.classList.values.has("active"), true);
   domUtils.setText(element, "安全文本");
   assert.equal(element.textContent, "安全文本");
+
+  const body = makeFakeElement("body");
+  const shell = makeFakeElement("main");
+  const stagebar = makeFakeElement("nav");
+  const stageButtons = workspaceState.STAGES.map((stage) => {
+    const button = makeFakeElement("button");
+    button.dataset.workflowStageButton = stage;
+    return button;
+  });
+  const controllerDocument = {
+    body,
+    getElementById: (id) => id === "workflowStagebar" ? stagebar : null,
+    querySelector: (selector) => selector === ".app-shell" ? shell : null,
+    querySelectorAll: (selector) => selector === "[data-workflow-stage-button]" ? stageButtons : []
+  };
+  const controller = workspaceController.create({
+    document: controllerDocument,
+    window: { innerWidth: 1024, addEventListener() {} },
+    stateApi: workspaceState,
+    initialState: workspaceState.DEFAULT_STATE
+  });
+  controller.mount({ mount() {}, render() {} });
+  controller.setStage("output");
+  assert.equal(controller.getState().stage, "output");
+  assert.equal(shell.dataset.workflowStage, "output");
+  assert.equal(body.classList.values.has("professional-workspace"), true);
 
   console.log("workspace-state tests: PASS");
 }).catch((error) => {

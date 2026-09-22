@@ -114,6 +114,15 @@
       <button class="chrome-toggle topbar-collapse-button" id="topbarCollapseButton" type="button" title="收起顶部栏" aria-label="收起顶部栏">⌃</button>
     </header>
 
+    <nav class="workflow-stagebar" id="workflowStagebar" aria-label="专业工作阶段" aria-hidden="true">
+      <span class="workflow-stage-label">工作阶段</span>
+      <button type="button" class="active" data-workflow-stage-button="design" aria-selected="true"><span>01</span>设计</button>
+      <button type="button" data-workflow-stage-button="color" aria-selected="false" tabindex="-1"><span>02</span>配色</button>
+      <button type="button" data-workflow-stage-button="make" aria-selected="false" tabindex="-1"><span>03</span>拼制</button>
+      <button type="button" data-workflow-stage-button="output" aria-selected="false" tabindex="-1"><span>04</span>输出</button>
+      <button type="button" data-workflow-stage-button="version" aria-selected="false" tabindex="-1"><span>05</span>版本</button>
+    </nav>
+
     <button class="floating-chrome-toggle topbar-restore-button hidden-control" id="topbarExpandButton" type="button">⌄ 顶部</button>
 
     <section class="workspace" id="editorWorkspace">
@@ -381,6 +390,21 @@
 
       <aside class="control-panel" id="controlPanel">
         <button class="chrome-toggle side-collapse-button" id="sidePanelCollapseButton" type="button" title="收起右侧栏" aria-label="收起右侧栏">›</button>
+        <section class="workflow-inspector" id="workflowInspector" aria-label="当前阶段检查">
+          <div class="workflow-inspector-head">
+            <div>
+              <span class="workflow-eyebrow">STUDIO CHECK</span>
+              <h2 id="workflowInspectorTitle">设计检查</h2>
+              <p id="workflowInspectorCaption">调整结构、画布与图层</p>
+            </div>
+            <div class="workflow-inspector-actions">
+              <button type="button" id="workflowCheckRefreshButton">刷新</button>
+              <button type="button" id="workflowFixAllButton" disabled title="当前没有可安全自动修复的项目">全部修复</button>
+            </div>
+          </div>
+          <div class="workflow-check-list" id="workflowCheckList"></div>
+          <div class="workflow-check-summary" id="workflowCheckSummary">等待检查</div>
+        </section>
         <section id="pixelPanel" class="mode-panel active">
           <div class="panel-section">
             <h2>像素参数</h2>

@@ -18,6 +18,9 @@ node --check "$RESOURCES_DIR/module-loader.js"
 node --check "$RESOURCES_DIR/core/project-model.js"
 node --check "$RESOURCES_DIR/core/workspace-state.js"
 node --check "$RESOURCES_DIR/core/dom-utils.js"
+node --check "$RESOURCES_DIR/workspaces/quality-checks.js"
+node --check "$RESOURCES_DIR/workspaces/context-inspector.js"
+node --check "$RESOURCES_DIR/workspaces/workspace-controller.js"
 node --check "$RESOURCES_DIR/import-engine.js"
 node --check "$RESOURCES_DIR/import-processing.js"
 node --check "$RESOURCES_DIR/import-worker.js"
@@ -37,6 +40,10 @@ done
 
 for file in project-model.js workspace-state.js dom-utils.js; do
   cmp -s "$RESOURCES_DIR/core/$file" "$REPO_DIR/web/core/$file"
+done
+
+for file in quality-checks.js context-inspector.js workspace-controller.js; do
+  cmp -s "$RESOURCES_DIR/workspaces/$file" "$REPO_DIR/web/workspaces/$file"
 done
 
 for forbidden in test.html q-pixel-test.png q-pixel-beads-test.png q-pixel-editor-space-test.png q-pixel-mard-beads-test.png qpixel_sync_server.py; do

@@ -506,6 +506,9 @@
   let professionalWorkspaceState = workspaceStateModule
     ? workspaceStateModule.normalize({ viewport: workspaceStateModule.viewportForWidth(window.innerWidth) })
     : null;
+  let professionalWorkspaceRuntime = null;
+  let professionalWorkspaceLoadError = "";
+  let professionalWorkspaceReady = Promise.resolve(null);
   const watermarkSettingKeys = [
     "watermark",
     "watermarkEnabled",
@@ -12542,6 +12545,75 @@
     return canvas.toDataURL("image/png");
   }
 
+  function getProfessionalWorkspaceSnapshot() {
+    const usage = calculateUsage(state.beads.pattern).reduce((counts, item) => {
+      counts[item.code] = item.count;
+      return counts;
+    }, {});
+    const baseboardLabels = {
+      transparent: "透明底",
+      white: "白底",
+      black: "黑底",
+      custom: "自定义底色"
+    };
+    return {
+      pattern: state.beads.pattern,
+      layers: state.beads.layers,
+      usage,
+      inventory: state.inventory,
+      baseboardMode: state.beads.baseboardMode,
+      baseboardModeLabel: baseboardLabels[state.beads.baseboardMode] || state.beads.baseboardMode,
+      exportSettings: state.beads.exportSettings,
+      hasUnsavedChanges: state.hasUnsavedChanges
+    };
+  }
+
+  async function initializeProfessionalWorkspace() {
+    if (!featureFlags.isEnabled("professionalWorkspace")) return null;
+    if (!moduleLoader || !workspaceStateModule) {
+      professionalWorkspaceLoadError = "专业工作区基础模块不可用";
+      console.error(professionalWorkspaceLoadError);
+      return null;
+    }
+    try {
+      await moduleLoader.loadScript("./workspaces/quality-checks.js", { async: false });
+      await moduleLoader.loadScript("./workspaces/context-inspector.js", { async: false });
+      await moduleLoader.loadScript("./workspaces/workspace-controller.js", { async: false });
+      const quality = window.QPixelQualityChecks;
+      const inspectorModule = window.QPixelContextInspector;
+      const controllerModule = window.QPixelWorkspaceController;
+      if (!quality || !inspectorModule || !controllerModule) throw new Error("专业工作区模块不完整");
+      let controller = null;
+      const inspector = inspectorModule.create({
+        document,
+        quality,
+        getSnapshot: getProfessionalWorkspaceSnapshot,
+        onAction: (action) => {
+          if (action.type === "stage" && controller) controller.setStage(action.stage);
+          if (action.type === "save") saveCurrentProject();
+        }
+      });
+      controller = controllerModule.create({
+        document,
+        window,
+        stateApi: workspaceStateModule,
+        initialState: professionalWorkspaceState,
+        setInspectorCollapsed: (collapsed) => setSidePanelCollapsed(collapsed, { skipSave: true }),
+        onStateChange: (nextState) => { professionalWorkspaceState = nextState; }
+      });
+      controller.mount(inspector);
+      professionalWorkspaceRuntime = { controller, inspector, quality };
+      professionalWorkspaceLoadError = "";
+      return professionalWorkspaceRuntime;
+    } catch (error) {
+      professionalWorkspaceRuntime = null;
+      professionalWorkspaceLoadError = error && error.message ? error.message : "专业工作区加载失败";
+      document.body.classList.remove("professional-workspace");
+      console.error("Q像素专业工作区加载失败，已回到稳定界面。", error);
+      return null;
+    }
+  }
+
   function saveCurrentProject() {
     ensureBlankPatternForSave();
     const payload = makeProjectPayload();
@@ -14273,6 +14345,24 @@
         return Boolean(shell && shell.classList.contains("side-panel-collapsed"));
       },
       getModuleLoaderSnapshotForTest: () => moduleLoader ? moduleLoader.snapshot() : [],
+      waitForProfessionalWorkspaceForTest: () => professionalWorkspaceReady.then(() => ({
+        ready: Boolean(professionalWorkspaceRuntime),
+        error: professionalWorkspaceLoadError,
+        state: professionalWorkspaceRuntime ? professionalWorkspaceRuntime.controller.getState() : null
+      })),
+      setProfessionalStageForTest: (stage) => professionalWorkspaceRuntime
+        ? professionalWorkspaceRuntime.controller.setStage(stage)
+        : null,
+      getCanvasViewForTest: () => ({
+        zoom: state.view.zoom,
+        panX: state.view.panX,
+        panY: state.view.panY,
+        selectedCode: state.beads.selectedCode,
+        selectedCells: state.beads.selectedCells.map((cell) => Object.assign({}, cell))
+      }),
+      runProfessionalChecksForTest: () => professionalWorkspaceRuntime
+        ? professionalWorkspaceRuntime.quality.run(getProfessionalWorkspaceSnapshot())
+        : [],
       mergeProjectsForTest: mergeProjects,
       payloadFingerprintForTest: payloadFingerprint,
       shouldUseCachedProjectPayloadForTest: shouldUseCachedProjectPayload,
@@ -14529,6 +14619,7 @@
     renderMaterialPicker();
     syncControls();
     wireEvents();
+    professionalWorkspaceReady = initializeProfessionalWorkspace();
     setMode("pixel");
     showHome();
     syncProjectsFromRemote();
