@@ -3,6 +3,18 @@
 
   const importEngine = window.QPixelImportEngine || null;
   const importProcessing = window.QPixelImportProcessing || null;
+  const featureFlags = window.QPixelFeatureFlags || {
+    all: () => ({ professionalWorkspace: false, patternRebuild: false, photoreal3d: false }),
+    isEnabled: () => false
+  };
+  const moduleLoader = window.QPixelModuleLoader || null;
+  const projectModelModule = window.QPixelProjectModel;
+  const workspaceStateModule = window.QPixelWorkspaceState || null;
+  const domUtils = window.QPixelDomUtils || null;
+
+  if (!projectModelModule || typeof projectModelModule.createContext !== "function") {
+    throw new Error("Q像素项目模型加载失败，已停止初始化以保护项目数据。");
+  }
 
   // Mard 221 全色色板，来源：Vicold.Pindoudou / data/Mard.txt (Apache-2.0)。
   const rawBeadPalette = [
@@ -478,6 +490,22 @@
   const watermarkStorageKey = "q-pixel-last-watermark-v1";
   const topbarCollapsedStorageKey = "q-pixel-topbar-collapsed-v1";
   const sidePanelCollapsedStorageKey = "q-pixel-side-panel-collapsed-v1";
+  const projectModel = projectModelModule.createContext({
+    makeId,
+    onPayload: (id, payload) => state.projectPayloadCache.set(id, payload)
+  });
+  const {
+    hasMeaningfulPayloadConflict,
+    makeConflictCopy,
+    normalizeProject,
+    normalizeProjectHistory,
+    payloadFingerprint,
+    restoreProjectHistoryVersion: restoreProjectHistoryVersionForTest,
+    withProjectHistory
+  } = projectModel;
+  let professionalWorkspaceState = workspaceStateModule
+    ? workspaceStateModule.normalize({ viewport: workspaceStateModule.viewportForWidth(window.innerWidth) })
+    : null;
   const watermarkSettingKeys = [
     "watermark",
     "watermarkEnabled",
@@ -665,7 +693,8 @@
 
   function setMessage(text, isError) {
     if (!els.message) return;
-    els.message.textContent = text || "";
+    if (domUtils) domUtils.setText(els.message, text || "");
+    else els.message.textContent = text || "";
     els.message.classList.toggle("error", Boolean(isError));
   }
 
@@ -2910,7 +2939,8 @@
   function renderBuildNavigation() {
     if (!els.buildNavigationPanel) return;
     const visible = Boolean(state.beads.buildMode && state.beads.pattern && countPatternCells(state.beads.pattern));
-    els.buildNavigationPanel.classList.toggle("hidden", !visible);
+    if (domUtils) domUtils.setHidden(els.buildNavigationPanel, !visible);
+    else els.buildNavigationPanel.classList.toggle("hidden", !visible);
     if (!visible) return;
     const code = ensureBuildCurrentCode();
     const color = getPaletteColor(code);
@@ -4144,7 +4174,8 @@
   }
 
   function closeImportChoiceModal() {
-    if (els.importChoiceModal) els.importChoiceModal.classList.add("hidden");
+    if (domUtils) domUtils.setHidden(els.importChoiceModal, true);
+    else if (els.importChoiceModal) els.importChoiceModal.classList.add("hidden");
   }
 
   function closeCalibrationModal() {
@@ -4737,7 +4768,8 @@
   function openImportChoiceModal() {
     if (!state.importSession) return;
     if (els.importChoiceFileName) els.importChoiceFileName.textContent = state.importSession.name;
-    if (els.importChoiceModal) els.importChoiceModal.classList.remove("hidden");
+    if (domUtils) domUtils.setHidden(els.importChoiceModal, false);
+    else if (els.importChoiceModal) els.importChoiceModal.classList.remove("hidden");
     importWizard = null;
     importAiAssist = null;
     state.importCalibration = null;
@@ -11453,135 +11485,6 @@
     return `qpx-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
-  function stableStringify(value) {
-    if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-    if (value && typeof value === "object") {
-      return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
-    }
-    return JSON.stringify(value);
-  }
-
-  function meaningfulPayload(payload) {
-    if (!payload || typeof payload !== "object") return null;
-    const copy = JSON.parse(JSON.stringify(payload));
-    delete copy.savedAt;
-    delete copy.createdAt;
-    delete copy.title;
-    delete copy.id;
-    return copy;
-  }
-
-  function payloadFingerprint(payload) {
-    const text = stableStringify(meaningfulPayload(payload));
-    let hash = 2166136261;
-    for (let index = 0; index < text.length; index += 1) {
-      hash ^= text.charCodeAt(index);
-      hash = Math.imul(hash, 16777619);
-    }
-    return `fp-${(hash >>> 0).toString(16).padStart(8, "0")}-${text.length}`;
-  }
-
-  function normalizeProjectHistory(history) {
-    return Array.isArray(history)
-      ? history
-        .filter((item) => item && item.payload && item.fingerprint)
-        .map((item) => ({
-          id: item.id || makeId(),
-          title: item.title || "未命名",
-          savedAt: item.savedAt || new Date().toISOString(),
-          fingerprint: item.fingerprint,
-          payload: item.payload
-        }))
-        .slice(0, 12)
-      : [];
-  }
-
-  function makeProjectVersion(project) {
-    if (!project || !project.payload) return null;
-    return {
-      id: makeId(),
-      title: project.title || (project.payload && project.payload.title) || "未命名",
-      savedAt: project.savedAt || (project.payload && project.payload.savedAt) || new Date().toISOString(),
-      fingerprint: payloadFingerprint(project.payload),
-      payload: JSON.parse(JSON.stringify(project.payload))
-    };
-  }
-
-  function withProjectHistory(nextProject, existingProject) {
-    const next = normalizeProject(nextProject);
-    const existing = existingProject ? normalizeProject(existingProject) : null;
-    const history = normalizeProjectHistory((existing && existing.history) || next.history);
-    const nextFingerprint = payloadFingerprint(next.payload);
-    next.syncFingerprint = next.syncFingerprint || (existing && existing.syncFingerprint) || (existing && existing.payload ? payloadFingerprint(existing.payload) : nextFingerprint);
-    if (existing && existing.payload) {
-      const previousFingerprint = payloadFingerprint(existing.payload);
-      const alreadyLatest = history[0] && history[0].fingerprint === previousFingerprint;
-      if (previousFingerprint !== nextFingerprint && !alreadyLatest) {
-        const version = makeProjectVersion(existing);
-        if (version) history.unshift(version);
-      }
-    }
-    next.history = history.slice(0, 12);
-    return next;
-  }
-
-  function restoreProjectHistoryVersionForTest(project, versionId, now) {
-    const current = normalizeProject(project);
-    const version = normalizeProjectHistory(current.history).find((item) => item.id === versionId);
-    if (!current.payload || !version || !version.payload) return null;
-    const savedAt = now || new Date().toISOString();
-    const payload = JSON.parse(JSON.stringify(version.payload));
-    payload.id = current.id;
-    payload.title = current.title || payload.title || "未命名";
-    payload.createdAt = current.createdAt || payload.createdAt || savedAt;
-    payload.savedAt = savedAt;
-    return withProjectHistory({
-      id: current.id,
-      title: payload.title,
-      createdAt: current.createdAt || payload.createdAt,
-      savedAt,
-      updatedAt: savedAt,
-      width: payload.pattern && payload.pattern.width,
-      height: payload.pattern && payload.pattern.height,
-      thumbnail: current.thumbnail || "",
-      editSeconds: current.editSeconds,
-      openCount: current.openCount,
-      designDates: current.designDates,
-      payload
-    }, current);
-  }
-
-  function hasMeaningfulPayloadConflict(existing, incoming) {
-    if (!existing || !incoming || !existing.payload || !incoming.payload) return false;
-    const existingFingerprint = payloadFingerprint(existing.payload);
-    const incomingFingerprint = payloadFingerprint(incoming.payload);
-    if (existingFingerprint === incomingFingerprint) return false;
-    const base = existing.syncFingerprint || incoming.syncFingerprint || "";
-    if (!base) return false;
-    return existingFingerprint !== base && incomingFingerprint !== base;
-  }
-
-  function makeConflictCopy(project) {
-    const now = new Date().toISOString();
-    const copy = normalizeProject(JSON.parse(JSON.stringify(project)));
-    const originalId = copy.id;
-    copy.id = makeId();
-    copy.title = `${copy.title || "未命名"} 冲突副本`;
-    copy.createdAt = now;
-    copy.savedAt = now;
-    copy.updatedAt = now;
-    copy.openCount = 0;
-    copy.conflictOf = originalId;
-    copy.syncFingerprint = copy.payload ? payloadFingerprint(copy.payload) : copy.syncFingerprint;
-    if (copy.payload) {
-      copy.payload.id = copy.id;
-      copy.payload.title = copy.title;
-      copy.payload.createdAt = now;
-      copy.payload.savedAt = now;
-    }
-    return copy;
-  }
-
   function mergeProjectRecords(current, incoming, conflictCopies) {
     if (!current) return incoming;
     const currentWithPayload = current.payload ? current : Object.assign({}, current, { payload: incoming.payload || current.payload });
@@ -11737,38 +11640,6 @@
   function isInternalTestProject(project) {
     const payload = project && project.payload;
     return project && project.title === "测试源文件" && payload && payload.sourceLabel === "测试图";
-  }
-
-  function normalizeProject(project) {
-    project = project && typeof project === "object" ? project : {};
-    const payload = project && project.payload ? project.payload : null;
-    const history = normalizeProjectHistory(project.history);
-    const now = new Date().toISOString();
-    const createdAt = project.createdAt || (payload && payload.createdAt) || project.savedAt || now;
-    const savedAt = project.savedAt || (payload && payload.savedAt) || now;
-    const updatedAt = project.updatedAt || savedAt;
-    const id = project.id || (payload && payload.id) || makeId();
-    if (payload) state.projectPayloadCache.set(id, payload);
-    return Object.assign({}, project, {
-      id,
-      title: project.title || (payload && payload.title) || "未命名",
-      createdAt,
-      savedAt,
-      updatedAt,
-      width: project.width || (payload && payload.pattern && payload.pattern.width) || 0,
-      height: project.height || (payload && payload.pattern && payload.pattern.height) || 0,
-      thumbnail: project.thumbnail || "",
-      editSeconds: Math.max(0, Number(project.editSeconds || 0)),
-      openCount: Math.max(0, Number(project.openCount || 0)),
-      designDates: project.designDates && typeof project.designDates === "object" ? project.designDates : {},
-      syncFingerprint: project.syncFingerprint || (payload ? payloadFingerprint(payload) : ""),
-      payloadUpdatedAt: project.payloadUpdatedAt || (payload ? (payload.savedAt || updatedAt) : ""),
-      remoteUpdatedAt: project.remoteUpdatedAt || "",
-      remoteSyncFingerprint: project.remoteSyncFingerprint || "",
-      historyCount: Math.max(history.length, Number(project.historyCount || 0)),
-      history,
-      payload
-    });
   }
 
   function projectSortTime(project) {
@@ -14378,6 +14249,30 @@
       optimizePatternColors,
       reducePatternToColorLimit,
       undoEdit,
+      getFeatureFlagsForTest: () => featureFlags.all(),
+      getWorkspaceStateForTest: () => professionalWorkspaceState ? Object.assign({}, professionalWorkspaceState) : null,
+      reduceWorkspaceStateForTest: (action) => {
+        if (!workspaceStateModule || !professionalWorkspaceState) return null;
+        professionalWorkspaceState = workspaceStateModule.reduce(professionalWorkspaceState, action);
+        return Object.assign({}, professionalWorkspaceState);
+      },
+      getWorkspaceBaselineForTest: () => {
+        const shell = document.querySelector(".app-shell");
+        return {
+          mode: state.mode,
+          tool: state.beads.editTool,
+          sidePanelCollapsed: Boolean(shell && shell.classList.contains("side-panel-collapsed")),
+          importEntryLabels: [els.importQuickButton, els.importAdvancedButton]
+            .filter(Boolean)
+            .map((button) => (button.querySelector("strong") || button).textContent.trim())
+        };
+      },
+      setSidePanelCollapsedForTest: (collapsed) => {
+        setSidePanelCollapsed(Boolean(collapsed), { skipSave: true });
+        const shell = document.querySelector(".app-shell");
+        return Boolean(shell && shell.classList.contains("side-panel-collapsed"));
+      },
+      getModuleLoaderSnapshotForTest: () => moduleLoader ? moduleLoader.snapshot() : [],
       mergeProjectsForTest: mergeProjects,
       payloadFingerprintForTest: payloadFingerprint,
       shouldUseCachedProjectPayloadForTest: shouldUseCachedProjectPayload,

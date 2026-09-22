@@ -1,8 +1,13 @@
-const CACHE_NAME = "q-pixel-v20260922-responsive-import-1";
+const CACHE_NAME = "q-pixel-v20260922-module-boundary-1";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
+  "./feature-flags.js",
+  "./module-loader.js",
+  "./core/project-model.js",
+  "./core/workspace-state.js",
+  "./core/dom-utils.js",
   "./import-engine.js",
   "./import-processing.js",
   "./import-worker.js",

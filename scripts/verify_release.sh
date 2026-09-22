@@ -13,19 +13,30 @@ plutil -lint "$APP_DIR/Contents/Info.plist" >/dev/null
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_DIR/Contents/Info.plist")" = "local.qpixel.app"
 python3 -c 'import ast, pathlib, sys; [ast.parse(pathlib.Path(path).read_text(encoding="utf-8"), filename=path) for path in sys.argv[1:]]' "$RESOURCES_DIR/qpixel_ipad_https_server.py" "$RESOURCES_DIR/qpixel_openai.py"
 node --check "$RESOURCES_DIR/app.js"
+node --check "$RESOURCES_DIR/feature-flags.js"
+node --check "$RESOURCES_DIR/module-loader.js"
+node --check "$RESOURCES_DIR/core/project-model.js"
+node --check "$RESOURCES_DIR/core/workspace-state.js"
+node --check "$RESOURCES_DIR/core/dom-utils.js"
 node --check "$RESOURCES_DIR/import-engine.js"
 node --check "$RESOURCES_DIR/import-processing.js"
 node --check "$RESOURCES_DIR/import-worker.js"
 node "$REPO_DIR/tests/import-engine.test.js"
 node "$REPO_DIR/tests/import-processing.test.js"
+node "$REPO_DIR/tests/project-payload.test.js"
+node "$REPO_DIR/tests/workspace-state.test.js"
 
-for file in index.html styles.css import-engine.js import-processing.js import-worker.js app.js manifest.webmanifest icon.svg offline.html sw.js qpixel_ipad_https_server.py qpixel_openai.py OPENAI_SETUP.md; do
+for file in index.html styles.css feature-flags.js module-loader.js import-engine.js import-processing.js import-worker.js app.js manifest.webmanifest icon.svg offline.html sw.js qpixel_ipad_https_server.py qpixel_openai.py OPENAI_SETUP.md; do
   case "$file" in
     qpixel_*.py) source_file="$REPO_DIR/scripts/$file" ;;
     OPENAI_SETUP.md) source_file="$REPO_DIR/docs/$file" ;;
     *) source_file="$REPO_DIR/web/$file" ;;
   esac
   cmp -s "$RESOURCES_DIR/$file" "$source_file"
+done
+
+for file in project-model.js workspace-state.js dom-utils.js; do
+  cmp -s "$RESOURCES_DIR/core/$file" "$REPO_DIR/web/core/$file"
 done
 
 for forbidden in test.html q-pixel-test.png q-pixel-beads-test.png q-pixel-editor-space-test.png q-pixel-mard-beads-test.png qpixel_sync_server.py; do

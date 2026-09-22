@@ -30,9 +30,13 @@ cp "$REPO_DIR/macos/Info.plist" "$CONTENTS_DIR/Info.plist"
 
 swiftc "$REPO_DIR/macos/QPixel.swift" -o "$MACOS_DIR/QPixel" -framework AppKit -framework WebKit
 
-for file in index.html styles.css import-engine.js import-processing.js import-worker.js app.js manifest.webmanifest icon.svg offline.html sw.js; do
+for file in index.html styles.css feature-flags.js module-loader.js import-engine.js import-processing.js import-worker.js app.js manifest.webmanifest icon.svg offline.html sw.js; do
   cp "$REPO_DIR/web/$file" "$RESOURCES_DIR/$file"
 done
+mkdir -p "$RESOURCES_DIR/core"
+cp "$REPO_DIR/web/core/project-model.js" "$RESOURCES_DIR/core/project-model.js"
+cp "$REPO_DIR/web/core/workspace-state.js" "$RESOURCES_DIR/core/workspace-state.js"
+cp "$REPO_DIR/web/core/dom-utils.js" "$RESOURCES_DIR/core/dom-utils.js"
 mkdir -p "$RESOURCES_DIR/assets"
 cp -R "$REPO_DIR/web/assets/materials" "$RESOURCES_DIR/assets/materials"
 cp "$REPO_DIR/scripts/qpixel_ipad_https_server.py" "$RESOURCES_DIR/qpixel_ipad_https_server.py"

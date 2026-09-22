@@ -14,7 +14,7 @@
   <p id="result">RUNNING</p>
   <pre id="pngData" hidden></pre>
   <pre id="beadPngData" hidden></pre>
-  <div hidden>
+  <div class="app-shell" hidden>
     <canvas id="materialPreviewCanvas" width="900" height="640"></canvas>
     <select id="materialModeSelect"><option value="normal">普通</option><option value="grid">微格纹</option></select>
     <select id="materialBaseSelect"><option value="none">无边框</option></select>
@@ -99,6 +99,11 @@
     <span id="sourceCompareOpacityLabel"></span>
     <div id="lockedColorSummary"></div>
   </div>
+  <script src="./feature-flags.js"></script>
+  <script src="./module-loader.js"></script>
+  <script src="./core/project-model.js"></script>
+  <script src="./core/workspace-state.js"></script>
+  <script src="./core/dom-utils.js"></script>
   <script src="./import-engine.js"></script>
   <script src="./import-processing.js"></script>
   <script src="./app.js"></script>
@@ -152,6 +157,25 @@
     async function run() {
       const result = document.getElementById("result");
       try {
+        const flags = window.QPixelTest.getFeatureFlagsForTest();
+        if (flags.professionalWorkspace || flags.patternRebuild || flags.photoreal3d) {
+          throw new Error("new workflow flags must default to off");
+        }
+        const workspaceBaseline = window.QPixelTest.getWorkspaceBaselineForTest();
+        if (workspaceBaseline.mode !== "pixel" || workspaceBaseline.tool !== "brush") {
+          throw new Error("workspace baseline changed");
+        }
+        if (workspaceBaseline.importEntryLabels.length !== 2 || !workspaceBaseline.importEntryLabels.some((label) => /快速导入/.test(label))) {
+          throw new Error("import entry baseline changed");
+        }
+        if (!window.QPixelTest.setSidePanelCollapsedForTest(true) || window.QPixelTest.setSidePanelCollapsedForTest(false)) {
+          throw new Error("legacy side panel toggle failed");
+        }
+        const nextWorkspace = window.QPixelTest.reduceWorkspaceStateForTest({ type: "set-stage", stage: "make" });
+        if (!nextWorkspace || nextWorkspace.stage !== "make" || window.QPixelTest.getWorkspaceBaselineForTest().mode !== "pixel") {
+          throw new Error("workspace state must not mutate legacy canvas mode");
+        }
+
         const clamped = window.QPixelTest.clampParams({
           precision: 999,
           gap: -20,
