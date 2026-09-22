@@ -7,6 +7,7 @@ const workspaceState = require("../web/core/workspace-state.js");
 const domUtils = require("../web/core/dom-utils.js");
 const qualityChecks = require("../web/workspaces/quality-checks.js");
 const workspaceController = require("../web/workspaces/workspace-controller.js");
+const importRouter = require("../web/import/import-router.js");
 
 assert.deepEqual(featureFlags.normalize({ professionalWorkspace: true, unknown: true }), {
   professionalWorkspace: true,
@@ -56,6 +57,10 @@ const populatedChecks = qualityChecks.run({
 assert.equal(populatedChecks.find((check) => check.id === "inventory").status, "warning");
 assert.equal(qualityChecks.forStage(populatedChecks, "color").length, 2);
 assert.equal(qualityChecks.forStage(populatedChecks, "version")[0].action.type, "save");
+assert.equal(importRouter.ENTRIES.length, 4);
+assert.equal(importRouter.getEntry("rebuild").needsFile, true);
+assert.equal(importRouter.createSession("blank", () => 1000).status, "ready");
+assert.equal(importRouter.createSession("missing"), null);
 
 function makeFakeElement(tagName) {
   const listeners = {};

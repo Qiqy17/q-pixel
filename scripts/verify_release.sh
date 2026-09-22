@@ -21,6 +21,10 @@ node --check "$RESOURCES_DIR/core/dom-utils.js"
 node --check "$RESOURCES_DIR/workspaces/quality-checks.js"
 node --check "$RESOURCES_DIR/workspaces/context-inspector.js"
 node --check "$RESOURCES_DIR/workspaces/workspace-controller.js"
+node --check "$RESOURCES_DIR/import/import-router.js"
+node --check "$RESOURCES_DIR/pattern-rebuild/rebuild-engine.js"
+node --check "$RESOURCES_DIR/pattern-rebuild/rebuild-worker.js"
+node --check "$RESOURCES_DIR/pattern-rebuild/legend-schema.js"
 node --check "$RESOURCES_DIR/import-engine.js"
 node --check "$RESOURCES_DIR/import-processing.js"
 node --check "$RESOURCES_DIR/import-worker.js"
@@ -28,6 +32,7 @@ node "$REPO_DIR/tests/import-engine.test.js"
 node "$REPO_DIR/tests/import-processing.test.js"
 node "$REPO_DIR/tests/project-payload.test.js"
 node "$REPO_DIR/tests/workspace-state.test.js"
+node "$REPO_DIR/tests/pattern-rebuild.test.js"
 
 for file in index.html styles.css feature-flags.js module-loader.js import-engine.js import-processing.js import-worker.js app.js manifest.webmanifest icon.svg offline.html sw.js qpixel_ipad_https_server.py qpixel_openai.py OPENAI_SETUP.md; do
   case "$file" in
@@ -44,6 +49,11 @@ done
 
 for file in quality-checks.js context-inspector.js workspace-controller.js; do
   cmp -s "$RESOURCES_DIR/workspaces/$file" "$REPO_DIR/web/workspaces/$file"
+done
+
+cmp -s "$RESOURCES_DIR/import/import-router.js" "$REPO_DIR/web/import/import-router.js"
+for file in rebuild-engine.js rebuild-worker.js legend-schema.js; do
+  cmp -s "$RESOURCES_DIR/pattern-rebuild/$file" "$REPO_DIR/web/pattern-rebuild/$file"
 done
 
 for forbidden in test.html q-pixel-test.png q-pixel-beads-test.png q-pixel-editor-space-test.png q-pixel-mard-beads-test.png qpixel_sync_server.py; do

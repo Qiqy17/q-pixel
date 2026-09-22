@@ -509,6 +509,7 @@
   let professionalWorkspaceRuntime = null;
   let professionalWorkspaceLoadError = "";
   let professionalWorkspaceReady = Promise.resolve(null);
+  let pendingProjectEntry = null;
   const watermarkSettingKeys = [
     "watermark",
     "watermarkEnabled",
@@ -641,7 +642,7 @@
       "calibrationColumnsInput", "calibrationCellSizeInput", "calibrationAiToggle",
       "colorOptimizeLimitInput", "colorOptimizeButton", "colorOptimizeUndoButton", "restoreLightButton", "restoreBalancedButton", "restoreDetailButton",
       "sourceCompareToggle", "sourceCompareOpacityRange", "sourceCompareOpacityLabel", "lockedColorSummary",
-      "trashModal", "trashCloseButton", "trashList",
+      "trashModal", "trashCloseButton", "trashList", "projectEntryModal", "projectEntryCloseButton", "projectEntryGrid",
       "usageLayoutWrapButton", "usageLayoutGridButton", "usageFontSizeRange", "usageFontSizeLabel",
       "usageStyleChipsButton", "usageStyleTableButton", "exportAxisToggle", "exportOuterBorderToggle",
       "paperPresetSelect", "paperOrientationPortraitButton", "paperOrientationLandscapeButton", "exportRatioSelect", "exportRatioWidthInput", "exportRatioHeightInput",
@@ -4159,7 +4160,8 @@
         image: img,
         url,
         name: file.name || "未命名图片",
-        mode: options.mode || "main"
+        mode: options.mode || "main",
+        intent: options.intent || "photo"
       };
       analyzeImportSession(state.importSession);
       openImportChoiceModal();
@@ -4770,7 +4772,10 @@
 
   function openImportChoiceModal() {
     if (!state.importSession) return;
-    if (els.importChoiceFileName) els.importChoiceFileName.textContent = state.importSession.name;
+    if (els.importChoiceFileName) {
+      const labels = { photo: "照片转图纸", rebuild: "已有图纸重建", trace: "参考图描绘" };
+      els.importChoiceFileName.textContent = `${labels[state.importSession.intent] || "导入图片"} · ${state.importSession.name}`;
+    }
     if (domUtils) domUtils.setHidden(els.importChoiceModal, false);
     else if (els.importChoiceModal) els.importChoiceModal.classList.remove("hidden");
     importWizard = null;
@@ -12048,6 +12053,39 @@
     setMessage("已新建空白画布，可直接绘制并保存。", false);
   }
 
+  function closeProjectEntryModal() {
+    pendingProjectEntry = null;
+    if (els.projectEntryModal) els.projectEntryModal.classList.add("hidden");
+  }
+
+  function openProjectEntryModal() {
+    if (!featureFlags.isEnabled("professionalWorkspace") || !window.QPixelImportRouter || !els.projectEntryModal) {
+      createNewDesign();
+      return;
+    }
+    pendingProjectEntry = null;
+    els.projectEntryModal.classList.remove("hidden");
+  }
+
+  function startNewProjectFlow() {
+    if (confirmLeaveWithUnsavedChanges()) openProjectEntryModal();
+  }
+
+  function chooseProjectEntry(entryId) {
+    const router = window.QPixelImportRouter;
+    if (!router) return;
+    const session = router.createSession(entryId);
+    if (!session) return;
+    if (entryId === "blank") {
+      closeProjectEntryModal();
+      createNewDesign();
+      return;
+    }
+    pendingProjectEntry = session;
+    if (els.projectEntryModal) els.projectEntryModal.classList.add("hidden");
+    openFileDialog();
+  }
+
   function renderHomeProjects() {
     if (!els.homeProjectGrid) return;
     const projects = getProjects().filter((project) => !isInternalTestProject(project)).sort((a, b) => projectSortTime(b) - projectSortTime(a));
@@ -12057,9 +12095,7 @@
     addTile.className = "home-add-tile";
     addTile.type = "button";
     addTile.innerHTML = "<span>+</span><strong>新建设计文件</strong>";
-    addTile.addEventListener("click", () => {
-      if (confirmLeaveWithUnsavedChanges()) createNewDesign();
-    });
+    addTile.addEventListener("click", startNewProjectFlow);
     els.homeProjectGrid.appendChild(addTile);
 
     projects.forEach((project) => {
@@ -12579,6 +12615,7 @@
       await moduleLoader.loadScript("./workspaces/quality-checks.js", { async: false });
       await moduleLoader.loadScript("./workspaces/context-inspector.js", { async: false });
       await moduleLoader.loadScript("./workspaces/workspace-controller.js", { async: false });
+      await moduleLoader.loadScript("./import/import-router.js", { async: false });
       const quality = window.QPixelQualityChecks;
       const inspectorModule = window.QPixelContextInspector;
       const controllerModule = window.QPixelWorkspaceController;
@@ -12911,11 +12948,14 @@
 
   function wireEvents() {
     installSelectionGuard();
-    els.homeNewDesignButton.addEventListener("click", () => {
-      if (confirmLeaveWithUnsavedChanges()) createNewDesign();
+    els.homeNewDesignButton.addEventListener("click", startNewProjectFlow);
+    els.homeNewTopButton.addEventListener("click", startNewProjectFlow);
+    if (els.projectEntryCloseButton) els.projectEntryCloseButton.addEventListener("click", closeProjectEntryModal);
+    if (els.projectEntryModal) els.projectEntryModal.addEventListener("click", (event) => {
+      if (event.target === els.projectEntryModal) closeProjectEntryModal();
     });
-    els.homeNewTopButton.addEventListener("click", () => {
-      if (confirmLeaveWithUnsavedChanges()) createNewDesign();
+    if (els.projectEntryGrid) els.projectEntryGrid.querySelectorAll("[data-project-entry]").forEach((button) => {
+      button.addEventListener("click", () => chooseProjectEntry(button.dataset.projectEntry));
     });
     if (els.homeSyncButton) {
       els.homeSyncButton.addEventListener("click", () => {
@@ -13233,9 +13273,12 @@
     els.zoomInButton.addEventListener("click", () => zoomView(1.25));
     els.fitViewButton.addEventListener("click", resetView);
     els.fileInput.addEventListener("change", (event) => {
-      loadFile(event.target.files && event.target.files[0]);
+      const entry = pendingProjectEntry;
+      loadFile(event.target.files && event.target.files[0], { intent: entry && entry.entryId || "photo" });
+      pendingProjectEntry = null;
       event.target.value = "";
     });
+    els.fileInput.addEventListener("cancel", () => { pendingProjectEntry = null; });
 
     [
       ["precision", els.precisionRange, els.precisionNumber],

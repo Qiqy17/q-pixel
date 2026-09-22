@@ -1210,6 +1210,20 @@
     </div>
   </section>
 
+  <section class="project-action-modal hidden" id="projectEntryModal" aria-label="新建设计">
+    <div class="project-action-card project-entry-card">
+      <button class="project-action-close" id="projectEntryCloseButton" type="button" title="关闭">×</button>
+      <div class="project-action-head"><div><h2>新建设计</h2><p>先选择工作方式；选择文件只会创建临时会话，确认前不会改动当前项目。</p></div></div>
+      <div class="project-entry-grid" id="projectEntryGrid">
+        <button type="button" data-project-entry="photo"><span>照片</span><strong>照片转图纸</strong><em>PNG / JPG / WebP</em><small>自动生成可编辑图纸</small></button>
+        <button type="button" data-project-entry="rebuild"><span>重建</span><strong>已有图纸重建</strong><em>截图 / 扫描 / 拍照</em><small>校正网格并复原每格颜色</small></button>
+        <button type="button" data-project-entry="trace"><span>描绘</span><strong>参考图描绘</strong><em>PNG / JPG / WebP</em><small>参考图不会直接覆盖画布</small></button>
+        <button type="button" data-project-entry="blank"><span>空白</span><strong>空白项目</strong><em>无需文件</em><small>直接创建新图纸</small></button>
+      </div>
+      <p class="project-entry-safety">取消选择、关闭窗口或退出高级优化，当前设计都会保持原样。</p>
+    </div>
+  </section>
+
   <section class="project-action-modal hidden" id="aiGenerateModal" aria-label="AI生成像素图">
     <div class="project-action-card ai-generate-card">
       <button class="project-action-close" id="aiGenerateCloseButton" type="button" title="关闭">×</button>
