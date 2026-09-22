@@ -1,9 +1,11 @@
-const CACHE_NAME = "q-pixel-v20260921-adaptive-import-1";
+const CACHE_NAME = "q-pixel-v20260922-responsive-import-1";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
   "./import-engine.js",
+  "./import-processing.js",
+  "./import-worker.js",
   "./app.js",
   "./manifest.webmanifest",
   "./icon.svg",

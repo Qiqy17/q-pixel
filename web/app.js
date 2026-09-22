@@ -2,6 +2,7 @@
   "use strict";
 
   const importEngine = window.QPixelImportEngine || null;
+  const importProcessing = window.QPixelImportProcessing || null;
 
   // Mard 221 全色色板，来源：Vicold.Pindoudou / data/Mard.txt (Apache-2.0)。
   const rawBeadPalette = [
@@ -317,6 +318,12 @@
       sourceCompareEnabled: false,
       sourceCompareOpacity: 38,
       buildMode: false,
+      buildNavigation: {
+        currentCode: "",
+        sortMode: "usage",
+        autoAdvance: true,
+        dimOthers: true
+      },
       lockedColorCodes: [],
       lockedColorRoles: {},
       width: 48,
@@ -454,6 +461,9 @@
   let importAiAssist = null;
   let importSessionSerial = 0;
   let importPreviewTimer = 0;
+  let importTaskSerial = 0;
+  let activeImportTask = null;
+  let similarColorAnalysis = null;
 
   const storageKey = "q-pixel-local-projects-v1";
   const projectPayloadStoragePrefix = "q-pixel-project-payload-v1:";
@@ -529,7 +539,9 @@
       "importEntryPanel", "importEntryPreviewCanvas", "importEntryAnalysis", "importQuickButton", "importAdvancedButton", "importWizardShell", "importWizardScroll", "importWizardUseCurrentButton",
       "importWizardStep1", "importWizardStep2", "importWizardStep3", "importWizardStep4", "importWizardColorSummary", "importWizardFinalSummary", "importWizardColorLimitInput", "importWizardCalibrationButton", "importWizardSkipCalibrationButton", "importWizardOptimizeButton", "importWizardKeepColorsButton", "importWizardApplyButton", "importWizardRestartButton", "importWizardOriginalCanvas", "importWizardPatternCanvas", "importWizardFinalOriginalCanvas", "importWizardFinalPatternCanvas", "importAiAssistButton", "importAiAssistStatus", "importAiAssistApplyRecommendationButton", "importAiAssistApplySubjectButton", "importAiAssistSymmetryButton", "importAiAssistUndoButton",
       "importTypeAnalysis", "importTypeAutoButton", "importTypePixelButton", "importTypeIllustrationButton", "importTypePhotoButton", "importExposureRange", "importExposureLabel", "importContrastRange", "importContrastLabel", "importSaturationRange", "importSaturationLabel", "importBackgroundToggle", "importBackgroundToleranceRange", "importBackgroundToleranceLabel", "importAdjustResetButton", "importDitherSelect", "importCleanupStrengthSelect", "importCandidateFidelityButton", "importCandidateBalancedButton", "importCandidateSimpleButton", "importCandidateSummary",
-      "qualitySummary", "qualityCheckButton", "exportMaterialsButton", "buildModeToggle", "buildProgress", "clearBuildProgressButton",
+      "importTaskPanel", "importTaskStatus", "importTaskPercent", "importTaskProgress", "importTaskCancelButton",
+      "qualitySummary", "qualityCheckButton", "exportMaterialsButton", "buildModeToggle", "buildProgress", "clearBuildProgressButton", "buildNavigationPanel", "buildCurrentSwatch", "buildCurrentCode", "buildCurrentStats", "buildPreviousColorButton", "buildNextColorButton", "buildLocateNextButton", "buildSortModeSelect", "buildDimOthersToggle", "buildAutoAdvanceToggle",
+      "similarColorStrengthSelect", "similarColorAnalyzeButton", "similarColorApplyAllButton", "similarColorSummary", "similarColorList",
       "paletteSelect", "paletteGrid", "cellTargetPaletteGrid", "selectionColorTargetPaletteGrid",
       "replaceFromSelect", "replaceToSelect", "replaceAllButton", "usageSummary",
       "exportChartButton", "toolBrushButton", "toolPickerButton",
@@ -1934,12 +1946,29 @@
     const y = Math.round((canvas.height - gridHeight) / 2 + state.view.panY);
     drawSourceComparisonLayer(ctx, pattern, x, y, cellSize);
     drawPatternGrid(ctx, pattern, x, y, cellSize, options);
+    drawBuildColorFocusOverlay(ctx, pattern, x, y, cellSize);
     drawBuildProgressOverlay(ctx, pattern, x, y, cellSize);
     drawGuideLines(ctx, x, y, cellSize, pattern);
     drawSelectionOverlay(ctx, x, y, cellSize);
     drawFloatingSelectionOverlay(ctx, x, y, cellSize);
     drawAxisLabels(ctx, { x, y, width: gridWidth, height: gridHeight }, pattern.width, pattern.height, cellSize, cellSize);
     return { x, y, cellSize, width: gridWidth, height: gridHeight };
+  }
+
+  function drawBuildColorFocusOverlay(ctx, pattern, x, y, cellSize) {
+    const navigation = state.beads.buildNavigation;
+    if (!state.beads.buildMode || !pattern || !navigation || navigation.dimOthers === false) return;
+    const currentCode = ensureBuildCurrentCode();
+    if (!currentCode) return;
+    ctx.save();
+    ctx.fillStyle = "rgba(245, 247, 250, .68)";
+    for (let row = 0; row < pattern.height; row += 1) {
+      for (let col = 0; col < pattern.width; col += 1) {
+        const code = pattern.cells[row][col];
+        if (code && code !== currentCode) ctx.fillRect(x + col * cellSize, y + row * cellSize, cellSize, cellSize);
+      }
+    }
+    ctx.restore();
   }
 
   function drawBuildProgressOverlay(ctx, pattern, x, y, cellSize) {
@@ -2370,8 +2399,9 @@
       }[getImportMode()];
     }
     if (importWizard && state.importSession) {
-      buildImportWizardPattern();
-      renderImportWizardStep();
+      buildImportWizardPattern(mode).then(renderImportWizardStep).catch((error) => {
+        if (error.name !== "AbortError") setMessage(`导入预览失败：${error.message}`, true);
+      });
     }
   }
 
@@ -2710,12 +2740,238 @@
     return result;
   }
 
+  function analyzeSimilarColors(strength) {
+    const pattern = state.beads.pattern;
+    const thresholds = { conservative: 2.5, balanced: 5, strong: 8 };
+    const mode = thresholds[strength] ? strength : "balanced";
+    const threshold = thresholds[mode];
+    const usage = calculateUsage(pattern);
+    const locked = getLockedColorSet();
+    const suggestions = [];
+    const sources = usage.slice().sort((a, b) => a.count - b.count || a.code.localeCompare(b.code));
+    sources.forEach((source) => {
+      if (locked.has(source.code)) return;
+      const sourceColor = getPaletteColor(source.code);
+      const candidates = usage.filter((item) => item.code !== source.code && (item.count > source.count || (item.count === source.count && item.code.localeCompare(source.code) < 0) || locked.has(item.code) || getInventoryStock(item.code) > getInventoryStock(source.code))).map((target) => ({
+        target,
+        distance: labDistance(sourceColor.lab, getPaletteColor(target.code).lab),
+        protected: locked.has(target.code) ? 1 : 0,
+        stock: getInventoryStock(target.code)
+      })).filter((item) => item.distance <= threshold);
+      candidates.sort((a, b) => b.protected - a.protected || b.stock - a.stock || b.target.count - a.target.count || a.distance - b.distance || a.target.code.localeCompare(b.target.code));
+      if (!candidates.length) return;
+      suggestions.push({
+        from: source.code,
+        to: candidates[0].target.code,
+        distance: candidates[0].distance,
+        count: source.count
+      });
+    });
+    similarColorAnalysis = {
+      fingerprint: getPatternFingerprint(pattern),
+      strength: mode,
+      threshold,
+      beforeColors: usage.length,
+      suggestions
+    };
+    renderSimilarColorAnalysis();
+    return similarColorAnalysis;
+  }
+
+  function renderSimilarColorAnalysis() {
+    if (!els.similarColorSummary || !els.similarColorList) return;
+    const analysis = similarColorAnalysis;
+    els.similarColorList.innerHTML = "";
+    if (!analysis || analysis.fingerprint !== getPatternFingerprint(state.beads.pattern)) {
+      els.similarColorSummary.textContent = "分析后显示色差、涉及豆数和预计变化。";
+      if (els.similarColorApplyAllButton) els.similarColorApplyAllButton.disabled = true;
+      return;
+    }
+    const total = analysis.suggestions.reduce((sum, item) => sum + item.count, 0);
+    els.similarColorSummary.textContent = analysis.suggestions.length
+      ? `发现 ${analysis.suggestions.length} 组可合并色，预计涉及 ${total} 颗；锁定色不会被替换。`
+      : `未发现色差不超过 ${analysis.threshold} 的可合并色。`;
+    if (els.similarColorApplyAllButton) els.similarColorApplyAllButton.disabled = !analysis.suggestions.length;
+    analysis.suggestions.forEach((item, index) => {
+      const row = document.createElement("div");
+      row.className = "similar-color-item";
+      row.innerHTML = `<span class="similar-color-pair"><i style="background:${getPaletteColor(item.from).hex}"></i><strong>${item.from}</strong><b>→</b><i style="background:${getPaletteColor(item.to).hex}"></i><strong>${item.to}</strong></span><em>ΔE ${item.distance.toFixed(1)} · ${item.count} 颗</em><button type="button" data-similar-index="${index}">合并</button>`;
+      els.similarColorList.appendChild(row);
+    });
+  }
+
+  function resolveSimilarTarget(code, mapping) {
+    const seen = new Set();
+    let current = code;
+    while (mapping.has(current) && !seen.has(current)) {
+      seen.add(current);
+      current = mapping.get(current);
+    }
+    return current;
+  }
+
+  function applySimilarColorSuggestions(indices) {
+    const analysis = similarColorAnalysis;
+    if (!analysis || analysis.fingerprint !== getPatternFingerprint(state.beads.pattern)) {
+      setMessage("图纸已变化，请重新分析相近色。", true);
+      renderSimilarColorAnalysis();
+      return 0;
+    }
+    const selected = Array.isArray(indices) ? new Set(indices) : null;
+    const mapping = new Map();
+    analysis.suggestions.forEach((item, index) => {
+      if (!selected || selected.has(index)) mapping.set(item.from, item.to);
+    });
+    if (!mapping.size) return 0;
+    pushHistory();
+    let changed = 0;
+    ensureLayers();
+    state.beads.layers.forEach((layer) => {
+      if (layer.locked) return;
+      for (let row = 0; row < layer.cells.length; row += 1) {
+        for (let col = 0; col < layer.cells[row].length; col += 1) {
+          const current = layer.cells[row][col];
+          if (!mapping.has(current)) continue;
+          const next = resolveSimilarTarget(current, mapping);
+          if (next !== current && canWriteLayerCell(layer, row, col, next)) {
+            layer.cells[row][col] = next;
+            changed += 1;
+          }
+        }
+      }
+    });
+    if (!changed) state.beads.undoStack.pop();
+    syncCompositePattern();
+    similarColorAnalysis = null;
+    render();
+    renderSimilarColorAnalysis();
+    setMessage(changed ? `已合并 ${changed} 颗相近色豆，支持一步撤销。` : "没有可合并的格子。", !changed);
+    return changed;
+  }
+
   function renderBuildProgress() {
     if (!els.buildProgress) return;
+    normalizeBuildProgress();
     const total = countPatternCells(state.beads.pattern);
     const done = Object.keys(state.buildProgress || {}).length;
     els.buildProgress.textContent = `制作进度：${Math.min(done, total)} / ${total}（${total ? Math.round(Math.min(done, total) / total * 100) : 0}%）`;
     if (els.buildModeToggle) els.buildModeToggle.checked = Boolean(state.beads.buildMode);
+    renderBuildNavigation();
+  }
+
+  function normalizeBuildProgress() {
+    const pattern = state.beads.pattern;
+    if (!pattern) {
+      state.buildProgress = {};
+      return;
+    }
+    Object.keys(state.buildProgress || {}).forEach((key) => {
+      const [row, col] = key.split(":").map(Number);
+      if (!Number.isInteger(row) || !Number.isInteger(col) || !pattern.cells[row] || !pattern.cells[row][col]) delete state.buildProgress[key];
+    });
+  }
+
+  function getBuildColorOrder() {
+    const usage = calculateUsage(state.beads.pattern);
+    if ((state.beads.buildNavigation && state.beads.buildNavigation.sortMode) === "code") {
+      usage.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+    }
+    return usage;
+  }
+
+  function getBuildColorStats(code) {
+    const pattern = state.beads.pattern;
+    let total = 0;
+    let done = 0;
+    if (!pattern || !code) return { total, done };
+    for (let row = 0; row < pattern.height; row += 1) {
+      for (let col = 0; col < pattern.width; col += 1) {
+        if (pattern.cells[row][col] !== code) continue;
+        total += 1;
+        if (state.buildProgress[`${row}:${col}`]) done += 1;
+      }
+    }
+    return { total, done };
+  }
+
+  function ensureBuildCurrentCode() {
+    const navigation = state.beads.buildNavigation;
+    const order = getBuildColorOrder();
+    if (!order.some((item) => item.code === navigation.currentCode)) {
+      const unfinished = order.find((item) => {
+        const stats = getBuildColorStats(item.code);
+        return stats.done < stats.total;
+      });
+      navigation.currentCode = (unfinished || order[0] || {}).code || "";
+    }
+    return navigation.currentCode;
+  }
+
+  function renderBuildNavigation() {
+    if (!els.buildNavigationPanel) return;
+    const visible = Boolean(state.beads.buildMode && state.beads.pattern && countPatternCells(state.beads.pattern));
+    els.buildNavigationPanel.classList.toggle("hidden", !visible);
+    if (!visible) return;
+    const code = ensureBuildCurrentCode();
+    const color = getPaletteColor(code);
+    const stats = getBuildColorStats(code);
+    if (els.buildCurrentSwatch) els.buildCurrentSwatch.style.backgroundColor = color.hex;
+    if (els.buildCurrentCode) els.buildCurrentCode.textContent = code || "—";
+    if (els.buildCurrentStats) els.buildCurrentStats.textContent = `${stats.done} / ${stats.total} 颗 · 剩余 ${Math.max(0, stats.total - stats.done)}`;
+    if (els.buildSortModeSelect) els.buildSortModeSelect.value = state.beads.buildNavigation.sortMode || "usage";
+    if (els.buildDimOthersToggle) els.buildDimOthersToggle.checked = state.beads.buildNavigation.dimOthers !== false;
+    if (els.buildAutoAdvanceToggle) els.buildAutoAdvanceToggle.checked = state.beads.buildNavigation.autoAdvance !== false;
+  }
+
+  function advanceBuildColor(direction = 1) {
+    const order = getBuildColorOrder();
+    if (!order.length) return "";
+    const current = ensureBuildCurrentCode();
+    const start = Math.max(0, order.findIndex((item) => item.code === current));
+    for (let offset = 1; offset <= order.length; offset += 1) {
+      const item = order[(start + direction * offset + order.length * 2) % order.length];
+      const stats = getBuildColorStats(item.code);
+      if (stats.done < stats.total || offset === order.length) {
+        state.beads.buildNavigation.currentCode = item.code;
+        renderBuildNavigation();
+        render();
+        return item.code;
+      }
+    }
+    return current;
+  }
+
+  function locateNextBuildCell() {
+    const pattern = state.beads.pattern;
+    const code = ensureBuildCurrentCode();
+    if (!pattern || !code) return null;
+    const grid = state.beads.lastGridRect;
+    const canvas = els.previewCanvas;
+    let best = null;
+    let bestDistance = Infinity;
+    const centerCol = grid ? (canvas.width / 2 - grid.x) / grid.cellSize : pattern.width / 2;
+    const centerRow = grid ? (canvas.height / 2 - grid.y) / grid.cellSize : pattern.height / 2;
+    for (let row = 0; row < pattern.height; row += 1) {
+      for (let col = 0; col < pattern.width; col += 1) {
+        if (pattern.cells[row][col] !== code || state.buildProgress[`${row}:${col}`]) continue;
+        const distance = Math.hypot(col + .5 - centerCol, row + .5 - centerRow);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          best = { row, col };
+        }
+      }
+    }
+    if (!best) {
+      if (state.beads.buildNavigation.autoAdvance !== false) advanceBuildColor(1);
+      return null;
+    }
+    if (grid) {
+      state.view.panX += canvas.width / 2 - (grid.x + (best.col + .5) * grid.cellSize);
+      state.view.panY += canvas.height / 2 - (grid.y + (best.row + .5) * grid.cellSize);
+    }
+    render();
+    setMessage(`已定位 ${code} 的下一处：第 ${best.col + 1} 列，第 ${best.row + 1} 行。`, false);
+    return best;
   }
 
   function toggleBuildCell(cell) {
@@ -2723,6 +2979,10 @@
     const key = `${cell.row}:${cell.col}`;
     if (state.buildProgress[key]) delete state.buildProgress[key];
     else state.buildProgress[key] = true;
+    const code = state.beads.pattern.cells[cell.row][cell.col];
+    if (!state.beads.buildNavigation.currentCode) state.beads.buildNavigation.currentCode = code;
+    const stats = getBuildColorStats(state.beads.buildNavigation.currentCode);
+    if (state.beads.buildNavigation.autoAdvance !== false && stats.total && stats.done === stats.total) advanceBuildColor(1);
     renderBuildProgress();
     markUnsavedChanges();
     return true;
@@ -3582,8 +3842,10 @@
   function invalidateImportProcessing() {
     const session = state.importSession;
     if (!session) return;
+    cancelActiveImportTask({ silent: true });
     session.processingVersion = (session.processingVersion || 0) + 1;
     session.processedCache = null;
+    session.patternCache = null;
     if (importWizard) {
       importWizard.rawPattern = null;
       importWizard.pattern = null;
@@ -3654,16 +3916,192 @@
     });
   }
 
+  function getImportProcessingKey(session, maxSide) {
+    const settings = Object.assign({}, session && session.settings || {}, {
+      type: session ? getEffectiveImportType(session) : "illustration"
+    });
+    return `${maxSide}:${JSON.stringify(settings)}`;
+  }
+
+  function setImportTaskUi(active, stage, progress) {
+    const labels = {
+      prepare: "准备图片…",
+      adjust: "正在调整图像…",
+      match: "正在匹配色号…",
+      cleanup: "正在清理图纸…",
+      complete: "导入完成"
+    };
+    const value = clamp(progress || 0, 0, 100);
+    if (els.importTaskPanel) els.importTaskPanel.classList.toggle("hidden", !active);
+    if (els.importTaskStatus) els.importTaskStatus.textContent = labels[stage] || labels.prepare;
+    if (els.importTaskPercent) els.importTaskPercent.textContent = `${Math.round(value)}%`;
+    if (els.importTaskProgress) els.importTaskProgress.value = value;
+    const card = els.importChoiceModal && els.importChoiceModal.querySelector(".import-choice-card");
+    if (card) card.classList.toggle("is-processing", Boolean(active));
+  }
+
+  function cancelActiveImportTask(options = {}) {
+    const task = activeImportTask;
+    if (!task) return false;
+    task.cancelled = true;
+    if (task.worker) task.worker.terminate();
+    if (task.reject) {
+      const error = new Error("导入已取消");
+      error.name = "AbortError";
+      task.reject(error);
+      task.reject = null;
+    }
+    activeImportTask = null;
+    setImportTaskUi(false, "prepare", 0);
+    if (!options.silent) setMessage("已取消本次导入，原图和当前设计未受影响。", false);
+    return true;
+  }
+
+  function makeImportTaskInput(session, options = {}) {
+    const maxSide = options.maxSide || 1800;
+    const canvas = buildSamplingCanvas(session.image, maxSide);
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const calibration = options.calibration;
+    const scaled = calibration ? scaleCalibrationForSource(calibration, session.image, canvas) : null;
+    const grid = scaled && scaled.enabled !== false ? {
+      calibrated: true,
+      columns: scaled.columns,
+      rows: scaled.rows,
+      offsetX: scaled.offsetX,
+      offsetY: scaled.offsetY,
+      cellSize: scaled.cellSize
+    } : null;
+    return {
+      data: imageData.data.buffer,
+      width: canvas.width,
+      height: canvas.height,
+      targetWidth: options.targetWidth,
+      targetHeight: options.targetHeight,
+      grid,
+      settings: Object.assign({}, session.settings || {}, { type: getEffectiveImportType(session) }),
+      palette: beadPalette.map((color) => ({ code: color.code, lab: color.lab })),
+      matcherOptions: { quantizeShift: 3, maxCache: 32768 }
+    };
+  }
+
+  function makeProcessedCanvas(result) {
+    const canvas = document.createElement("canvas");
+    canvas.width = result.processedWidth;
+    canvas.height = result.processedHeight;
+    const ctx = canvas.getContext("2d");
+    const pixels = new Uint8ClampedArray(result.processedData);
+    const imageData = ctx.createImageData(canvas.width, canvas.height);
+    imageData.data.set(pixels);
+    ctx.putImageData(imageData, 0, 0);
+    canvas.qPixelProcessing = {
+      removedRatio: result.removedRatio || 0,
+      backgroundRejected: Boolean(result.backgroundRejected)
+    };
+    return canvas;
+  }
+
+  async function runImportPatternTask(session, options = {}) {
+    if (!session || !session.image || !importProcessing) throw new Error("导入处理模块不可用");
+    const taskId = `import-${++importTaskSerial}`;
+    const task = { id: taskId, sessionId: session.id, cancelled: false, worker: null, reject: null };
+    cancelActiveImportTask({ silent: true });
+    activeImportTask = task;
+    setImportTaskUi(true, "prepare", 1);
+
+    const onProgress = (item) => {
+      if (activeImportTask !== task || task.cancelled) return;
+      setImportTaskUi(true, item.stage || "prepare", item.progress || 0);
+    };
+    const finish = (result) => {
+      if (task.cancelled || activeImportTask !== task || !isCurrentImportSession(session.id)) {
+        const error = new Error("导入已取消");
+        error.name = "AbortError";
+        throw error;
+      }
+      const processedSource = makeProcessedCanvas(result);
+      const rawPattern = {
+        width: result.width,
+        height: result.height,
+        cells: result.cells,
+        sourceLabel: session.name,
+        createdAt: new Date().toISOString()
+      };
+      if (options.calibration) rawPattern.calibration = Object.assign({}, options.calibration);
+      session.processedCache = { key: getImportProcessingKey(session, options.maxSide || 1800), source: processedSource };
+      if (result.backgroundRejected) {
+        session.settings.removeBackground = false;
+        setMessage("背景清理范围过大，已安全取消背景移除并保留原图。", true);
+      }
+      return { rawPattern, processedSource, matcher: result.matcher };
+    };
+
+    try {
+      let result;
+      if (typeof Worker !== "undefined" && options.disableWorker !== true) {
+        try {
+          result = await new Promise((resolve, reject) => {
+            const worker = new Worker("./import-worker.js");
+            task.worker = worker;
+            task.reject = reject;
+            worker.onmessage = (event) => {
+              const message = event.data || {};
+              if (message.taskId !== taskId) return;
+              if (message.type === "progress") onProgress(message.progress || {});
+              if (message.type === "result") {
+                task.reject = null;
+                worker.terminate();
+                task.worker = null;
+                resolve(message.result);
+              }
+              if (message.type === "error") reject(new Error(message.error || "后台导入失败"));
+            };
+            worker.onerror = () => reject(new Error("后台导入失败"));
+            const input = makeImportTaskInput(session, options);
+            worker.postMessage({ type: "process", taskId, input }, [input.data]);
+          });
+        } catch (error) {
+          if (task.cancelled || error.name === "AbortError") throw error;
+          if (task.worker) task.worker.terminate();
+          task.worker = null;
+          task.reject = null;
+        }
+      }
+      if (!result) {
+        const input = makeImportTaskInput(session, options);
+        result = await importProcessing.processTask(input, {
+          onProgress,
+          isCancelled: () => task.cancelled || activeImportTask !== task,
+          yieldControl: () => new Promise((resolve) => window.requestAnimationFrame(resolve))
+        });
+      }
+      setImportTaskUi(true, "cleanup", 98);
+      const output = finish(result);
+      setImportTaskUi(true, "complete", 100);
+      return output;
+    } finally {
+      if (task.worker) task.worker.terminate();
+      if (activeImportTask === task) {
+        activeImportTask = null;
+        window.setTimeout(() => setImportTaskUi(false, "prepare", 0), 120);
+      }
+    }
+  }
+
   function scheduleImportPreview() {
     window.clearTimeout(importPreviewTimer);
     const session = state.importSession;
     if (!session || !importWizard) return;
     const sessionId = session.id;
     const version = session.processingVersion;
-    importPreviewTimer = window.setTimeout(() => {
+    importPreviewTimer = window.setTimeout(async () => {
       if (!isCurrentImportSession(sessionId) || !state.importSession || state.importSession.processingVersion !== version || !importWizard) return;
-      buildImportWizardPattern();
-      renderImportWizardStep();
+      try {
+        await buildImportWizardPattern();
+        renderImportWizardStep();
+      } catch (error) {
+        if (error.name !== "AbortError") setMessage(`导入预览失败：${error.message}`, true);
+      }
     }, 150);
   }
 
@@ -3713,15 +4151,32 @@
     if (els.calibrationModal) els.calibrationModal.classList.add("hidden");
   }
 
-  function buildImportWizardPattern(modeOverride) {
+  async function buildImportWizardPattern(modeOverride) {
     if (!importWizard || !state.importSession) return null;
     const session = state.importSession;
-    const processedSource = getProcessedImportSource(1800) || session.image;
     const sourceWidth = session.image.naturalWidth || session.image.width;
     const sourceHeight = session.image.naturalHeight || session.image.height;
-    const rawPattern = state.importCalibration && state.importCalibration.enabled
-      ? createPatternFromSourceWithCalibration(processedSource, scaleCalibrationForSource(state.importCalibration, session.image, processedSource), session.name, { clean: false })
-      : createPatternFromSource(processedSource, state.beads.width || 48, state.beads.height || 48, session.name, { clean: false });
+    const calibration = state.importCalibration && state.importCalibration.enabled ? state.importCalibration : null;
+    const key = JSON.stringify({
+      version: session.processingVersion || 0,
+      width: state.beads.width || 48,
+      height: state.beads.height || 48,
+      calibration
+    });
+    let rawPattern = session.patternCache && session.patternCache.key === key ? session.patternCache.rawPattern : null;
+    let processedSource = session.patternCache && session.patternCache.key === key ? session.patternCache.processedSource : null;
+    if (!rawPattern) {
+      const result = await runImportPatternTask(session, {
+        targetWidth: state.beads.width || 48,
+        targetHeight: state.beads.height || 48,
+        calibration,
+        maxSide: 1800
+      });
+      rawPattern = result.rawPattern;
+      processedSource = result.processedSource;
+      session.patternCache = { key, rawPattern, processedSource };
+    }
+    if (!importWizard || !isCurrentImportSession(session.id)) return null;
     const mode = ["fidelity", "balanced", "simple"].includes(modeOverride) ? modeOverride : getImportMode();
     const cleanup = els.importCleanupStrengthSelect ? els.importCleanupStrengthSelect.value : "balanced";
     const pattern = applyAdaptiveImportModeToPattern(rawPattern, mode, getEffectiveImportType(session), cleanup);
@@ -3732,6 +4187,7 @@
     importWizard.candidates[mode] = Object.assign({}, pattern, { cells: cloneCells(pattern.cells) });
     importWizard.sourceWidth = sourceWidth;
     importWizard.sourceHeight = sourceHeight;
+    importWizard.processedSource = processedSource;
     return pattern;
   }
 
@@ -3825,11 +4281,11 @@
     };
   }
 
-  function runImportAiAssist() {
+  async function runImportAiAssist() {
     if (!importWizard || !state.importSession || (importAiAssist && importAiAssist.running)) return;
     const sessionId = state.importSession.id;
     const session = state.importSession;
-    const basePattern = importWizard.pattern || buildImportWizardPattern();
+    const basePattern = importWizard.pattern || await buildImportWizardPattern();
     if (!basePattern) return;
     const assist = {
       running: true,
@@ -3946,13 +4402,13 @@
     renderImportWizardStep();
   }
 
-  function applyImportAiRecommendation() {
+  async function applyImportAiRecommendation() {
     if (!importAiAssist || !importAiAssist.recommendation || !state.importSession || !importWizard) return;
     const recommendation = importAiAssist.recommendation;
     state.beads.width = recommendation.width;
     state.beads.height = recommendation.height;
     state.importCalibration = null;
-    buildImportWizardPattern();
+    await buildImportWizardPattern();
     if (importAiAssist.repairedPattern) {
       const locked = getLockedColorSet();
       importWizard.pattern = protectLockedCells(importWizard.pattern, importAiAssist.repairedPattern, locked);
@@ -3999,7 +4455,7 @@
     return isolated;
   }
 
-  function selectImportCandidate(mode) {
+  async function selectImportCandidate(mode) {
     if (!importWizard || !["fidelity", "balanced", "simple"].includes(mode)) return;
     state.beads.importMode = mode;
     syncImportModeControls();
@@ -4008,7 +4464,7 @@
     const cached = importWizard.candidates && importWizard.candidates[mode];
     importWizard.pattern = cached
       ? Object.assign({}, cached, { cells: cloneCells(cached.cells) })
-      : buildImportWizardPattern(mode);
+      : await buildImportWizardPattern(mode);
     renderImportWizardStep();
   }
 
@@ -4024,14 +4480,14 @@
       if (indicator) indicator.classList.toggle("active", step === number);
     });
     if (step === 3 && els.importWizardColorSummary) {
-      const pattern = importWizard.pattern || buildImportWizardPattern();
+      const pattern = importWizard.pattern;
       const colors = pattern ? countPatternColors(pattern) : 0;
       els.importWizardColorSummary.textContent = pattern
         ? `当前图纸 ${pattern.width} x ${pattern.height} 格，${colors} 种色号。轮廓和高光会优先保护。`
         : "等待生成临时图纸。";
     }
     const sourceImage = state.importSession && state.importSession.image;
-    const currentPattern = importWizard.pattern || (step === 1 ? buildImportWizardPattern() : null);
+    const currentPattern = importWizard.pattern;
     drawWizardPreviewCanvas(els.importWizardOriginalCanvas, sourceImage, null);
     drawWizardPreviewCanvas(els.importWizardPatternCanvas, null, currentPattern);
     drawWizardPreviewCanvas(els.importWizardFinalOriginalCanvas, sourceImage, null);
@@ -4096,8 +4552,11 @@
     state.beads.importMode = "balanced";
     renderImportAnalysis();
     syncImportAdjustmentControls();
-    setImportMode("balanced");
+    syncImportModeControls();
     renderImportWizardStep();
+    buildImportWizardPattern("balanced").then(renderImportWizardStep).catch((error) => {
+      if (error.name !== "AbortError") setMessage(`导入预览失败：${error.message}`, true);
+    });
   }
 
   function setImportChoiceView(view) {
@@ -4128,9 +4587,9 @@
     renderCalibrationCanvas();
   }
 
-  function wizardSkipCalibration() {
+  async function wizardSkipCalibration() {
     state.importCalibration = null;
-    buildImportWizardPattern();
+    await buildImportWizardPattern();
     importWizard.step = 3;
     renderImportWizardStep();
   }
@@ -4139,8 +4598,8 @@
     wizardSkipCalibration();
   }
 
-  function wizardOptimizeColors() {
-    const pattern = importWizard && (importWizard.pattern || buildImportWizardPattern());
+  async function wizardOptimizeColors() {
+    const pattern = importWizard && (importWizard.pattern || await buildImportWizardPattern());
     if (!pattern) return;
     const analysis = analyzeLockedColorRoles(pattern);
     const locked = new Set(analysis.codes);
@@ -4171,8 +4630,8 @@
     renderImportWizardStep();
   }
 
-  function wizardKeepColors() {
-    if (!importWizard || !importWizard.pattern) buildImportWizardPattern();
+  async function wizardKeepColors() {
+    if (!importWizard || !importWizard.pattern) await buildImportWizardPattern();
     if (importWizard) importWizard.optimization = null;
     if (importWizard) {
       importWizard.activeCandidate = getImportMode();
@@ -4183,9 +4642,9 @@
     renderImportWizardStep();
   }
 
-  function applyCurrentWizardResult() {
+  async function applyCurrentWizardResult() {
     if (!importWizard) return;
-    if (!importWizard.pattern) buildImportWizardPattern();
+    if (!importWizard.pattern) await buildImportWizardPattern();
     applyWizardImport();
   }
 
@@ -4219,7 +4678,7 @@
       closeCalibrationModal();
       return;
     }
-    const processedSource = getProcessedImportSource(1800);
+    const processedSource = importWizard.processedSource || (session.processedCache && session.processedCache.source) || session.image;
     const recipe = makeImportRecipe(session, importWizard.activeCandidate || getImportMode());
     const hadPattern = Boolean(state.beads.pattern);
     if (hadPattern) pushHistory();
@@ -4253,6 +4712,7 @@
   }
 
   function cancelImportSession() {
+    cancelActiveImportTask({ silent: true });
     if (state.importSession && state.importSession.url) URL.revokeObjectURL(state.importSession.url);
     importSessionSerial += 1;
     if (recalibrationSession) {
@@ -4312,8 +4772,7 @@
     };
   }
 
-  function buildQuickImportPattern(session, targetWidth, targetHeight) {
-    const source = getProcessedImportSource(1800) || session.image;
+  async function buildQuickImportPattern(session, targetWidth, targetHeight) {
     let width = targetWidth;
     let height = targetHeight;
     if (!width || !height) {
@@ -4328,62 +4787,64 @@
         height = clamp(Math.round(width * sourceHeight / Math.max(1, sourceWidth)), bounds.beadSize.min, bounds.beadSize.max);
       }
     }
-    const raw = createPatternFromSource(source, width, height, session.name, { clean: false });
-    return applyAdaptiveImportModeToPattern(raw, "balanced", getEffectiveImportType(session), "balanced");
+    const result = await runImportPatternTask(session, { targetWidth: width, targetHeight: height, maxSide: 1800 });
+    return {
+      pattern: applyAdaptiveImportModeToPattern(result.rawPattern, "balanced", getEffectiveImportType(session), "balanced"),
+      processedSource: result.processedSource
+    };
   }
 
-  function applyQuickImport() {
+  async function applyQuickImport() {
     const session = state.importSession;
     if (!session) return;
-    if (session.mode === "layer") {
-      const pattern = buildQuickImportPattern(session, state.beads.pattern && state.beads.pattern.width, state.beads.pattern && state.beads.pattern.height);
-      importPatternAsLayer(pattern, session.name);
-      URL.revokeObjectURL(session.url);
+    try {
+      const result = await buildQuickImportPattern(session, session.mode === "layer" && state.beads.pattern && state.beads.pattern.width, session.mode === "layer" && state.beads.pattern && state.beads.pattern.height);
+      const pattern = result.pattern;
+      if (session.mode === "layer") {
+        importPatternAsLayer(pattern, session.name);
+        URL.revokeObjectURL(session.url);
+        state.importSession = null;
+        importWizard = null;
+        importAiAssist = null;
+        closeImportChoiceModal();
+        return;
+      }
+      if (!pattern || !pattern.cells || !pattern.cells.length) throw new Error("没有生成有效图纸");
+      if (state.image !== session.image && state.image && state.image.src && state.image.src.startsWith("blob:")) URL.revokeObjectURL(state.image.src);
+      const hadPattern = Boolean(state.beads.pattern);
+      if (hadPattern) pushHistory();
+      state.image = session.image;
+      state.imageName = session.name;
+      state.importCalibration = null;
+      state.beads.importMode = "balanced";
+      state.beads.pattern = pattern;
+      state.beads.width = pattern.width;
+      state.beads.height = pattern.height;
+      state.beads.layers = [];
+      state.beads.activeLayerId = "";
+      state.beads.pixelSignature = "";
+      state.beads.restorationFingerprint = "";
+      updateLockedColorsFromPattern(pattern);
+      state.beads.importRecipe = makeImportRecipe(session, "balanced");
+      state.beads.importProcessedSource = result.processedSource;
+      state.view.zoom = 1;
+      state.view.panX = 0;
+      state.view.panY = 0;
+      if (els.imageStatus) els.imageStatus.textContent = state.imageName;
+      ensureLayers();
+      if (!hadPattern) clearHistory();
+      setMode("beads");
+      state.beads.sourceCompareEnabled = true;
+      setMessage(`已按${importTypeLabel(getEffectiveImportType(session))}的均衡参数生成 ${pattern.width} x ${pattern.height} 图纸。`, false);
+      renderImportSummary();
+      markUnsavedChanges();
       state.importSession = null;
       importWizard = null;
       importAiAssist = null;
       closeImportChoiceModal();
-      return;
+    } catch (error) {
+      if (error.name !== "AbortError") setMessage(`快速导入失败：${error.message}，可重试或进入高级优化。`, true);
     }
-    if (state.image !== session.image && state.image && state.image.src && state.image.src.startsWith("blob:")) {
-      URL.revokeObjectURL(state.image.src);
-    }
-    const pattern = buildQuickImportPattern(session);
-    if (!pattern || !pattern.cells || !pattern.cells.length) {
-      setMessage("快速导入没有生成有效图纸，请进入高级优化检查设置。", true);
-      return;
-    }
-    const hadPattern = Boolean(state.beads.pattern);
-    if (hadPattern) pushHistory();
-    state.image = session.image;
-    state.imageName = session.name;
-    state.importCalibration = null;
-    state.beads.pattern = pattern;
-    state.beads.width = pattern.width;
-    state.beads.height = pattern.height;
-    state.beads.layers = [];
-    state.beads.activeLayerId = "";
-    state.beads.pixelSignature = "";
-    state.beads.restorationFingerprint = "";
-    state.beads.sourceCompareEnabled = false;
-    updateLockedColorsFromPattern(pattern);
-    state.beads.importRecipe = makeImportRecipe(session, "balanced");
-    state.beads.importProcessedSource = getProcessedImportSource(1800);
-    state.view.zoom = 1;
-    state.view.panX = 0;
-    state.view.panY = 0;
-    if (els.imageStatus) els.imageStatus.textContent = state.imageName;
-    ensureLayers();
-    if (!hadPattern) clearHistory();
-    setMode("beads");
-    setMessage(`已按${importTypeLabel(getEffectiveImportType(session))}的均衡参数生成 ${pattern.width} x ${pattern.height} 图纸。`, false);
-    state.beads.sourceCompareEnabled = true;
-    renderImportSummary();
-    markUnsavedChanges();
-    state.importSession = null;
-    importWizard = null;
-    importAiAssist = null;
-    closeImportChoiceModal();
   }
 
   function openCalibrationModal() {
@@ -4543,12 +5004,18 @@
     ctx.restore();
   }
 
-  function completeCalibrationImport() {
+  async function completeCalibrationImport() {
     const session = state.importSession;
     if (!session || !state.importCalibration) return;
-    const processedSource = getProcessedImportSource(1800) || session.image;
-    const scaledCalibration = scaleCalibrationForSource(state.importCalibration, session.image, processedSource);
-    const rawPattern = createPatternFromSourceWithCalibration(processedSource, scaledCalibration, session.name, { clean: false });
+    let result;
+    try {
+      result = await runImportPatternTask(session, { calibration: state.importCalibration, maxSide: 1800 });
+    } catch (error) {
+      if (error.name !== "AbortError") setMessage(`校准导入失败：${error.message}`, true);
+      return;
+    }
+    const processedSource = result.processedSource;
+    const rawPattern = result.rawPattern;
     if (importWizard) {
       importWizard.rawPattern = rawPattern;
       importWizard.pattern = applyAdaptiveImportModeToPattern(rawPattern, getImportMode(), getEffectiveImportType(session), els.importCleanupStrengthSelect && els.importCleanupStrengthSelect.value);
@@ -4773,12 +5240,13 @@
     updateHistoryButtons();
   }
 
-  function makeLayer(name, cells, visible, locked, groupName) {
+  function makeLayer(name, cells, visible, locked, groupName, alphaLocked) {
     return {
       id: makeId(),
       name: name || "图层",
       visible: visible !== false,
       locked: Boolean(locked),
+      alphaLocked: Boolean(alphaLocked),
       groupName: groupName || "",
       cells: cells ? cloneCells(cells) : makeEmptyCells(state.beads.height, state.beads.width)
     };
@@ -4842,6 +5310,13 @@
     return null;
   }
 
+  function canWriteLayerCell(layer, row, col, nextCode) {
+    if (!layer || layer.locked || !layer.cells[row]) return false;
+    if (!layer.alphaLocked) return true;
+    const current = layer.cells[row][col];
+    return Boolean(current) && Boolean(nextCode);
+  }
+
   function syncCompositePattern() {
     const pattern = state.beads.pattern;
     if (!pattern) return;
@@ -4868,6 +5343,7 @@
         name: layer.name,
         visible: layer.visible,
         locked: layer.locked,
+        alphaLocked: Boolean(layer.alphaLocked),
         groupName: layer.groupName || "",
         cells: cloneCells(layer.cells)
       })),
@@ -4888,6 +5364,7 @@
       name: layer.name,
       visible: layer.visible !== false,
       locked: Boolean(layer.locked),
+      alphaLocked: Boolean(layer.alphaLocked),
       groupName: layer.groupName || "",
       cells: cloneCells(layer.cells)
     }));
@@ -4921,6 +5398,7 @@
         <div class="layer-controls">
           <button class="layer-mini" type="button" data-layer-action="visible" title="显示隐藏">${layer.visible ? "眼" : "隐"}</button>
           <button class="layer-mini" type="button" data-layer-action="lock" title="锁定">${layer.locked ? "锁" : "开"}</button>
+          <button class="layer-mini ${layer.alphaLocked ? "alpha-active" : ""}" type="button" data-layer-action="alpha" title="阿尔法锁定：只改已有格，不增删格">α</button>
           <button class="layer-mini" type="button" data-layer-action="select" title="选中">选</button>
         </div>
       `;
@@ -4938,6 +5416,12 @@
       row.querySelector('[data-layer-action="lock"]').addEventListener("click", () => {
         layer.locked = !layer.locked;
         renderLayerList();
+      });
+      row.querySelector('[data-layer-action="alpha"]').addEventListener("click", () => {
+        layer.alphaLocked = !layer.alphaLocked;
+        markUnsavedChanges();
+        renderLayerList();
+        setMessage(layer.alphaLocked ? "已开启阿尔法锁定：仅可修改已有格。" : "已关闭阿尔法锁定。", false);
       });
       row.querySelector('[data-layer-action="select"]').addEventListener("click", () => {
         state.beads.activeLayerId = layer.id;
@@ -4960,10 +5444,10 @@
     });
   }
 
-  function addLayer(name, cells) {
+  function addLayer(name, cells, options = {}) {
     if (!state.beads.pattern) return null;
     ensureLayers();
-    const layer = makeLayer(name || `图层 ${state.beads.layers.length + 1}`, cells, true, false, "");
+    const layer = makeLayer(name || `图层 ${state.beads.layers.length + 1}`, cells, true, false, "", options.alphaLocked);
     state.beads.layers.push(layer);
     state.beads.activeLayerId = layer.id;
     syncCompositePattern();
@@ -4974,7 +5458,7 @@
   function duplicateActiveLayer() {
     const layer = getActiveLayer();
     if (!layer) return null;
-    return addLayer(`${layer.name} 副本`, layer.cells);
+    return addLayer(`${layer.name} 副本`, layer.cells, { alphaLocked: layer.alphaLocked });
   }
 
   function mergeVisibleLayers() {
@@ -5465,9 +5949,11 @@
   }
 
   function paintCell(cell, code) {
+    const layer = getActiveLayer();
     const cells = getEditableCells();
     if (!cell || !state.beads.pattern || !cells) return false;
     if (cell.row < 0 || cell.col < 0 || cell.row >= state.beads.pattern.height || cell.col >= state.beads.pattern.width) return false;
+    if (!canWriteLayerCell(layer, cell.row, cell.col, code)) return false;
     if (cells[cell.row][cell.col] === code) return false;
     cells[cell.row][cell.col] = code;
     syncCompositePattern();
@@ -5480,9 +5966,10 @@
     let changed = 0;
     for (let row = rect.row; row < rect.row + rect.height; row += 1) {
       for (let col = rect.col; col < rect.col + rect.width; col += 1) {
+        const layer = getActiveLayer();
         const cells = getEditableCells();
         if (!cells) return changed;
-        if (cells[row][col] !== code) {
+        if (canWriteLayerCell(layer, row, col, code) && cells[row][col] !== code) {
           cells[row][col] = code;
           changed += 1;
         }
@@ -5534,8 +6021,9 @@
   }
 
   function clearActiveLayerCells() {
+    const layer = getActiveLayer();
     const cells = getEditableCells();
-    if (!state.beads.pattern || !cells) return 0;
+    if (!state.beads.pattern || !cells || (layer && layer.alphaLocked)) return 0;
     let changed = 0;
     for (let row = 0; row < state.beads.pattern.height; row += 1) {
       for (let col = 0; col < state.beads.pattern.width; col += 1) {
@@ -5903,7 +6391,7 @@
           const row = startRow + localRow;
           const col = startCol + localCol;
           if (row < 0 || col < 0 || row >= pattern.height || col >= pattern.width) continue;
-          if (cells[row][col] !== code) {
+          if (canWriteLayerCell(getActiveLayer(), row, col, code) && cells[row][col] !== code) {
             cells[row][col] = code;
             changed += 1;
           }
@@ -5931,7 +6419,7 @@
         const boundary = isShapeBoundary(shapeMask, localRow, localCol);
         if (outlineOnly && !boundary) continue;
         const code = getCuteShapeCode(type, localCol, localRow, width, height, boundary);
-        if (cells[row][col] !== code) {
+        if (canWriteLayerCell(getActiveLayer(), row, col, code) && cells[row][col] !== code) {
           cells[row][col] = code;
           changed += 1;
         }
@@ -5958,8 +6446,10 @@
       seen.add(key);
       if (current.row < 0 || current.col < 0 || current.row >= pattern.height || current.col >= pattern.width) continue;
       if (pattern.cells[current.row][current.col] !== fromCode) continue;
-      cells[current.row][current.col] = code;
-      changed += 1;
+      if (canWriteLayerCell(getActiveLayer(), current.row, current.col, code)) {
+        cells[current.row][current.col] = code;
+        changed += 1;
+      }
       queue.push(
         { row: current.row - 1, col: current.col },
         { row: current.row + 1, col: current.col },
@@ -6111,9 +6601,10 @@
   }
 
   function applyOutlineEdit(mode, width, code) {
+    const layer = getActiveLayer();
     const cells = getEditableCells();
     const pattern = state.beads.pattern;
-    if (!pattern || !cells) return 0;
+    if (!pattern || !cells || (layer && layer.alphaLocked)) return 0;
     const safeWidth = clamp(width, 1, 10);
     const action = mode === "remove" ? "remove" : "add";
     const next = cloneCells(cells);
@@ -6308,7 +6799,7 @@
     let changed = 0;
     state.beads.selectedCells.forEach((cell) => {
       if (cell.row < 0 || cell.col < 0 || cell.row >= pattern.height || cell.col >= pattern.width) return;
-      if (cells[cell.row][cell.col] !== fromCode) return;
+      if (cells[cell.row][cell.col] !== fromCode || !canWriteLayerCell(getActiveLayer(), cell.row, cell.col, toCode)) return;
       cells[cell.row][cell.col] = toCode || null;
       changed += 1;
     });
@@ -6339,9 +6830,10 @@
 
   function applySelectionOutlineEdit(mode, width, code) {
     const pattern = state.beads.pattern;
+    const layer = getActiveLayer();
     const cells = getEditableCells();
     const selected = state.beads.selectedCells || [];
-    if (!pattern || !cells || !selected.length) return 0;
+    if (!pattern || !cells || !selected.length || (layer && layer.alphaLocked)) return 0;
     const selectedKeys = new Set(selected.map((cell) => `${cell.row},${cell.col}`));
     const safeWidth = clamp(width, 1, 10);
     const action = mode === "remove" ? "remove" : "add";
@@ -6690,7 +7182,8 @@
     const pattern = state.beads.pattern;
     const cells = getEditableCells();
     const floating = state.beads.floatingSelection;
-    if (!pattern || !cells || !floating || !floating.cells.length) return 0;
+    const layer = getActiveLayer();
+    if (!pattern || !cells || !floating || !floating.cells.length || (layer && layer.alphaLocked && !floating.copyMode)) return 0;
     pushHistory();
     let changed = 0;
     const nextSelection = [];
@@ -6707,7 +7200,7 @@
       const row = floating.targetRow + cell.row;
       const col = floating.targetCol + cell.col;
       if (row < 0 || col < 0 || row >= pattern.height || col >= pattern.width) return;
-      if (cells[row][col] !== cell.code) {
+      if (canWriteLayerCell(layer, row, col, cell.code) && cells[row][col] !== cell.code) {
         cells[row][col] = cell.code;
         changed += 1;
       }
@@ -6751,7 +7244,7 @@
       const row = targetRow + cell.row;
       const col = targetCol + cell.col;
       if (row < 0 || col < 0 || row >= pattern.height || col >= pattern.width) return;
-      if (cells[row][col] !== cell.code) {
+      if (canWriteLayerCell(getActiveLayer(), row, col, cell.code) && cells[row][col] !== cell.code) {
         cells[row][col] = cell.code;
         changed += 1;
       }
@@ -6776,7 +7269,7 @@
     selected.forEach((cell) => {
       const mirrorCol = maxCol - (cell.col - minCol);
       const code = codes.get(`${cell.row},${mirrorCol}`);
-      if (cells[cell.row][cell.col] !== code) {
+      if (canWriteLayerCell(getActiveLayer(), cell.row, cell.col, code) && cells[cell.row][cell.col] !== code) {
         cells[cell.row][cell.col] = code;
         changed += 1;
       }
@@ -6807,7 +7300,7 @@
       const sourceCol = minCol + relRow;
       if (!selectedKeys.has(`${sourceRow},${sourceCol}`)) return;
       const next = before.get(`${sourceRow},${sourceCol}`);
-      if (cells[cell.row][cell.col] !== next) {
+      if (canWriteLayerCell(getActiveLayer(), cell.row, cell.col, next) && cells[cell.row][cell.col] !== next) {
         cells[cell.row][cell.col] = next;
         changed += 1;
       }
@@ -6838,7 +7331,7 @@
       if (layer.locked) return;
       for (let row = 0; row < layer.cells.length; row += 1) {
         for (let col = 0; col < layer.cells[row].length; col += 1) {
-          if (layer.cells[row][col] === fromCode) {
+          if (layer.cells[row][col] === fromCode && canWriteLayerCell(layer, row, col, toCode)) {
             layer.cells[row][col] = toCode;
             changed += 1;
           }
@@ -10827,6 +11320,7 @@
         name: layer.name,
         visible: layer.visible,
         locked: layer.locked,
+        alphaLocked: Boolean(layer.alphaLocked),
         groupName: layer.groupName || "",
         cells: layer.cells
       })),
@@ -10849,6 +11343,7 @@
         importMode: getImportMode(),
         sourceCompareEnabled: Boolean(state.beads.sourceCompareEnabled),
         sourceCompareOpacity: state.beads.sourceCompareOpacity,
+        buildNavigation: Object.assign({}, state.beads.buildNavigation),
         lockedColorCodes: Array.isArray(state.beads.lockedColorCodes) ? state.beads.lockedColorCodes.slice() : [],
         lockedColorRoles: Object.assign({}, state.beads.lockedColorRoles || {})
       }
@@ -10881,6 +11376,7 @@
         name: layer.name || "图层",
         visible: layer.visible !== false,
         locked: Boolean(layer.locked),
+        alphaLocked: Boolean(layer.alphaLocked),
         groupName: layer.groupName || "",
         cells: Array.isArray(layer.cells) ? layer.cells.map((row) => row.map((code) => code && getPaletteColor(code).code === code ? code : null)) : makeEmptyCells(height, width)
       }));
@@ -10920,6 +11416,10 @@
     state.beads.sourceCompareOpacity = payload.editorSettings && payload.editorSettings.sourceCompareOpacity != null
       ? clamp(payload.editorSettings.sourceCompareOpacity, 0, 85)
       : 38;
+    state.beads.buildNavigation = Object.assign({ currentCode: "", sortMode: "usage", autoAdvance: true, dimOthers: true }, payload.editorSettings && payload.editorSettings.buildNavigation || {});
+    state.beads.buildNavigation.sortMode = state.beads.buildNavigation.sortMode === "code" ? "code" : "usage";
+    state.beads.buildNavigation.autoAdvance = state.beads.buildNavigation.autoAdvance !== false;
+    state.beads.buildNavigation.dimOthers = state.beads.buildNavigation.dimOthers !== false;
     state.buildProgress = payload.buildProgress && typeof payload.buildProgress === "object" ? Object.assign({}, payload.buildProgress) : {};
     state.beads.buildMode = false;
     state.beads.lockedColorCodes = Array.isArray(payload.editorSettings && payload.editorSettings.lockedColorCodes)
@@ -12499,6 +12999,7 @@
     });
     els.homeOpenProjectButton.addEventListener("click", () => els.projectFileInput.click());
     if (els.importChoiceCancelButton) els.importChoiceCancelButton.addEventListener("click", cancelImportSession);
+    if (els.importTaskCancelButton) els.importTaskCancelButton.addEventListener("click", () => cancelActiveImportTask());
     if (els.importQuickButton) els.importQuickButton.addEventListener("click", applyQuickImport);
     if (els.importAdvancedButton) els.importAdvancedButton.addEventListener("click", openAdvancedImportWizard);
     if (els.importWizardUseCurrentButton) els.importWizardUseCurrentButton.addEventListener("click", applyCurrentWizardResult);
@@ -12997,6 +13498,29 @@
       render();
     });
     if (els.clearBuildProgressButton) els.clearBuildProgressButton.addEventListener("click", clearBuildProgress);
+    if (els.buildPreviousColorButton) els.buildPreviousColorButton.addEventListener("click", () => advanceBuildColor(-1));
+    if (els.buildNextColorButton) els.buildNextColorButton.addEventListener("click", () => advanceBuildColor(1));
+    if (els.buildLocateNextButton) els.buildLocateNextButton.addEventListener("click", locateNextBuildCell);
+    if (els.buildSortModeSelect) els.buildSortModeSelect.addEventListener("change", () => {
+      state.beads.buildNavigation.sortMode = els.buildSortModeSelect.value === "code" ? "code" : "usage";
+      renderBuildNavigation();
+      markUnsavedChanges();
+    });
+    if (els.buildDimOthersToggle) els.buildDimOthersToggle.addEventListener("change", () => {
+      state.beads.buildNavigation.dimOthers = els.buildDimOthersToggle.checked;
+      render();
+      markUnsavedChanges();
+    });
+    if (els.buildAutoAdvanceToggle) els.buildAutoAdvanceToggle.addEventListener("change", () => {
+      state.beads.buildNavigation.autoAdvance = els.buildAutoAdvanceToggle.checked;
+      markUnsavedChanges();
+    });
+    if (els.similarColorAnalyzeButton) els.similarColorAnalyzeButton.addEventListener("click", () => analyzeSimilarColors(els.similarColorStrengthSelect && els.similarColorStrengthSelect.value));
+    if (els.similarColorApplyAllButton) els.similarColorApplyAllButton.addEventListener("click", () => applySimilarColorSuggestions());
+    if (els.similarColorList) els.similarColorList.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-similar-index]");
+      if (button) applySimilarColorSuggestions([Number(button.dataset.similarIndex)]);
+    });
     if (els.aiGenerateTopButton) els.aiGenerateTopButton.addEventListener("click", openAiGenerateModal);
     if (els.aiGenerateCloseButton) els.aiGenerateCloseButton.addEventListener("click", closeAiGenerateModal);
     if (els.aiPromptCopyButton) els.aiPromptCopyButton.addEventListener("click", async () => {
@@ -13874,6 +14398,9 @@
       },
       getImportSummaryForTest: () => els.importSummary ? els.importSummary.textContent : "",
       analyzePatternQualityForTest: analyzePatternQuality,
+      analyzeSimilarColorsForTest: analyzeSimilarColors,
+      applySimilarColorSuggestionsForTest: applySimilarColorSuggestions,
+      getSimilarColorAnalysisForTest: () => similarColorAnalysis && JSON.parse(JSON.stringify(similarColorAnalysis)),
       getInventoryForTest: () => Object.assign({}, state.inventory),
       setInventoryForTest: (inventory) => {
         state.inventory = inventory && typeof inventory === "object" ? Object.assign({}, inventory) : {};
@@ -13883,6 +14410,10 @@
       toggleBuildCellForTest: toggleBuildCell,
       clearBuildProgressForTest: clearBuildProgress,
       getBuildProgressForTest: () => Object.assign({}, state.buildProgress),
+      getBuildColorOrderForTest: getBuildColorOrder,
+      getBuildColorStatsForTest: getBuildColorStats,
+      advanceBuildColorForTest: advanceBuildColor,
+      locateNextBuildCellForTest: locateNextBuildCell,
       buildAiGenerationRequestForTest: buildAiGenerationRequest,
       applyAiImageDataUrlForTest: applyAiImageDataUrl,
       setProjectStorageFailureForTest: (enabled) => {
@@ -14058,6 +14589,12 @@
       cropCanvasToSelection,
       scaleCanvasByFactor,
       getLayers: () => state.beads.layers,
+      setActiveLayerAlphaLockForTest: (enabled) => {
+        const layer = getActiveLayer();
+        if (!layer) return false;
+        layer.alphaLocked = Boolean(enabled);
+        return layer.alphaLocked;
+      },
       makeBeadExportCanvas,
       makeRegionPreviewCanvas,
       makeRegionCanvas,

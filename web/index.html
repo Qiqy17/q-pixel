@@ -469,6 +469,17 @@
               <input id="buildModeToggle" type="checkbox">
             </label>
             <div class="build-progress" id="buildProgress">制作进度：0 / 0</div>
+            <div class="build-navigation hidden" id="buildNavigationPanel">
+              <div class="build-current-color"><span id="buildCurrentSwatch"></span><strong id="buildCurrentCode">--</strong><em id="buildCurrentStats">请选择色号</em></div>
+              <div class="build-navigation-actions">
+                <button class="text-button secondary" id="buildPreviousColorButton" type="button">上一色</button>
+                <button class="text-button" id="buildLocateNextButton" type="button">定位下一处</button>
+                <button class="text-button secondary" id="buildNextColorButton" type="button">下一色</button>
+              </div>
+              <label class="compact-select-row">排序<select id="buildSortModeSelect"><option value="usage">用量从多到少</option><option value="code">按色号</option></select></label>
+              <label class="check-line"><input id="buildDimOthersToggle" type="checkbox" checked><span>突出当前色</span></label>
+              <label class="check-line"><input id="buildAutoAdvanceToggle" type="checkbox" checked><span>完成后自动下一色</span></label>
+            </div>
             <button class="text-button secondary full-width" id="clearBuildProgressButton" type="button">清除制作进度</button>
           </div>
 
@@ -492,6 +503,12 @@
               <button class="text-button" id="restoreDetailButton" type="button">强细节</button>
             </div>
             <div class="locked-color-summary" id="lockedColorSummary">未识别锁定色</div>
+            <div class="similar-color-tools">
+              <div class="edit-row"><span>相近色合并</span><select id="similarColorStrengthSelect"><option value="conservative">保守</option><option value="balanced" selected>均衡</option><option value="strong">强力</option></select></div>
+              <div class="split-actions compact-actions"><button class="text-button secondary" id="similarColorAnalyzeButton" type="button">分析相近色</button><button class="text-button" id="similarColorApplyAllButton" type="button" disabled>全部合并</button></div>
+              <div class="similar-color-summary" id="similarColorSummary">分析后显示色差、涉及豆数和预计变化。</div>
+              <div class="similar-color-list" id="similarColorList"></div>
+            </div>
           </div>
 
           <div class="panel-card">
@@ -1107,6 +1124,11 @@
           <p id="importChoiceFileName">选择导入方式</p>
         </div>
       </div>
+      <div id="importTaskPanel" class="import-task-panel hidden" role="status" aria-live="polite">
+        <div><strong id="importTaskStatus">准备导入…</strong><span id="importTaskPercent">0%</span></div>
+        <progress id="importTaskProgress" max="100" value="0"></progress>
+        <button id="importTaskCancelButton" class="text-button secondary" type="button">取消导入</button>
+      </div>
       <div id="importEntryPanel" class="import-entry-panel">
         <div class="import-entry-preview"><canvas id="importEntryPreviewCanvas" width="720" height="380" aria-label="待导入图片预览"></canvas></div>
         <div class="import-analysis-card" id="importEntryAnalysis" role="status">正在本机分析图片类型…</div>
@@ -1367,6 +1389,7 @@
   <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden>
   <input id="projectFileInput" type="file" accept=".qpx,application/json" hidden>
   <script src="./import-engine.js"></script>
+  <script src="./import-processing.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>

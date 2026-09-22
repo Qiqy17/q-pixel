@@ -100,6 +100,7 @@
     <div id="lockedColorSummary"></div>
   </div>
   <script src="./import-engine.js"></script>
+  <script src="./import-processing.js"></script>
   <script src="./app.js"></script>
   <script>
     async function blobToDataUrl(blob) {
@@ -381,6 +382,24 @@
           throw new Error("canvas expand failed");
         }
         if (window.QPixelTest.mirrorFullCanvas() < 0) throw new Error("full canvas mirror failed");
+        const alphaPattern = window.QPixelTest.getActivePattern();
+        let filledCell = null;
+        let emptyCell = null;
+        for (let row = 0; row < alphaPattern.height; row += 1) {
+          for (let col = 0; col < alphaPattern.width; col += 1) {
+            if (alphaPattern.cells[row][col] && !filledCell) filledCell = { row, col };
+            if (!alphaPattern.cells[row][col] && !emptyCell) emptyCell = { row, col };
+          }
+        }
+        if (!filledCell || !emptyCell) throw new Error("alpha lock fixture missing cells");
+        window.QPixelTest.setActiveLayerAlphaLockForTest(true);
+        const alphaBefore = alphaPattern.cells[filledCell.row][filledCell.col];
+        const alphaTarget = alphaBefore === "A1" ? "A2" : "A1";
+        if (window.QPixelTest.paintBrushCell(filledCell, alphaTarget, 1) !== 1) throw new Error("alpha lock should recolor filled cell");
+        if (window.QPixelTest.paintBrushCell(filledCell, null, 1) !== 0) throw new Error("alpha lock should prevent erase");
+        if (window.QPixelTest.paintBrushCell(emptyCell, "A1", 1) !== 0) throw new Error("alpha lock should prevent painting transparent cell");
+        if (window.QPixelTest.clearActiveLayerCells() !== 0) throw new Error("alpha lock should prevent clearing layer");
+        window.QPixelTest.setActiveLayerAlphaLockForTest(false);
         const clearedLayerCells = window.QPixelTest.clearActiveLayerCells();
         if (clearedLayerCells <= 0) throw new Error("clear active layer failed");
         window.QPixelTest.paintBrushCell({ row: 2, col: 2 }, "A1", 1);
@@ -390,7 +409,7 @@
         }
         const editedPattern = window.QPixelTest.getActivePattern();
         const payload = window.QPixelTest.makeProjectPayload();
-        if (!payload || payload.pattern.width !== editedPattern.width || payload.pattern.height !== editedPattern.height || payload.title !== "测试源文件" || !payload.editorSettings || !payload.layers) {
+        if (!payload || payload.pattern.width !== editedPattern.width || payload.pattern.height !== editedPattern.height || payload.title !== "测试源文件" || !payload.editorSettings || !payload.layers || !("alphaLocked" in payload.layers[0]) || !payload.editorSettings.buildNavigation) {
           throw new Error("project payload failed");
         }
         window.QPixelTest.setProjects([{ id: payload.id, title: payload.title, savedAt: payload.savedAt, width: payload.pattern.width, height: payload.pattern.height, payload }]);
@@ -639,6 +658,13 @@
         if (!window.QPixelTest.calculateUsage(window.QPixelTest.getActivePattern()).some((item) => item.code === "A1")) {
           throw new Error("locked color was removed during optimization");
         }
+        const similarAnalysis = window.QPixelTest.analyzeSimilarColorsForTest("strong");
+        if (!similarAnalysis || !similarAnalysis.suggestions.length || similarAnalysis.suggestions.some((item) => item.from === "A1")) {
+          throw new Error("similar color analysis failed or replaced locked color");
+        }
+        const similarChanged = window.QPixelTest.applySimilarColorSuggestionsForTest([0]);
+        if (similarChanged <= 0) throw new Error("similar color merge failed");
+        window.QPixelTest.undoEdit();
         const strictPattern = {
           width: 26,
           height: 1,
@@ -653,6 +679,13 @@
         if (window.QPixelTest.countPatternColors(window.QPixelTest.getActivePattern()) !== beforeColorCount) {
           throw new Error("color optimization undo failed");
         }
+
+        const buildPattern = window.QPixelTest.getActivePattern();
+        const buildCode = buildPattern.cells[0][0];
+        if (!window.QPixelTest.toggleBuildCellForTest({ row: 0, col: 0 })) throw new Error("build progress toggle failed");
+        const buildStats = window.QPixelTest.getBuildColorStatsForTest(buildCode);
+        if (!buildStats.total || buildStats.done !== 1 || !window.QPixelTest.getBuildColorOrderForTest().length) throw new Error("build color navigation failed");
+        window.QPixelTest.clearBuildProgressForTest();
 
         const emptyCells = Array.from({ length: 16 }, () => Array.from({ length: 16 }, () => null));
         const filledCells = emptyCells.map((row, rowIndex) => row.map((value, colIndex) => rowIndex === colIndex ? "A1" : value));

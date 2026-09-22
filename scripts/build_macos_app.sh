@@ -3,8 +3,8 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 OUTPUT_PATH="${1:-$REPO_DIR/dist/Q像素.app}"
-VERSION="${QPIXEL_VERSION:-1.2.0}"
-BUILD_NUMBER="${QPIXEL_BUILD_NUMBER:-3}"
+VERSION="${QPIXEL_VERSION:-1.3.0}"
+BUILD_NUMBER="${QPIXEL_BUILD_NUMBER:-4}"
 SIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 
 case "$OUTPUT_PATH" in
@@ -30,7 +30,7 @@ cp "$REPO_DIR/macos/Info.plist" "$CONTENTS_DIR/Info.plist"
 
 swiftc "$REPO_DIR/macos/QPixel.swift" -o "$MACOS_DIR/QPixel" -framework AppKit -framework WebKit
 
-for file in index.html styles.css import-engine.js app.js manifest.webmanifest icon.svg offline.html sw.js; do
+for file in index.html styles.css import-engine.js import-processing.js import-worker.js app.js manifest.webmanifest icon.svg offline.html sw.js; do
   cp "$REPO_DIR/web/$file" "$RESOURCES_DIR/$file"
 done
 mkdir -p "$RESOURCES_DIR/assets"

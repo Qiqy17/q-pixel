@@ -16,6 +16,8 @@ Q像素是一个本地运行的像素画和拼豆图纸编辑器，包含网页�
 - 高级导入可调整曝光、对比度、饱和度、抖动和清理强度，并提供仅删除边缘连通背景的可撤回背景清理。
 - 最后一步可直接比较高保真、均衡、易制作三个独立候选方案，并查看色号、豆子数量和孤立格统计。
 - 快速导入可跳过全部向导直接进入编辑；所有处理从不可变原图重新计算，并把主要参数保存在设计文件中。
+- 大图导入改为可取消的后台任务，显示处理进度，并使用量化颜色缓存，避免导入时卡住编辑界面。
+- 新增图层阿尔法锁定、相近色智能合并、按色号制作导航和“定位下一处”，减少修图与实体拼豆耗时。
 - 图片导入后会根据原图边界自动估算更贴合的像素精度，减少手动试宽高的次数。
 - 像素画导入会优先使用单元格中心主色，并自动清理白底杂色、孤立杂点和边缘抗锯齿色，减少不必要的相近色号。
 - 增加“原图还原”按钮，使用原始图片按当前网格重新采样，找回线条、高光和小色块；重复点击不会继续改变图纸，可用撤销恢复。
@@ -96,7 +98,9 @@ scripts/qpixel_ipad_https_server.py
 ```sh
 node --check web/app.js
 node --check web/import-engine.js
+node --check web/import-processing.js
 node tests/import-engine.test.js
+node tests/import-processing.test.js
 python3 -m py_compile scripts/qpixel_ipad_https_server.py scripts/qpixel_openai.py
 swiftc macos/QPixel.swift -o /tmp/QPixel-test-build -framework AppKit -framework WebKit
 ```

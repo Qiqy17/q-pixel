@@ -242,7 +242,7 @@
     };
   }
 
-  function processImageData(data, width, height, settings) {
+  function createImageProcessor(data, width, height, settings) {
     if (!data || !width || !height || data.length < width * height * 4) throw new Error("图像处理数据无效");
     const options = Object.assign(defaultSettings(settings && settings.type), settings || {});
     const source = new Uint8ClampedArray(data);
@@ -254,7 +254,10 @@
     const bayer = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
     const ditherStrength = options.dither === "on" ? 12 : options.dither === "auto" && options.type === "photo" ? 5 : 0;
 
-    for (let y = 0; y < height; y += 1) {
+    const processRows = (startRow, endRow) => {
+      const start = clamp(Math.floor(startRow), 0, height);
+      const end = clamp(Math.ceil(endRow), start, height);
+      for (let y = start; y < end; y += 1) {
       for (let x = 0; x < width; x += 1) {
         const offset = (y * width + x) * 4;
         let r = source[offset];
@@ -295,19 +298,29 @@
         output[offset + 2] = clamp(Math.round(b), 0, 255);
         output[offset + 3] = source[offset + 3];
       }
-    }
-
-    let background = { data: output, removedRatio: 0, rejected: false };
-    if (options.removeBackground) background = removeConnectedBackground(output, width, height, options.backgroundTolerance);
-    return {
-      version: VERSION,
-      width,
-      height,
-      data: background.data,
-      removedRatio: background.removedRatio,
-      backgroundRejected: background.rejected,
-      settings: options
+      }
     };
+
+    const finish = () => {
+      let background = { data: output, removedRatio: 0, rejected: false };
+      if (options.removeBackground) background = removeConnectedBackground(output, width, height, options.backgroundTolerance);
+      return {
+        version: VERSION,
+        width,
+        height,
+        data: background.data,
+        removedRatio: background.removedRatio,
+        backgroundRejected: background.rejected,
+        settings: options
+      };
+    };
+    return { width, height, options, processRows, finish };
+  }
+
+  function processImageData(data, width, height, settings) {
+    const processor = createImageProcessor(data, width, height, settings);
+    processor.processRows(0, height);
+    return processor.finish();
   }
 
   function sourceSize(source) {
@@ -420,6 +433,7 @@
     TYPE_LABELS,
     defaultSettings,
     analyzeImageData,
+    createImageProcessor,
     processImageData,
     removeConnectedBackground,
     analyzeSource,

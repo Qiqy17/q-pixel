@@ -14,6 +14,8 @@ Q Pixel is a local pixel-art and bead-pattern editor. It includes the web app, t
 - Local adaptive import classifies pixel art, illustration / AI art, or photos and applies separate safe defaults without uploading the source image.
 - Advanced import provides exposure, contrast, saturation, dithering, cleanup strength, edge-connected background removal, and side-by-side candidate statistics.
 - Quick import skips the optional wizard, while major import settings are stored in the design file for reproducibility.
+- Large imports run in a cancellable background worker with progress feedback and a quantized color cache, keeping the editor responsive.
+- Alpha lock, similar-color smart merge, and by-color build navigation speed up cleanup and physical bead assembly.
 - Service worker cache refresh so tablets and browsers update to the same app version.
 
 ## Project Layout
@@ -63,7 +65,9 @@ Syntax and service checks:
 ```sh
 node --check web/app.js
 node --check web/import-engine.js
+node --check web/import-processing.js
 node tests/import-engine.test.js
+node tests/import-processing.test.js
 python3 -m py_compile scripts/qpixel_ipad_https_server.py scripts/qpixel_openai.py
 swiftc macos/QPixel.swift -o /tmp/QPixel-test-build -framework AppKit -framework WebKit
 ```

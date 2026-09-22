@@ -4,17 +4,22 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 APP_DIR="${1:-$REPO_DIR/dist/Q像素.app}"
 RESOURCES_DIR="$APP_DIR/Contents/Resources"
+VERIFY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/qpixel-verify.XXXXXX")"
+trap 'rm -rf "$VERIFY_DIR"' EXIT
+VERIFY_APP="$VERIFY_DIR/Q像素.app"
 
 test -d "$APP_DIR"
 plutil -lint "$APP_DIR/Contents/Info.plist" >/dev/null
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_DIR/Contents/Info.plist")" = "local.qpixel.app"
-codesign --verify --deep --strict --verbose=2 "$APP_DIR"
 python3 -c 'import ast, pathlib, sys; [ast.parse(pathlib.Path(path).read_text(encoding="utf-8"), filename=path) for path in sys.argv[1:]]' "$RESOURCES_DIR/qpixel_ipad_https_server.py" "$RESOURCES_DIR/qpixel_openai.py"
 node --check "$RESOURCES_DIR/app.js"
 node --check "$RESOURCES_DIR/import-engine.js"
+node --check "$RESOURCES_DIR/import-processing.js"
+node --check "$RESOURCES_DIR/import-worker.js"
 node "$REPO_DIR/tests/import-engine.test.js"
+node "$REPO_DIR/tests/import-processing.test.js"
 
-for file in index.html styles.css import-engine.js app.js manifest.webmanifest icon.svg offline.html sw.js qpixel_ipad_https_server.py qpixel_openai.py OPENAI_SETUP.md; do
+for file in index.html styles.css import-engine.js import-processing.js import-worker.js app.js manifest.webmanifest icon.svg offline.html sw.js qpixel_ipad_https_server.py qpixel_openai.py OPENAI_SETUP.md; do
   case "$file" in
     qpixel_*.py) source_file="$REPO_DIR/scripts/$file" ;;
     OPENAI_SETUP.md) source_file="$REPO_DIR/docs/$file" ;;
@@ -37,5 +42,10 @@ fi
   cd "$RESOURCES_DIR"
   shasum -a 256 -c release-manifest.sha256 >/dev/null
 )
-codesign --verify --deep --strict --verbose=2 "$APP_DIR"
+# Desktop/iCloud providers may reattach Finder metadata after installation.
+# Verify an extension-attribute-free copy so provider metadata cannot create a
+# false signature failure while the original resource manifest is still checked.
+ditto --noextattr --noqtn "$APP_DIR" "$VERIFY_APP"
+xattr -cr "$VERIFY_APP"
+codesign --verify --deep --strict --verbose=2 "$VERIFY_APP"
 echo "发布包校验通过：$APP_DIR"

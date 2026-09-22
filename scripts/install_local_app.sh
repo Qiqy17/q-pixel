@@ -15,6 +15,17 @@ STAGED_APP="$TEMP_DIR/Q像素.app"
 
 mkdir -p "$BACKUP_ROOT" "$HOME/Library/LaunchAgents"
 STAMP="$(date +%Y%m%d-%H%M%S)"
+if pgrep -f "$TARGET_APP/Contents/MacOS/QPixel" >/dev/null 2>&1; then
+  osascript -e 'tell application id "local.qpixel.app" to quit' >/dev/null 2>&1 || true
+  for _ in {1..30}; do
+    if ! pgrep -f "$TARGET_APP/Contents/MacOS/QPixel" >/dev/null 2>&1; then break; fi
+    sleep 0.1
+  done
+  if pgrep -f "$TARGET_APP/Contents/MacOS/QPixel" >/dev/null 2>&1; then
+    echo "Q像素仍在运行；为保护未保存内容，已停止安装。请退出 App 后重试。" >&2
+    exit 5
+  fi
+fi
 if [ -d "$TARGET_APP" ]; then
   BACKUP_APP="$BACKUP_ROOT/Q像素-$STAMP.app"
   mv "$TARGET_APP" "$BACKUP_APP"
