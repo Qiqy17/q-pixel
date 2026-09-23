@@ -1,4 +1,4 @@
-const CACHE_NAME = "q-pixel-v20260923-visual-9";
+const CACHE_NAME = "q-pixel-v20260923-logo-8";
 const APP_SHELL = [
   "./",
   "./index.html",

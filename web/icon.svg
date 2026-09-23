@@ -1,26 +1,37 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="104" fill="#111827"/>
-  <g fill="#f8fafc">
-    <rect x="126" y="104" width="30" height="30" rx="3"/>
-    <rect x="172" y="104" width="30" height="30" rx="3"/>
-    <rect x="218" y="104" width="30" height="30" rx="3"/>
-    <rect x="264" y="104" width="30" height="30" rx="3"/>
-    <rect x="310" y="104" width="30" height="30" rx="3"/>
-    <rect x="126" y="150" width="30" height="30" rx="3"/>
-    <rect x="310" y="150" width="30" height="30" rx="3"/>
-    <rect x="126" y="196" width="30" height="30" rx="3"/>
-    <rect x="172" y="196" width="30" height="30" rx="3"/>
-    <rect x="218" y="196" width="30" height="30" rx="3"/>
-    <rect x="264" y="196" width="30" height="30" rx="3"/>
-    <rect x="126" y="242" width="30" height="30" rx="3"/>
-    <rect x="264" y="242" width="30" height="30" rx="3"/>
-    <rect x="126" y="288" width="30" height="30" rx="3"/>
-    <rect x="264" y="288" width="30" height="30" rx="3"/>
-    <rect x="310" y="288" width="30" height="30" rx="3"/>
-    <rect x="356" y="288" width="30" height="30" rx="3"/>
-    <rect x="126" y="334" width="30" height="30" rx="3"/>
-    <rect x="172" y="334" width="30" height="30" rx="3"/>
-    <rect x="218" y="334" width="30" height="30" rx="3"/>
+  <!-- Q像素 LOGO · 方案08 渐隐Q (Fade Pixels)
+       几何系统：8×8 网格(格46)，环 = {d | 118.6=R/φ ≤ d ≤ 192=R}
+       尺寸衰减 s=(1/φ)^((行+列)/6)，下限0.45；对角尾格满尺寸，收笔金格 -->
+  <rect width="512" height="512" rx="104" fill="#fffefa"/>
+  <g fill="#168879">
+    <!-- 对角尾格 NW -->
+    <rect x="73.9" y="73.9" width="42.3" height="42.3" rx="7.6"/>
+    <!-- 环 · 渐隐格（左上密 → 右下疏） -->
+    <rect x="168.9" y="76.9" width="36.1" height="36.1" rx="6.5"/>
+    <rect x="216.3" y="78.3" width="33.3" height="33.3" rx="6"/>
+    <rect x="263.6" y="79.6" width="30.7" height="30.7" rx="5.5"/>
+    <rect x="310.8" y="80.8" width="28.3" height="28.3" rx="5.1"/>
+    <rect x="170.3" y="124.3" width="33.3" height="33.3" rx="6"/>
+    <rect x="311.9" y="127.9" width="26.1" height="26.1" rx="4.7"/>
+    <rect x="76.9" y="168.9" width="36.1" height="36.1" rx="6.5"/>
+    <rect x="124.3" y="170.3" width="33.3" height="33.3" rx="6"/>
+    <rect x="359.9" y="175.9" width="22.2" height="22.2" rx="4"/>
+    <rect x="406.7" y="176.7" width="20.5" height="20.5" rx="3.7"/>
+    <rect x="78.3" y="216.3" width="33.3" height="33.3" rx="6"/>
+    <rect x="407.5" y="223.5" width="19" height="19" rx="3.4"/>
+    <rect x="79.6" y="263.6" width="30.7" height="30.7" rx="5.5"/>
+    <rect x="407.5" y="269.5" width="19" height="19" rx="3.4"/>
+    <rect x="80.8" y="310.8" width="28.3" height="28.3" rx="5.1"/>
+    <rect x="127.9" y="311.9" width="26.1" height="26.1" rx="4.7"/>
+    <rect x="361.5" y="315.5" width="19" height="19" rx="3.4"/>
+    <rect x="407.5" y="315.5" width="19" height="19" rx="3.4"/>
+    <rect x="175.9" y="359.9" width="22.2" height="22.2" rx="4"/>
+    <rect x="315.5" y="361.5" width="19" height="19" rx="3.4"/>
+    <rect x="176.7" y="406.7" width="20.5" height="20.5" rx="3.7"/>
+    <rect x="223.5" y="407.5" width="19" height="19" rx="3.4"/>
+    <rect x="269.5" y="407.5" width="19" height="19" rx="3.4"/>
+    <rect x="315.5" y="407.5" width="19" height="19" rx="3.4"/>
   </g>
-  <rect x="356" y="334" width="30" height="30" rx="3" fill="#4f83ee"/>
+  <!-- 收笔金格 SE -->
+  <rect x="395.9" y="395.9" width="42.3" height="42.3" rx="7.6" fill="#e8c985"/>
 </svg>
