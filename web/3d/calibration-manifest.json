@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "assetSchema": "mard-5mm-calibration-v1",
+  "status": "uncalibrated",
+  "beadSystem": {
+    "brand": "MARD",
+    "series": "5mm 标准拼豆",
+    "diameterMm": 5,
+    "gridPitchMm": 5
+  },
+  "profiles": [
+    { "id": "raw", "requiresCalibration": ["height", "hole", "roughness"], "currentSource": "generic-model" },
+    { "id": "light", "requiresCalibration": ["height", "hole", "spread", "bridge", "roughness"], "currentSource": "generic-model" },
+    { "id": "standard", "requiresCalibration": ["height", "hole", "spread", "bridge", "roughness"], "currentSource": "generic-model" },
+    { "id": "flat", "requiresCalibration": ["height", "hole", "spread", "bridge", "roughness"], "currentSource": "generic-model" },
+    { "id": "back", "requiresCalibration": ["height", "hole", "spread", "bridge", "roughness", "backSurface"], "currentSource": "generic-model" },
+    { "id": "towel", "requiresCalibration": ["height", "hole", "spread", "bridge", "roughness", "fabricTexture"], "currentSource": "generic-model" },
+    { "id": "bath", "requiresCalibration": ["height", "hole", "spread", "bridge", "roughness", "fabricTexture"], "currentSource": "generic-model" },
+    { "id": "waffle", "requiresCalibration": ["height", "hole", "spread", "bridge", "roughness", "fabricTexture", "wafflePattern"], "currentSource": "generic-model" },
+    { "id": "glitter", "requiresCalibration": ["height", "hole", "spread", "bridge", "roughness", "clearcoat", "glitterDensity"], "currentSource": "generic-model" },
+    { "id": "laser", "requiresCalibration": ["height", "hole", "spread", "bridge", "roughness", "iridescence", "iridescenceIOR"], "currentSource": "generic-model" }
+  ],
+  "colorCalibration": {
+    "model": "sRGB 未校正",
+    "requiredPerColor": ["measuredHex", "deltaEToNominal", "captureCondition"],
+    "captureCondition": {
+      "lighting": "D65 标准光源或正午散射日光",
+      "grayCard": "拍摄前先拍标准灰卡校准白平衡",
+      "exposureLock": "同一色卡所有颜色一次拍摄，锁定曝光",
+      "background": "中性灰背景，避免反光"
+    },
+    "progress": { "calibratedColors": 0, "totalColors": 221 }
+  },
+  "geometryCalibration": {
+    "requiredMeasurements": [
+      { "key": "height", "unit": "mm", "tool": "游标卡尺，测量熨烫后豆体中心厚度", "samples": "每种烫法 ≥ 20 颗取中位数" },
+      { "key": "hole", "unit": "比例", "tool": "俯拍照片 + 灰度阈值测孔径占比", "samples": "每种烫法 ≥ 10 颗" },
+      { "key": "spread", "unit": "mm", "tool": "对比烫前烫后单颗间距差值", "samples": "每种烫法 ≥ 5 组" },
+      { "key": "bridge", "unit": "比例", "tool": "侧拍照片量取相邻豆连接高度/豆高", "samples": "每种烫法 ≥ 5 组" }
+    ],
+    "surfaceCalibration": {
+      "roughness": "光泽度仪或与标准粗糙度样块对比",
+      "fabricTexture": "毛巾/澡巾/华夫格需俯拍纹理法线参考图",
+      "note": "纹理资产命名：textures/{profileId}_normal.jpg 与 {profileId}_roughness.jpg"
+    }
+  },
+  "captureWorkflow": [
+    "1. 同一底板布 10×10 豆阵，分别按十种烫法处理出 10 块样片",
+    "2. 每块样片正拍（俯视 90°）+ 侧拍（45°）各一张，D65 光源锁定白平衡与曝光",
+    "3. 用游标卡尺测豆高、间距；照片测孔径占比与连接桥",
+    "4. 颜色校准：同光源下拍 221 色豆单颗排列，灰卡开帧",
+    "5. 按 measurements/{profileId}.json 结构填写数据，放入 web/3d/calibration/",
+    "6. 运行 npm run build 重打包，UI 水印自动消失（manifest status 变为 calibrated）"
+  ],
+  "notes": [
+    "当前 3D 预览使用通用参数化模型，形状趋势正确但未按实物标定，界面已带“未标定”水印如实标注。",
+    "标定数据只改 JSON 与纹理资产，不改动渲染代码；标定完成后 UI 自动切换状态。"
+  ]
+}
