@@ -81,4 +81,79 @@ assert.equal(typeof workbench.create, "function");
 const workerSource = fs.readFileSync(path.join(__dirname, "../web/pattern-rebuild/rebuild-worker.js"), "utf8");
 assert.match(workerSource, /message\.type === "cancel"/);
 assert.match(workerSource, /type: "result"/);
+
+// 倾斜扫描：拍照图纸自带 2.4 度倾斜，自动旋转估计应恢复网格。
+const skewed = engine.rotateImage({ data: image.data }, image.width, image.height, 2.4);
+const rotationEstimate = engine.estimateRotation({ data: skewed.data }, skewed.width, skewed.height);
+assert.ok(Math.abs(rotationEstimate.rotation + 2.4) <= .8, `expected ≈ -2.4, got ${rotationEstimate.rotation}`);
+const autoRotated = engine.analyze({ data: skewed.data }, skewed.width, skewed.height, { autoRotate: true, minPeriod: 6, maxPeriod: 10 });
+assert.equal(autoRotated.calibration.rotation, rotationEstimate.rotation);
+assert.ok(autoRotated.grid.cellWidth === 8 || autoRotated.grid.cellWidth === 9);
+assert.equal(autoRotated.grid.columns, 10);
+
+// 平直图纸：自动旋转必须吸附回 0，避免破坏正图。
+assert.equal(engine.estimateRotation({ data: image.data }, image.width, image.height).rotation, 0);
+assert.equal(engine.analyze({ data: image.data }, image.width, image.height, { minPeriod: 6, maxPeriod: 10 }).grid.cellWidth, 8);
+
+// 压缩噪声：8×8 块与格线错位产生块状偏色，叠加少量压缩振铃离群像素拉高方差。
+const blocky = new Uint8ClampedArray(image.data);
+for (let by = 4; by < image.height; by += 8) for (let bx = 4; bx < image.width; bx += 8) {
+  const offset = ((bx * 3 + by * 7) % 11) - 5;
+  for (let y = by; y < Math.min(by + 8, image.height); y += 1) for (let x = bx; x < Math.min(bx + 8, image.width); x += 1) {
+    if (x % 8 === 0 || y % 8 === 0) continue;
+    const i = (y * image.width + x) * 4;
+    blocky[i] += offset; blocky[i + 1] += offset; blocky[i + 2] += offset;
+  }
+}
+for (let row = 0; row < 8; row += 1) for (let col = 0; col < 10; col += 1) {
+  [[1, 2], [4, 5], [6, 3]].forEach(([dx, dy]) => {
+    const x = col * 8 + dx, y = row * 8 + dy;
+    if (x >= image.width || y >= image.height || x % 8 === 0 || y % 8 === 0) return;
+    const i = (y * image.width + x) * 4;
+    blocky[i] += 180; blocky[i + 1] += 180; blocky[i + 2] += 180;
+  });
+}
+const compressed = engine.analyze({ data: blocky }, image.width, image.height, { cellWidth: 8, cellHeight: 8, columns: 10, rows: 8, colorTolerance: 14 });
+assert.ok(compressed.confidence > .8, `compression confidence ${compressed.confidence}`);
+assert.ok(compressed.clusters.length <= 2, `compression clusters ${compressed.clusters.length}`);
+assert.ok(compressed.cells.flat().every((cell) => cell.reason === "uniform"));
+assert.ok(compressed.cells.flat().some((cell) => cell.noiseSuppressed));
+
+// 透明背景图纸：背景 alpha 为 0，来源分类应识别截图，采样不受影响。
+const transparentPattern = fixture(6, 5, 10);
+for (let y = 0; y < transparentPattern.height; y += 1) for (let x = 0; x < transparentPattern.width; x += 1) {
+  const i = (y * transparentPattern.width + x) * 4;
+  if (x < 10 || y < 10 || x >= transparentPattern.width - 10 || y >= transparentPattern.height - 10) transparentPattern.data[i + 3] = 0;
+}
+const transparentResult = engine.analyze({ data: transparentPattern.data }, transparentPattern.width, transparentPattern.height, { minPeriod: 8, maxPeriod: 12 });
+assert.equal(transparentResult.sourceType.type, "screenshot");
+assert.equal(transparentResult.grid.cellWidth, 10);
+assert.ok(transparentResult.cells.flat().some((cell) => cell.reason === "transparent"));
+
+// 底板缝：第 5 列格线加粗为 3px 深色，应被识别为底板边界。
+const boarded = new Uint8ClampedArray(image.data);
+for (let y = 0; y < image.height; y += 1) for (let w = -1; w <= 1; w += 1) {
+  const x = 40 + w;
+  if (x < 0 || x >= image.width) continue;
+  const i = (y * image.width + x) * 4;
+  boarded[i] = 10; boarded[i + 1] = 10; boarded[i + 2] = 10;
+}
+const boardedResult = engine.analyze({ data: boarded }, image.width, image.height, { minPeriod: 6, maxPeriod: 10 });
+assert.equal(boardedResult.grid.boardSeams.columns.length, 1);
+assert.equal(boardedResult.grid.boardSeams.columns[0].line, 5);
+assert.equal(engine.detectBoardSeams(engine.edgeProjection({ data: image.data }, image.width, image.height, "x"), 8, 0).length, 0);
+
+// 手动底板规格：按 29×29 强制分割时输出规则缝线。
+const specResult = engine.analyze({ data: image.data }, image.width, image.height, { cellWidth: 8, cellHeight: 8, columns: 10, rows: 8, boardGrid: { columns: 5, rows: 4 } });
+assert.deepEqual(specResult.grid.boardSeams.columns.map((seam) => seam.line), [5]);
+assert.deepEqual(specResult.grid.boardSeams.rows.map((seam) => seam.line), [4]);
+assert.deepEqual(engine.analyze({ data: image.data }, image.width, image.height, { cellWidth: 8, cellHeight: 8, columns: 10, rows: 8, boardSeams: false }).grid.boardSeams, { columns: [], rows: [] });
+
+// 两遍聚类：同一颜色以不同顺序出现时应归并为一个簇。
+const orderedColors = [];
+for (let index = 0; index < 24; index += 1) orderedColors.push({ color: { r: 120 + (index % 3), g: 66 + (index % 2), b: 200 }, confidence: .9, reason: "uniform" });
+const orderedCells = [orderedColors.slice()];
+const singleCluster = engine.normalizeCellColors(orderedCells, 14);
+assert.equal(singleCluster.length, 1);
+assert.equal(orderedCells[0][0].color.r, orderedCells[0][23].color.r);
 console.log("pattern-rebuild tests: PASS");
