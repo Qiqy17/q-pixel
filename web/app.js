@@ -329,6 +329,9 @@
     inventory: {},
     buildProgress: {},
     activeActionProjectId: "",
+    activeActionFolderId: "",
+    activeMoveProjectId: "",
+    homeFolderId: "",
     activeHistoryProjectId: "",
     beads: {
       restorationFingerprint: "",
@@ -488,6 +491,7 @@
   let similarColorAnalysis = null;
 
   const storageKey = "q-pixel-local-projects-v1";
+  const folderStorageKey = "q-pixel-local-folders-v1";
   const projectPayloadStoragePrefix = "q-pixel-project-payload-v1:";
   const inventoryStorageKey = "q-pixel-inventory-v1";
   const trashStorageKey = "q-pixel-trash-projects-v1";
@@ -564,6 +568,7 @@
   function bindElements() {
     [
       "homeView", "homeProjectGrid", "homeNewDesignButton", "homeNewTopButton", "homeSyncButton", "homeTrashButton",
+      "homeNewFolderButton", "homeFolderBar", "homeFolderBackButton", "homeFolderName", "homeFolderCount",
       "homeOpenProjectButton", "homeImportImageButton", "homeProjectCount", "homeBeadCount",
       "homeRecordYear", "homeRecordMonth", "homeRecordPrevButton", "homeRecordNextButton", "homeRecordCalendar", "homeDesignDays",
       "homeAvgDayTime", "homeAvgWorkTime", "homeRecordList", "homeSignature",
@@ -644,7 +649,9 @@
       "styleTextApplyButton", "styleTextRemoveButton", "stylePresetNameInput", "stylePresetSaveButton", "stylePresetList",
       "toolRailGrip", "toolRailBGrip", "toolRailCollapseButton", "toolRailBCollapseButton", "colorStripGrip", "projectActionModal", "projectActionCloseButton",
       "projectActionThumb", "projectActionTitle", "projectActionCreated", "projectActionUpdated",
-      "projectActionOpenButton", "projectActionHistoryButton", "projectActionTemplateButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
+      "projectActionOpenButton", "projectActionHistoryButton", "projectActionMoveButton", "projectActionTemplateButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
+      "folderActionModal", "folderActionCloseButton", "folderActionName", "folderActionCount", "folderActionOpenButton", "folderActionRenameButton", "folderActionDeleteButton",
+      "folderPickerModal", "folderPickerCloseButton", "folderPickerSubtitle", "folderPickerList", "folderPickerNewButton", "folderPickerRootButton",
       "projectHistoryModal", "projectHistoryCloseButton", "projectHistoryTitle", "projectHistoryList",
       "aiGenerateModal", "aiGenerateCloseButton", "aiPromptInput", "aiProviderSelect", "aiStyleSelect", "aiTemplateSelect", "aiWidthInput", "aiHeightInput", "aiColorLimitInput", "aiCompositionSelect", "aiPaletteModeSelect", "aiCandidateCountSelect", "aiCreativeBrief", "aiProviderBalances", "aiGenerateStatus", "aiCandidatePanel", "aiCandidateSummary", "aiCandidateGrid", "aiCandidateRepairButton", "aiCandidatePaletteButton", "aiCandidateUndoButton", "aiCandidateApplyButton", "aiCandidateAnalysis", "aiJimengPending", "aiJimengPendingName", "aiJimengImportButton", "aiJimengIgnoreButton", "aiPromptCopyButton", "aiIdeaButton", "aiJimengWebButton", "aiGenerateButton", "jimengWatermarkModal", "jimengWatermarkCloseButton", "jimengWatermarkCancelButton", "jimengWatermarkConfirmButton", "jimengWatermarkCropEdge",
       "layerImportModal", "layerImportCloseButton", "layerImportImageButton", "layerImportProjectFileButton", "layerImportProjectList",
@@ -12322,7 +12329,14 @@
   }
 
   function projectSortTime(project) {
+    // 确定性回退链：updatedAt → savedAt → createdAt；均无时用 0，排序再以 id 决胜保证稳定。
     return new Date(project.updatedAt || project.savedAt || project.createdAt || 0).getTime() || 0;
+  }
+
+  // 列表排序：时间倒序 + id 决胜，保证同一毫秒内保存的文件顺序稳定不跳变。
+  function compareProjectsByRecency(a, b) {
+    const diff = projectSortTime(b) - projectSortTime(a);
+    return diff !== 0 ? diff : String(a.id).localeCompare(String(b.id));
   }
 
   function mergeProjects(localProjects, remoteProjects) {
@@ -12335,7 +12349,7 @@
     return Array.from(map.values())
       .filter((project) => !isDeletedProject(project))
       .concat(conflictCopies)
-      .sort((a, b) => projectSortTime(b) - projectSortTime(a))
+      .sort(compareProjectsByRecency)
       .slice(0, 120);
   }
 
@@ -12590,6 +12604,26 @@
     });
   }
 
+  // 同步节流：避免保存→同步→重渲染→列表跳变；同一时间只允许一个同步在飞。
+  let syncProjectsInFlight = null;
+  let syncProjectsQueued = false;
+
+  function syncProjectsFromRemoteThrottled(options) {
+    if (syncProjectsInFlight) {
+      // 已有同步在飞：标记排队，结束后自动补一轮，避免旧数据覆盖新保存。
+      syncProjectsQueued = true;
+      return syncProjectsInFlight;
+    }
+    syncProjectsInFlight = syncProjectsFromRemote(options).finally(() => {
+      syncProjectsInFlight = null;
+      if (syncProjectsQueued) {
+        syncProjectsQueued = false;
+        syncProjectsFromRemoteThrottled();
+      }
+    });
+    return syncProjectsInFlight;
+  }
+
   async function syncProjectsFromRemote(options = {}) {
     if (!window.fetch) return;
     const manual = Boolean(options.manual);
@@ -12808,17 +12842,214 @@
     openFileDialog();
   }
 
+  function getFolders() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(folderStorageKey) || "[]");
+      return Array.isArray(parsed)
+        ? parsed.filter((folder) => folder && folder.id && folder.name).map((folder) => ({
+          id: String(folder.id),
+          name: String(folder.name).slice(0, 40),
+          createdAt: folder.createdAt || new Date().toISOString()
+        }))
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function storeFolders(folders) {
+    try {
+      localStorage.setItem(folderStorageKey, JSON.stringify(folders.slice(0, 60)));
+    } catch {}
+    renderHomeProjects();
+  }
+
+  function createFolder() {
+    const name = window.prompt("输入文件夹名称", "新文件夹");
+    if (!name || !name.trim()) return;
+    const folders = getFolders();
+    folders.unshift({ id: makeId(), name: name.trim(), createdAt: new Date().toISOString() });
+    storeFolders(folders);
+    setMessage("已创建文件夹。长按设计卡片选「移动到文件夹」即可归档。", false);
+  }
+
+  function createFolderFromPicker() {
+    const name = window.prompt("输入文件夹名称", "新文件夹");
+    if (!name || !name.trim()) return;
+    const folders = getFolders();
+    folders.unshift({ id: makeId(), name: name.trim(), createdAt: new Date().toISOString() });
+    storeFolders(folders);
+    renderFolderPickerList();
+    setMessage("已创建文件夹。", false);
+  }
+
+  function renameFolder(id) {
+    const folders = getFolders();
+    const folder = folders.find((item) => item.id === id);
+    if (!folder) return;
+    const nextName = window.prompt("输入新的文件夹名称", folder.name);
+    if (!nextName || !nextName.trim() || nextName.trim() === folder.name) return;
+    folder.name = nextName.trim();
+    storeFolders(folders);
+    closeFolderActionModal();
+    setMessage("文件夹已重命名。", false);
+  }
+
+  function deleteFolder(id) {
+    const folders = getFolders();
+    const folder = folders.find((item) => item.id === id);
+    if (!folder) return;
+    if (!window.confirm(`删除文件夹「${folder.name}」？里面的设计文件会回到全部文件，不会被删除。`)) return;
+    setProjects(getProjects().map((project) => project.folderId === id
+      ? Object.assign({}, project, { folderId: "", updatedAt: new Date().toISOString() })
+      : project));
+    if (state.homeFolderId === id) state.homeFolderId = "";
+    closeFolderActionModal();
+    storeFolders(folders.filter((item) => item.id !== id));
+    renderProjectList();
+    setMessage("文件夹已删除，设计文件已移回全部文件。", false);
+  }
+
+  function moveProjectToFolder(projectId, folderId) {
+    const folders = getFolders();
+    const target = folderId ? folders.find((folder) => folder.id === folderId) : null;
+    if (folderId && !target) return;
+    setProjects(getProjects().map((project) => project.id !== projectId ? project : Object.assign({}, project, {
+      folderId: target ? target.id : "",
+      updatedAt: new Date().toISOString()
+    })));
+    closeFolderPickerModal();
+    closeProjectActionModal();
+    renderProjectList();
+    renderHomeProjects();
+    setMessage(target ? `已移动到「${target.name}」。` : "已移出文件夹。", false);
+  }
+
+  function openFolderActionModal(id) {
+    const folder = getFolders().find((item) => item.id === id);
+    if (!folder || !els.folderActionModal) return;
+    state.activeActionFolderId = id;
+    if (els.folderActionName) els.folderActionName.textContent = folder.name;
+    if (els.folderActionCount) {
+      const count = getProjects().filter((project) => project.folderId === id).length;
+      els.folderActionCount.textContent = `${count} 个设计文件`;
+    }
+    els.folderActionModal.classList.remove("hidden");
+  }
+
+  function closeFolderActionModal() {
+    state.activeActionFolderId = "";
+    if (els.folderActionModal) els.folderActionModal.classList.add("hidden");
+  }
+
+  function openFolderPickerModal(projectId) {
+    if (!els.folderPickerModal) return;
+    const project = getProjects().find((item) => item.id === projectId);
+    if (!project) return;
+    state.activeMoveProjectId = projectId;
+    if (els.folderPickerSubtitle) els.folderPickerSubtitle.textContent = `把「${project.title || "未命名"}」移动到：`;
+    renderFolderPickerList();
+    els.folderPickerModal.classList.remove("hidden");
+  }
+
+  function closeFolderPickerModal() {
+    state.activeMoveProjectId = "";
+    if (els.folderPickerModal) els.folderPickerModal.classList.add("hidden");
+  }
+
+  function renderFolderPickerList() {
+    if (!els.folderPickerList) return;
+    const folders = getFolders();
+    const project = getProjects().find((item) => item.id === state.activeMoveProjectId);
+    els.folderPickerList.innerHTML = "";
+    if (!folders.length) {
+      const empty = document.createElement("div");
+      empty.className = "folder-picker-empty";
+      empty.textContent = "还没有文件夹。点下方按钮新建一个。";
+      els.folderPickerList.appendChild(empty);
+      return;
+    }
+    folders.forEach((folder) => {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "folder-picker-row";
+      if (project && project.folderId === folder.id) row.classList.add("current");
+      const count = getProjects().filter((item) => item.folderId === folder.id).length;
+      row.innerHTML = `<span class="folder-picker-mark" aria-hidden="true"></span><strong></strong><small></small>`;
+      row.querySelector("strong").textContent = folder.name;
+      row.querySelector("small").textContent = `${count} 个设计`;
+      row.addEventListener("click", () => moveProjectToFolder(state.activeMoveProjectId, folder.id));
+      els.folderPickerList.appendChild(row);
+    });
+  }
+
   function renderHomeProjects() {
     if (!els.homeProjectGrid) return;
-    const projects = getProjects().filter((project) => !isInternalTestProject(project)).sort((a, b) => projectSortTime(b) - projectSortTime(a));
+    const folders = getFolders();
+    if (state.homeFolderId && !folders.some((folder) => folder.id === state.homeFolderId)) state.homeFolderId = "";
+    const currentFolder = state.homeFolderId ? folders.find((folder) => folder.id === state.homeFolderId) : null;
+    const allProjects = getProjects().filter((project) => !isInternalTestProject(project)).sort(compareProjectsByRecency);
+    const projects = currentFolder
+      ? allProjects.filter((project) => project.folderId === currentFolder.id)
+      : allProjects.filter((project) => !project.folderId || !folders.some((folder) => folder.id === project.folderId));
     els.homeProjectGrid.innerHTML = "";
 
-    const addTile = document.createElement("button");
-    addTile.className = "home-add-tile";
-    addTile.type = "button";
-    addTile.innerHTML = "<span>+</span><strong>新建设计文件</strong>";
-    addTile.addEventListener("click", startNewProjectFlow);
-    els.homeProjectGrid.appendChild(addTile);
+    if (els.homeFolderBar) {
+      els.homeFolderBar.classList.toggle("hidden", !currentFolder);
+      if (currentFolder) {
+        if (els.homeFolderName) els.homeFolderName.textContent = currentFolder.name;
+        if (els.homeFolderCount) els.homeFolderCount.textContent = `${projects.length} 个设计`;
+      }
+    }
+
+    if (!currentFolder) {
+      folders.forEach((folder) => {
+        const count = allProjects.filter((project) => project.folderId === folder.id).length;
+        const tile = document.createElement("article");
+        tile.className = "home-folder-tile";
+        tile.tabIndex = 0;
+        tile.role = "button";
+        tile.innerHTML = `
+          <span class="home-folder-mark" aria-hidden="true"></span>
+          <strong class="home-folder-name"></strong>
+          <small class="home-folder-count"></small>
+        `;
+        tile.querySelector(".home-folder-name").textContent = folder.name;
+        tile.querySelector(".home-folder-count").textContent = `${count} 个设计`;
+        const enterFolder = () => {
+          state.homeFolderId = folder.id;
+          renderHomeProjects();
+        };
+        tile.addEventListener("click", enterFolder);
+        tile.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            enterFolder();
+          }
+        });
+        let folderPressTimer = 0;
+        tile.addEventListener("pointerdown", () => {
+          folderPressTimer = window.setTimeout(() => openFolderActionModal(folder.id), 650);
+        });
+        ["pointerup", "pointerleave", "pointercancel"].forEach((name) => {
+          tile.addEventListener(name, () => window.clearTimeout(folderPressTimer));
+        });
+        tile.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+          openFolderActionModal(folder.id);
+        });
+        els.homeProjectGrid.appendChild(tile);
+      });
+    }
+
+    if (!projects.length && (currentFolder || !folders.length)) {
+      const empty = document.createElement("div");
+      empty.className = "home-empty";
+      empty.textContent = currentFolder
+        ? "这个文件夹还没有设计文件。长按任意设计卡片，选「移动到文件夹」即可归档。"
+        : "还没有设计文件。点右上角 + 新建，或从上方选择一种开始方式。";
+      els.homeProjectGrid.appendChild(empty);
+    }
 
     projects.forEach((project) => {
       const card = document.createElement("article");
@@ -12839,7 +13070,7 @@
         document.createTextNode(`${project.width || "-"} x ${project.height || "-"} · ${formatShortDate(project.updatedAt || project.savedAt)}`)
       );
       const badges = makeProjectBadges(project);
-      if (badges) card.querySelector(".home-project-meta").appendChild(badges);
+      if (badges) card.appendChild(badges);
       card.addEventListener("click", () => loadProject(project.id));
       card.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -12861,7 +13092,7 @@
       els.homeProjectGrid.appendChild(card);
     });
 
-    renderHomeProfile(projects);
+    renderHomeProfile(allProjects);
   }
 
   function getProjectBeadCount(project) {
@@ -13156,7 +13387,7 @@
 
   function renderTrashList() {
     if (!els.trashList) return;
-    const trash = getTrashProjects().sort((a, b) => projectSortTime(b) - projectSortTime(a));
+    const trash = getTrashProjects().sort(compareProjectsByRecency);
     setTrashProjects(trash);
     els.trashList.innerHTML = "";
     if (!trash.length) {
@@ -13432,7 +13663,13 @@
     if (localResult.localStorage) { markSaved(); clearRecoveryDraft(); }
     else setMessage("本机空间不足，修改暂存在当前页面；请导出工程文件或释放空间。", true);
     saveProjectToRemote(projects[0]).then((result) => {
-      if (result && result.ok) { markSaved(); clearRecoveryDraft(); }
+      if (result && result.ok) {
+        markSaved();
+        clearRecoveryDraft();
+        // 远程确认成功后刷新一次列表，让 remoteUpdatedAt 落地；避免下轮同步合并时列表跳变。
+        renderProjectList();
+        renderHomeProjects();
+      }
       setMessage(result && result.ok ? "已保存并同步到电脑创作空间。" : localResult.localStorage ? "已保存到当前设备，电脑同步服务暂时不可用。" : "保存未完成：本机空间不足且电脑同步服务不可用，请导出工程文件。", !(result && result.ok));
     });
     renderProjectList();
@@ -13484,7 +13721,7 @@
 
   function renderProjectList() {
     if (!els.projectList) return;
-    const projects = getProjects().filter((project) => !isInternalTestProject(project)).sort((a, b) => projectSortTime(b) - projectSortTime(a));
+    const projects = getProjects().filter((project) => !isInternalTestProject(project)).sort(compareProjectsByRecency);
     els.projectList.innerHTML = "";
     if (!projects.length) {
       const empty = document.createElement("div");
@@ -13528,7 +13765,7 @@
     }
     renderLayerImportProjectList();
     if (els.layerImportModal) els.layerImportModal.classList.remove("hidden");
-    syncProjectsFromRemote().then(() => {
+    syncProjectsFromRemoteThrottled().then(() => {
       if (els.layerImportModal && !els.layerImportModal.classList.contains("hidden")) renderLayerImportProjectList();
     });
   }
@@ -13541,7 +13778,7 @@
     if (!els.layerImportProjectList) return;
     const projects = getProjects()
       .filter((project) => !isInternalTestProject(project))
-      .sort((a, b) => projectSortTime(b) - projectSortTime(a));
+      .sort(compareProjectsByRecency);
     els.layerImportProjectList.innerHTML = "";
     if (!projects.length) {
       const empty = document.createElement("div");
@@ -13709,7 +13946,7 @@
     });
     if (els.homeSyncButton) {
       els.homeSyncButton.addEventListener("click", () => {
-        syncProjectsFromRemote({ manual: true });
+        syncProjectsFromRemoteThrottled({ manual: true });
         syncSharedSettingsFromRemote({ manual: true });
       });
     }
@@ -13810,6 +14047,29 @@
     if (els.projectActionRenameButton) els.projectActionRenameButton.addEventListener("click", () => renameProject(state.activeActionProjectId));
     els.projectActionDuplicateButton.addEventListener("click", () => duplicateProject(state.activeActionProjectId));
     els.projectActionDeleteButton.addEventListener("click", () => deleteProject(state.activeActionProjectId));
+    if (els.homeNewFolderButton) els.homeNewFolderButton.addEventListener("click", createFolder);
+    if (els.homeFolderBackButton) els.homeFolderBackButton.addEventListener("click", () => {
+      state.homeFolderId = "";
+      renderHomeProjects();
+    });
+    if (els.folderActionCloseButton) els.folderActionCloseButton.addEventListener("click", closeFolderActionModal);
+    if (els.folderActionModal) els.folderActionModal.addEventListener("click", (event) => {
+      if (event.target === els.folderActionModal) closeFolderActionModal();
+    });
+    if (els.folderActionOpenButton) els.folderActionOpenButton.addEventListener("click", () => {
+      state.homeFolderId = state.activeActionFolderId;
+      closeFolderActionModal();
+      renderHomeProjects();
+    });
+    if (els.folderActionRenameButton) els.folderActionRenameButton.addEventListener("click", () => renameFolder(state.activeActionFolderId));
+    if (els.folderActionDeleteButton) els.folderActionDeleteButton.addEventListener("click", () => deleteFolder(state.activeActionFolderId));
+    if (els.projectActionMoveButton) els.projectActionMoveButton.addEventListener("click", () => openFolderPickerModal(state.activeActionProjectId));
+    if (els.folderPickerCloseButton) els.folderPickerCloseButton.addEventListener("click", closeFolderPickerModal);
+    if (els.folderPickerModal) els.folderPickerModal.addEventListener("click", (event) => {
+      if (event.target === els.folderPickerModal) closeFolderPickerModal();
+    });
+    if (els.folderPickerNewButton) els.folderPickerNewButton.addEventListener("click", createFolderFromPicker);
+    if (els.folderPickerRootButton) els.folderPickerRootButton.addEventListener("click", () => moveProjectToFolder(state.activeMoveProjectId, ""));
     if (els.projectHistoryCloseButton) els.projectHistoryCloseButton.addEventListener("click", closeProjectHistoryModal);
     if (els.projectHistoryModal) {
       els.projectHistoryModal.addEventListener("click", (event) => {
@@ -15494,7 +15754,7 @@
     setMode("pixel");
     showHome();
     window.setTimeout(offerDraftRecovery, 100);
-    syncProjectsFromRemote();
+    syncProjectsFromRemoteThrottled();
     syncSharedSettingsFromRemote();
   }
 

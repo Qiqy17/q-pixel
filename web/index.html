@@ -52,7 +52,15 @@
               <h2>创作空间</h2>
               <p>保存在本机的 Q像素源文件都会出现在这里。</p>
             </div>
-            <button class="icon-button" id="homeNewDesignButton" type="button" title="新建设计">+</button>
+            <div class="home-card-head-actions">
+              <button class="text-button secondary" id="homeNewFolderButton" type="button">新建文件夹</button>
+              <button class="icon-button" id="homeNewDesignButton" type="button" title="新建设计">+</button>
+            </div>
+          </div>
+          <div class="home-folder-bar hidden" id="homeFolderBar">
+            <button class="text-button secondary" id="homeFolderBackButton" type="button">‹ 全部文件</button>
+            <strong id="homeFolderName"></strong>
+            <span id="homeFolderCount"></span>
           </div>
           <div class="home-project-grid" id="homeProjectGrid"></div>
         </section>
@@ -63,7 +71,7 @@
             <div class="profile-avatar"><span>Q</span><button type="button" title="编辑头像">✎</button></div>
             <div>
               <strong id="homeProfileName">Qigy</strong>
-              <p id="homeSignature">个性签名..........</p>
+              <p id="homeSignature">个性签名 ······</p>
             </div>
           </div>
           <section class="design-record">
@@ -1462,10 +1470,37 @@
       </div>
       <button id="projectActionOpenButton" type="button">打开设计</button>
       <button id="projectActionHistoryButton" type="button">历史版本</button>
+      <button id="projectActionMoveButton" type="button">移动到文件夹</button>
       <button id="projectActionTemplateButton" type="button">套用为新设计</button>
       <button id="projectActionRenameButton" type="button">重命名</button>
       <button id="projectActionDuplicateButton" type="button">创建副本</button>
       <button id="projectActionDeleteButton" class="danger" type="button">删除设计</button>
+    </div>
+  </section>
+
+  <section class="project-action-modal hidden" id="folderActionModal" aria-label="文件夹操作">
+    <div class="project-action-card">
+      <button class="project-action-close" id="folderActionCloseButton" type="button" title="关闭">×</button>
+      <div class="project-action-head">
+        <div class="folder-action-icon" aria-hidden="true"></div>
+        <div>
+          <h2 id="folderActionName">文件夹</h2>
+          <p><span id="folderActionCount">0 个设计文件</span></p>
+        </div>
+      </div>
+      <button id="folderActionOpenButton" type="button">打开文件夹</button>
+      <button id="folderActionRenameButton" type="button">重命名</button>
+      <button id="folderActionDeleteButton" class="danger" type="button">删除文件夹</button>
+    </div>
+  </section>
+
+  <section class="project-action-modal hidden" id="folderPickerModal" aria-label="移动到文件夹">
+    <div class="project-action-card">
+      <button class="project-action-close" id="folderPickerCloseButton" type="button" title="关闭">×</button>
+      <div class="project-action-head"><div><h2>移动到文件夹</h2><p id="folderPickerSubtitle"></p></div></div>
+      <div class="folder-picker-list" id="folderPickerList"></div>
+      <button id="folderPickerNewButton" type="button">+ 新建文件夹</button>
+      <button id="folderPickerRootButton" type="button">不放入任何文件夹</button>
     </div>
   </section>
 
