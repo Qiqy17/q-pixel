@@ -18,6 +18,7 @@ node --check "$RESOURCES_DIR/module-loader.js"
 node --check "$RESOURCES_DIR/core/project-model.js"
 node --check "$RESOURCES_DIR/core/workspace-state.js"
 node --check "$RESOURCES_DIR/core/dom-utils.js"
+node --check "$RESOURCES_DIR/core/project-store.js"
 node --check "$RESOURCES_DIR/workspaces/quality-checks.js"
 node --check "$RESOURCES_DIR/workspaces/context-inspector.js"
 node --check "$RESOURCES_DIR/workspaces/workspace-controller.js"
@@ -29,11 +30,22 @@ node --check "$RESOURCES_DIR/pattern-rebuild/rebuild-workbench.js"
 node --check "$RESOURCES_DIR/import-engine.js"
 node --check "$RESOURCES_DIR/import-processing.js"
 node --check "$RESOURCES_DIR/import-worker.js"
+for directory in color make studio 3d generated; do
+  test -d "$RESOURCES_DIR/$directory"
+  diff -qr "$REPO_DIR/web/$directory" "$RESOURCES_DIR/$directory" >/dev/null
+done
 node "$REPO_DIR/tests/import-engine.test.js"
 node "$REPO_DIR/tests/import-processing.test.js"
 node "$REPO_DIR/tests/project-payload.test.js"
 node "$REPO_DIR/tests/workspace-state.test.js"
 node "$REPO_DIR/tests/pattern-rebuild.test.js"
+node "$REPO_DIR/tests/inventory-engine.test.js"
+node "$REPO_DIR/tests/board-planner.test.js"
+node "$REPO_DIR/tests/project-store.test.js"
+node "$REPO_DIR/tests/background-engine.test.js"
+node "$REPO_DIR/tests/finish-core.test.js"
+node "$REPO_DIR/tests/webgl-support.test.js"
+node "$REPO_DIR/tests/surface-engine.test.js"
 
 for file in index.html styles.css feature-flags.js module-loader.js import-engine.js import-processing.js import-worker.js app.js manifest.webmanifest icon.svg offline.html sw.js qpixel_ipad_https_server.py qpixel_openai.py OPENAI_SETUP.md; do
   case "$file" in
@@ -44,7 +56,7 @@ for file in index.html styles.css feature-flags.js module-loader.js import-engin
   cmp -s "$RESOURCES_DIR/$file" "$source_file"
 done
 
-for file in project-model.js workspace-state.js dom-utils.js; do
+for file in project-model.js workspace-state.js dom-utils.js project-store.js; do
   cmp -s "$RESOURCES_DIR/core/$file" "$REPO_DIR/web/core/$file"
 done
 

@@ -3,8 +3,8 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 OUTPUT_PATH="${1:-$REPO_DIR/dist/Q像素.app}"
-VERSION="${QPIXEL_VERSION:-1.3.0}"
-BUILD_NUMBER="${QPIXEL_BUILD_NUMBER:-5}"
+VERSION="${QPIXEL_VERSION:-2.0.0}"
+BUILD_NUMBER="${QPIXEL_BUILD_NUMBER:-6}"
 SIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 
 case "$OUTPUT_PATH" in
@@ -37,6 +37,7 @@ mkdir -p "$RESOURCES_DIR/core"
 cp "$REPO_DIR/web/core/project-model.js" "$RESOURCES_DIR/core/project-model.js"
 cp "$REPO_DIR/web/core/workspace-state.js" "$RESOURCES_DIR/core/workspace-state.js"
 cp "$REPO_DIR/web/core/dom-utils.js" "$RESOURCES_DIR/core/dom-utils.js"
+cp "$REPO_DIR/web/core/project-store.js" "$RESOURCES_DIR/core/project-store.js"
 mkdir -p "$RESOURCES_DIR/workspaces"
 cp "$REPO_DIR/web/workspaces/quality-checks.js" "$RESOURCES_DIR/workspaces/quality-checks.js"
 cp "$REPO_DIR/web/workspaces/context-inspector.js" "$RESOURCES_DIR/workspaces/context-inspector.js"
@@ -47,6 +48,9 @@ cp "$REPO_DIR/web/pattern-rebuild/rebuild-engine.js" "$RESOURCES_DIR/pattern-reb
 cp "$REPO_DIR/web/pattern-rebuild/rebuild-worker.js" "$RESOURCES_DIR/pattern-rebuild/rebuild-worker.js"
 cp "$REPO_DIR/web/pattern-rebuild/legend-schema.js" "$RESOURCES_DIR/pattern-rebuild/legend-schema.js"
 cp "$REPO_DIR/web/pattern-rebuild/rebuild-workbench.js" "$RESOURCES_DIR/pattern-rebuild/rebuild-workbench.js"
+for directory in color make studio 3d generated; do
+  cp -R "$REPO_DIR/web/$directory" "$RESOURCES_DIR/$directory"
+done
 mkdir -p "$RESOURCES_DIR/assets"
 cp -R "$REPO_DIR/web/assets/materials" "$RESOURCES_DIR/assets/materials"
 cp "$REPO_DIR/scripts/qpixel_ipad_https_server.py" "$RESOURCES_DIR/qpixel_ipad_https_server.py"
