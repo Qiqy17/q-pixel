@@ -1,4 +1,4 @@
-const CACHE_NAME = "q-pixel-v20260923-pattern-rebuild-2";
+const CACHE_NAME = "q-pixel-v20260923-visual-9";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -8,6 +8,20 @@ const APP_SHELL = [
   "./core/project-model.js",
   "./core/workspace-state.js",
   "./core/dom-utils.js",
+  "./core/project-store.js",
+  "./color/palette-registry.js",
+  "./color/inventory-engine.js",
+  "./make/board-planner.js",
+  "./make/build-navigation.js",
+  "./studio/studio.css",
+  "./studio/background-engine.js",
+  "./studio/background-tool.js",
+  "./studio/surface-engine.js",
+  "./3d/finish-core.js",
+  "./3d/calibration-manifest.json",
+  "./3d/webgl-support.js",
+  "./3d/finish-workbench.js",
+  "./generated/finish-viewer.bundle.js",
   "./workspaces/quality-checks.js",
   "./workspaces/context-inspector.js",
   "./workspaces/workspace-controller.js",

@@ -25,13 +25,14 @@ const storage = {
   setItem: (key, value) => memory.set(key, value)
 };
 const flags = featureFlags.createFeatureFlags({ storage });
-assert.deepEqual(flags.all(), featureFlags.DEFAULTS, "默认必须保持旧工作区");
-assert.equal(flags.isEnabled("professionalWorkspace"), false);
+assert.deepEqual(flags.all(), featureFlags.DEFAULTS, "默认进入专业工作区");
+assert.equal(flags.isEnabled("professionalWorkspace"), true);
+flags.set("professionalWorkspace", false);
 flags.set("professionalWorkspace", true);
 assert.equal(flags.isEnabled("professionalWorkspace"), true);
 assert.equal(JSON.parse(memory.get(featureFlags.STORAGE_KEY)).professionalWorkspace, true);
 flags.reset();
-assert.equal(flags.isEnabled("professionalWorkspace"), false);
+assert.equal(flags.isEnabled("professionalWorkspace"), true);
 
 assert.equal(workspaceState.viewportForWidth(1400), "desktop");
 assert.equal(workspaceState.viewportForWidth(900), "tablet");

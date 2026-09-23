@@ -9,8 +9,16 @@
   };
   const moduleLoader = window.QPixelModuleLoader || null;
   const projectModelModule = window.QPixelProjectModel;
+  const projectStoreModule = window.QPixelProjectStore || null;
+  const draftStore = projectStoreModule ? projectStoreModule.createStore({ storage: window.localStorage, projectId: "__autosave__", model: projectModelModule }) : null;
+  let draftTimer = 0;
   const workspaceStateModule = window.QPixelWorkspaceState || null;
   const domUtils = window.QPixelDomUtils || null;
+  const paletteRegistryModule = window.QPixelPaletteRegistry || null;
+  const inventoryEngineModule = window.QPixelInventoryEngine || null;
+  const boardPlannerModule = window.QPixelBoardPlanner || null;
+  const buildNavigationModule = window.QPixelBuildNavigation || null;
+  const surfaceEngine = window.QPixelSurfaceEngine || null;
 
   if (!projectModelModule || typeof projectModelModule.createContext !== "function") {
     throw new Error("Q像素项目模型加载失败，已停止初始化以保护项目数据。");
@@ -327,6 +335,7 @@
       importMode: "fidelity",
       importRecipe: null,
       rebuildReport: null,
+      checkpoints: [],
       importProcessedSource: null,
       sourceCompareEnabled: false,
       sourceCompareOpacity: 38,
@@ -578,6 +587,10 @@
       "similarColorStrengthSelect", "similarColorAnalyzeButton", "similarColorApplyAllButton", "similarColorSummary", "similarColorList",
       "paletteSelect", "paletteGrid", "cellTargetPaletteGrid", "selectionColorTargetPaletteGrid",
       "replaceFromSelect", "replaceToSelect", "replaceAllButton", "usageSummary",
+      "inventoryBulkInput", "inventorySaveButton", "inventoryClearButton", "inventorySummary",
+      "inventoryRecolorButton", "inventoryDecrementButton", "inventoryUndoDecrementButton", "inventorySubstitutionList",
+      "buildNavModeSelect", "boardSpecSelect", "boardPreferSeamsToggle", "boardPlanSummary", "boardJumpNextButton",
+      "checkpointList",
       "exportChartButton", "toolBrushButton", "toolPickerButton",
       "toolEraserButton", "toolBucketButton", "toolSelectButton", "toolRectFillButton",
       "toolRectClearButton", "toolOutlineButton", "toolShapeButton", "toolPaletteButton", "toolClearLayerButton",
@@ -2743,6 +2756,202 @@
     return Math.max(0, Math.floor(Number(state.inventory && state.inventory[code] || 0)));
   }
 
+  // ===== 库存约束引擎接线（palette-registry + inventory-engine） =====
+  let inventoryEngine = null;
+  let lastInventoryDecrementRecord = null;
+
+  function ensureInventoryEngine() {
+    if (inventoryEngine || !inventoryEngineModule || !beadPalette.length) return inventoryEngine;
+    const codeMap = new Map(beadPalette.map((color) => [color.code, color]));
+    inventoryEngine = inventoryEngineModule.create({
+      colorOf: (code) => {
+        const color = codeMap.get(String(code));
+        return color ? { code: color.code, rgb: color.rgb } : null;
+      },
+      colorDistance: (a, b) => labDistance(rgbToLab(a.r, a.g, a.b), rgbToLab(b.r, b.g, b.b))
+    });
+    return inventoryEngine;
+  }
+
+  function parseInventoryBulkInput(text) {
+    const entries = new Map();
+    String(text || "").split(/\n+/).forEach((line) => {
+      const match = /^\s*([A-Za-z]+\d+)\s*[\s,，:：xX×]\s*(\d+)\s*$/.exec(line);
+      if (match) entries.set(match[1].toUpperCase(), Math.max(0, Math.floor(Number(match[2]))));
+    });
+    return entries;
+  }
+
+  function renderInventoryPanel() {
+    if (!els.inventorySummary) return;
+    const pattern = state.beads && state.beads.pattern;
+    const hasInventory = state.inventory && Object.keys(state.inventory).some((code) => Number(state.inventory[code]) > 0);
+    if (!hasInventory) {
+      els.inventorySummary.textContent = "尚未录入库存。";
+      if (els.inventorySubstitutionList) els.inventorySubstitutionList.replaceChildren();
+      if (els.inventoryUndoDecrementButton) els.inventoryUndoDecrementButton.hidden = !lastInventoryDecrementRecord;
+      return;
+    }
+    if (!pattern || !Array.isArray(pattern.cells)) {
+      const totalCodes = Object.keys(state.inventory).filter((code) => Number(state.inventory[code]) > 0).length;
+      els.inventorySummary.textContent = `已录入 ${totalCodes} 个色号的库存；生成图纸后可检查缺口。`;
+      if (els.inventoryUndoDecrementButton) els.inventoryUndoDecrementButton.hidden = !lastInventoryDecrementRecord;
+      return;
+    }
+    const engine = ensureInventoryEngine();
+    const usage = calculateUsage(pattern);
+    const usageMap = {};
+    usage.forEach((item) => { usageMap[item.code] = item.count; });
+    const summary = engine
+      ? engine.summarize(usageMap, state.inventory)
+      : { colors: usage.map((item) => ({ code: item.code, need: item.count, stock: getInventoryStock(item.code), shortage: Math.max(0, item.count - getInventoryStock(item.code)), covered: item.count <= getInventoryStock(item.code) })), missingCount: 0, totalShortage: 0 };
+    const missing = summary.colors.filter((item) => !item.covered);
+    els.inventorySummary.textContent = missing.length
+      ? `库存缺口：${missing.map((item) => `${item.code} 缺 ${item.shortage}`).slice(0, 6).join("、")}${missing.length > 6 ? " 等" : ""}。`
+      : "当前库存可覆盖图纸全部用量。";
+    if (els.inventorySubstitutionList) {
+      els.inventorySubstitutionList.replaceChildren();
+      if (missing.length && engine) {
+        const heading = document.createElement("p");
+        heading.className = "panel-caption";
+        heading.textContent = "缺色替代建议（按色差从近到远）：";
+        els.inventorySubstitutionList.appendChild(heading);
+        missing.slice(0, 4).forEach((item) => {
+          const options = engine.substitutionOptions(item.code, usageMap, state.inventory, { limit: 2 });
+          const row = document.createElement("p");
+          row.className = "panel-caption";
+          row.textContent = options.length
+            ? `${item.code} → ${options.map((option) => `${option.toCode}（ΔE ${option.deltaE}）`).join(" / ")}`
+            : `${item.code}：暂无库存充足的替代色。`;
+          els.inventorySubstitutionList.appendChild(row);
+        });
+      }
+    }
+    if (els.inventoryUndoDecrementButton) els.inventoryUndoDecrementButton.hidden = !lastInventoryDecrementRecord;
+  }
+
+  function applyLimitedCodeMappingToLayers(changes) {
+    const layers = state.beads.layers.filter((layer) => layer && layer.visible !== false);
+    const patternCells = state.beads.pattern && Array.isArray(state.beads.pattern.cells) ? state.beads.pattern.cells : [];
+    changes.forEach((change) => {
+      let remaining = change.count;
+      for (let row = 0; row < patternCells.length && remaining > 0; row += 1) {
+        const line = patternCells[row];
+        if (!Array.isArray(line)) continue;
+        for (let col = 0; col < line.length && remaining > 0; col += 1) {
+          if (line[col] !== change.from) continue;
+          for (let index = layers.length - 1; index >= 0; index -= 1) {
+            const layerCells = layers[index].cells;
+            if (Array.isArray(layerCells) && layerCells[row] && layerCells[row][col] === change.from) {
+              layerCells[row][col] = change.to;
+              remaining -= 1;
+              break;
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function planInventoryRecolor() {
+    const pattern = state.beads && state.beads.pattern;
+    if (!pattern || !Array.isArray(pattern.cells) || !pattern.cells.length) {
+      setMessage("请先生成图纸再使用库存配色。", true);
+      return;
+    }
+    const engine = ensureInventoryEngine();
+    if (!engine) {
+      setMessage("库存引擎不可用。", true);
+      return;
+    }
+    const plan = engine.planInventoryReduction(pattern.cells, state.inventory, { lockedCodes: Array.from(getLockedColorSet()) });
+    if (!plan.changes.length) {
+      setMessage(plan.unresolved.length ? `无可行替代：${plan.unresolved.map((item) => `${item.code} 缺 ${item.shortage}${item.locked ? "（已锁定）" : ""}`).join("、")}。` : "库存已覆盖全部用色，无需重新配色。");
+      return;
+    }
+    const changeText = plan.changes.map((change) => `${change.from} → ${change.to} ${change.count} 颗（ΔE ${change.deltaE}）`).join("；");
+    const unresolvedText = plan.unresolved.length ? `\\n仍无法满足：${plan.unresolved.map((item) => `${item.code} 缺 ${item.shortage}`).join("、")}。` : "";
+    if (!window.confirm(`仅用库存颜色重新配色：\\n${changeText}${unresolvedText}\\n\\n替换前会自动创建撤销点，是否继续？`)) return;
+    pushHistory();
+    applyLimitedCodeMappingToLayers(plan.changes);
+    syncCompositePattern();
+    markUnsavedChanges();
+    render();
+    renderUsage();
+    renderInventoryPanel();
+    setMessage(`库存配色完成：替换 ${plan.changes.length} 个色号，共 ${plan.changes.reduce((sum, change) => sum + change.count, 0)} 颗。`);
+  }
+
+  function decrementInventoryByPattern() {
+    const pattern = state.beads && state.beads.pattern;
+    const engine = ensureInventoryEngine();
+    if (!pattern || !Array.isArray(pattern.cells) || !pattern.cells.length) {
+      setMessage("请先生成图纸再扣减库存。", true);
+      return;
+    }
+    if (!engine) {
+      setMessage("库存引擎不可用。", true);
+      return;
+    }
+    const usage = calculateUsage(pattern);
+    if (!usage.length) {
+      setMessage("当前图纸为空，无需扣减。");
+      return;
+    }
+    const usageMap = {};
+    usage.forEach((item) => { usageMap[item.code] = item.count; });
+    const preview = engine.decrementPreview(usageMap, state.inventory);
+    const previewText = preview.filter((item) => item.delta < 0).map((item) => `${item.code}: ${item.before} → ${item.after}`).join("、");
+    if (!previewText) {
+      setMessage("库存均为空，无内容可扣减。");
+      return;
+    }
+    if (!window.confirm(`按当前图纸扣减库存：\\n${previewText}\\n\\n扣减后可一键撤回，是否继续？`)) return;
+    const applied = engine.applyDecrement(state.inventory, usageMap, { source: "pattern", title: state.beads.projectTitle || "" });
+    state.inventory = applied.inventory;
+    lastInventoryDecrementRecord = applied.record;
+    saveInventory();
+    renderInventoryPanel();
+    renderUsage();
+    setMessage("库存已按图纸扣减，可点击“撤回上次扣减”恢复。");
+  }
+
+  function undoLastInventoryDecrement() {
+    const engine = ensureInventoryEngine();
+    if (!engine || !lastInventoryDecrementRecord) {
+      setMessage("没有可撤回的库存扣减记录。");
+      return;
+    }
+    state.inventory = engine.undoDecrement(state.inventory, lastInventoryDecrementRecord);
+    lastInventoryDecrementRecord = null;
+    saveInventory();
+    renderInventoryPanel();
+    setMessage("已撤回上次库存扣减。");
+  }
+
+  function saveInventoryBulkInput() {
+    const entries = parseInventoryBulkInput(els.inventoryBulkInput ? els.inventoryBulkInput.value : "");
+    if (!entries.size) {
+      setMessage("未识别到有效行，请按“色号 数量”格式填写，如 A1 120。", true);
+      return;
+    }
+    entries.forEach((count, code) => { state.inventory[code] = count; });
+    saveInventory();
+    renderInventoryPanel();
+    renderUsage();
+    setMessage(`已保存 ${entries.size} 个色号的库存。`);
+  }
+
+  function clearInventoryRecords() {
+    if (!window.confirm("确定清空全部库存记录吗？此操作不可撤销。")) return;
+    state.inventory = {};
+    lastInventoryDecrementRecord = null;
+    saveInventory();
+    renderInventoryPanel();
+    renderUsage();
+    setMessage("库存已清空。");
+  }
+
   function analyzePatternQuality(pattern) {
     if (!pattern || !Array.isArray(pattern.cells)) return { colors: 0, total: 0, isolated: 0, rareColors: 0, outline: 0, locked: 0 };
     const usage = calculateUsage(pattern);
@@ -2957,31 +3166,130 @@
     if (els.buildCurrentSwatch) els.buildCurrentSwatch.style.backgroundColor = color.hex;
     if (els.buildCurrentCode) els.buildCurrentCode.textContent = code || "—";
     if (els.buildCurrentStats) els.buildCurrentStats.textContent = `${stats.done} / ${stats.total} 颗 · 剩余 ${Math.max(0, stats.total - stats.done)}`;
+    if (els.buildNavModeSelect) els.buildNavModeSelect.value = state.beads.buildNavigation.mode || "color";
     if (els.buildSortModeSelect) els.buildSortModeSelect.value = state.beads.buildNavigation.sortMode || "usage";
     if (els.buildDimOthersToggle) els.buildDimOthersToggle.checked = state.beads.buildNavigation.dimOthers !== false;
     if (els.buildAutoAdvanceToggle) els.buildAutoAdvanceToggle.checked = state.beads.buildNavigation.autoAdvance !== false;
+    renderBoardPlan();
   }
 
-  function advanceBuildColor(direction = 1) {
-    const order = getBuildColorOrder();
-    if (!order.length) return "";
-    const current = ensureBuildCurrentCode();
-    const start = Math.max(0, order.findIndex((item) => item.code === current));
-    for (let offset = 1; offset <= order.length; offset += 1) {
-      const item = order[(start + direction * offset + order.length * 2) % order.length];
-      const stats = getBuildColorStats(item.code);
-      if (stats.done < stats.total || offset === order.length) {
-        state.beads.buildNavigation.currentCode = item.code;
-        renderBuildNavigation();
-        render();
-        return item.code;
-      }
+  // ===== 底板规划与拼制导航（board-planner / build-navigation 模块） =====
+  let boardPlanCache = null;
+
+  function getBoardPlanOptions() {
+    return {
+      specId: els.boardSpecSelect ? els.boardSpecSelect.value : "standard-29",
+      preferSeams: Boolean(els.boardPreferSeamsToggle && els.boardPreferSeamsToggle.checked),
+      seamColumns: state.beads.rebuildReport && state.beads.rebuildReport.boardSeams ? state.beads.rebuildReport.boardSeams.columns : [],
+      seamRows: state.beads.rebuildReport && state.beads.rebuildReport.boardSeams ? state.beads.rebuildReport.boardSeams.rows : []
+    };
+  }
+
+  function populateBoardSpecSelect() {
+    if (!els.boardSpecSelect || !boardPlannerModule) return;
+    els.boardSpecSelect.innerHTML = "";
+    boardPlannerModule.BOARD_SPECS.forEach((spec) => {
+      const option = document.createElement("option");
+      option.value = spec.id;
+      option.textContent = spec.label;
+      els.boardSpecSelect.appendChild(option);
+    });
+    els.boardSpecSelect.value = "standard-29";
+  }
+
+  function computeBoardPlan() {
+    if (!boardPlannerModule || !state.beads.pattern || !Array.isArray(state.beads.pattern.cells)) return null;
+    return boardPlannerModule.splitPattern(state.beads.pattern, getBoardPlanOptions());
+  }
+
+  function renderBoardPlan() {
+    if (!els.boardPlanSummary) return;
+    const boards = computeBoardPlan();
+    boardPlanCache = boards;
+    if (!boards || !boards.length) {
+      els.boardPlanSummary.textContent = "生成图纸后显示底板分割计划。";
+      return;
     }
-    return current;
+    const doneBoards = boards.filter((board) => {
+      const progress = boardPlannerModule.progressOfBoard(board, state.buildProgress);
+      return progress.percent >= 100;
+    }).length;
+    const current = boards.find((board) => {
+      const progress = boardPlannerModule.progressOfBoard(board, state.buildProgress);
+      return progress.percent > 0 && progress.percent < 100;
+    }) || boards.find((board) => boardPlannerModule.progressOfBoard(board, state.buildProgress).percent === 0);
+    const currentText = current
+      ? `；当前第 ${current.index} 块（列 ${current.columnStart + 1}–${current.columnStart + current.columns}，行 ${current.rowStart + 1}–${current.rowStart + current.rows}，${current.cellCount} 颗）`
+      : "";
+    els.boardPlanSummary.textContent = `共 ${boards.length} 块底板 · 已完成 ${doneBoards} 块${currentText}。每板颜色数量可在导出阶段单独输出。`;
   }
 
+  function jumpToNextBoard() {
+    const pattern = state.beads.pattern;
+    if (!pattern || !boardPlannerModule) {
+      setMessage("请先生成图纸再使用底板导航。", true);
+      return;
+    }
+    const boards = boardPlanCache && boardPlanCache.length ? boardPlanCache : computeBoardPlan();
+    if (!boards || !boards.length) {
+      setMessage("无法计算底板计划。", true);
+      return;
+    }
+    const target = boards.find((board) => boardPlannerModule.progressOfBoard(board, state.buildProgress).percent < 100);
+    if (!target) {
+      setMessage("全部底板已完成，太棒了！");
+      return;
+    }
+    const grid = state.beads.lastGridRect;
+    const canvas = els.previewCanvas;
+    if (grid && canvas) {
+      const centerCol = target.columnStart + target.columns / 2;
+      const centerRow = target.rowStart + target.rows / 2;
+      state.view.panX += canvas.width / 2 - (grid.x + centerCol * grid.cellSize);
+      state.view.panY += canvas.height / 2 - (grid.y + centerRow * grid.cellSize);
+    }
+    if (buildNavigationModule) {
+      state.beads.buildNavigation.mode = "region";
+      if (els.buildNavModeSelect) els.buildNavModeSelect.value = "region";
+    }
+    render();
+    renderBoardPlan();
+    const progress = boardPlannerModule.progressOfBoard(target, state.buildProgress);
+    setMessage(`已跳到底板 ${target.index}/${boards.length}：完成 ${progress.done}/${progress.total} 颗。`);
+  }
+
+  // 按导航方式定位下一处：色号 / 行 / 底板区域共用同一入口。
   function locateNextBuildCell() {
     const pattern = state.beads.pattern;
+    const mode = state.beads.buildNavigation.mode || "color";
+    if (pattern && buildNavigationModule && mode !== "color") {
+      let run = null;
+      if (mode === "row") {
+        run = buildNavigationModule.planRowRun(pattern.cells, state.buildProgress, { fromRow: 0 });
+      } else if (mode === "region") {
+        const boards = boardPlanCache && boardPlanCache.length ? boardPlanCache : computeBoardPlan();
+        const target = (boards || []).find((board) => boardPlannerModule.progressOfBoard(board, state.buildProgress).percent < 100);
+        run = target ? buildNavigationModule.planRegionRun(pattern.cells, state.buildProgress, target, { limit: 48 }) : null;
+      }
+      if (run && run.length) {
+        const next = run[0];
+        const grid = state.beads.lastGridRect;
+        const canvas = els.previewCanvas;
+        if (grid && canvas) {
+          state.view.panX += canvas.width / 2 - (grid.x + (next.col + .5) * grid.cellSize);
+          state.view.panY += canvas.height / 2 - (grid.y + (next.row + .5) * grid.cellSize);
+        }
+        state.beads.buildNavigation.currentCode = next.code;
+        render();
+        renderBuildNavigation();
+        setMessage(mode === "row" ? `下一处：第 ${next.row + 1} 行，本行剩余 ${run.length} 格。` : `下一处：第 ${next.row + 1} 行，本块剩余 ${run.length} 格。`);
+        return next;
+      }
+      if (mode === "row") {
+        setMessage("全部行已拼完。");
+        return null;
+      }
+    }
     const code = ensureBuildCurrentCode();
     if (!pattern || !code) return null;
     const grid = state.beads.lastGridRect;
@@ -3011,6 +3319,24 @@
     render();
     setMessage(`已定位 ${code} 的下一处：第 ${best.col + 1} 列，第 ${best.row + 1} 行。`, false);
     return best;
+  }
+
+  function advanceBuildColor(direction = 1) {
+    const order = getBuildColorOrder();
+    if (!order.length) return "";
+    const current = ensureBuildCurrentCode();
+    const start = Math.max(0, order.findIndex((item) => item.code === current));
+    for (let offset = 1; offset <= order.length; offset += 1) {
+      const item = order[(start + direction * offset + order.length * 2) % order.length];
+      const stats = getBuildColorStats(item.code);
+      if (stats.done < stats.total || offset === order.length) {
+        state.beads.buildNavigation.currentCode = item.code;
+        renderBuildNavigation();
+        render();
+        return item.code;
+      }
+    }
+    return current;
   }
 
   function toggleBuildCell(cell) {
@@ -3447,6 +3773,7 @@
     populateReplaceControls(usage);
     renderQualitySummary();
     renderBuildProgress();
+    renderInventoryPanel();
   }
 
   function populatePaletteControls() {
@@ -4731,7 +5058,7 @@
     const processedSource = importWizard.processedSource || (session.processedCache && session.processedCache.source) || session.image;
     const recipe = makeImportRecipe(session, importWizard.activeCandidate || getImportMode());
     const hadPattern = Boolean(state.beads.pattern);
-    if (hadPattern) pushHistory();
+    if (hadPattern) { createBeadCheckpoint("import", session.name || "导入新图"); pushHistory(); }
     if (state.image && state.image !== session.image && state.image.src && state.image.src.startsWith("blob:")) URL.revokeObjectURL(state.image.src);
     state.image = session.image;
     state.imageName = session.name;
@@ -4811,7 +5138,7 @@
       }
     }
     const hadPattern = Boolean(state.beads.pattern);
-    if (hadPattern) pushHistory();
+    if (hadPattern) { createBeadCheckpoint("rebuild", `${session.name || "已有图纸"} 重建`); pushHistory(); }
     if (state.image && state.image !== session.image && state.image.src && state.image.src.startsWith("blob:")) URL.revokeObjectURL(state.image.src);
     const now = new Date().toISOString();
     const baseName = String(session.name || "未命名图片").replace(/\.[^.]+$/, "") || "未命名图片";
@@ -4845,12 +5172,17 @@
     state.beads.rebuildReport = {
       version: result.version || "pattern-rebuild-1",
       sourceName: session.name,
+      sourceType: result.sourceType || null,
       detectedSize: { width: detectedWidth, height: detectedHeight },
       appliedSize: { width, height },
       confidence: Number(Number(result.confidence || 0).toFixed(4)),
       gridConfidence: Number(Number(result.grid.confidence || 0).toFixed(4)),
       lowConfidenceCount,
       manualReviewCount,
+      boardSeams: result.grid && result.grid.boardSeams ? {
+        columns: Array.isArray(result.grid.boardSeams.columns) ? result.grid.boardSeams.columns.slice() : [],
+        rows: Array.isArray(result.grid.boardSeams.rows) ? result.grid.boardSeams.rows.slice() : []
+      } : { columns: [], rows: [] },
       reasons: Array.isArray(result.reasons) ? result.reasons.slice() : [],
       clusters: Array.isArray(result.clusters) ? result.clusters.map((cluster) => Object.assign({}, cluster, { color: Object.assign({}, cluster.color) })) : [],
       createdAt: now
@@ -4959,7 +5291,7 @@
       if (!pattern || !pattern.cells || !pattern.cells.length) throw new Error("没有生成有效图纸");
       if (state.image !== session.image && state.image && state.image.src && state.image.src.startsWith("blob:")) URL.revokeObjectURL(state.image.src);
       const hadPattern = Boolean(state.beads.pattern);
-      if (hadPattern) pushHistory();
+      if (hadPattern) { createBeadCheckpoint("import", session.name || "快速导入"); pushHistory(); }
       state.image = session.image;
       state.imageName = session.name;
       state.importCalibration = null;
@@ -5354,6 +5686,73 @@
     state.beads.redoStack = [];
     updateHistoryButtons();
     markUnsavedChanges();
+  }
+
+  // ===== 项目检查点（project-store v2 配套的内存态） =====
+  // 在导入/重建/批量替换/色数优化等破坏性操作前调用，保存当前完整内容快照。
+  function createBeadCheckpoint(reason, label) {
+    if (!state.beads.pattern || !projectStoreModule) return null;
+    const payload = makeProjectPayload();
+    if (!payload) return null;
+    const checkpoint = projectStoreModule.makeCheckpoint(payload, reason, label, projectModelModule);
+    if (!checkpoint) return null;
+    const existing = Array.isArray(state.beads.checkpoints) ? state.beads.checkpoints : [];
+    // 同指纹去重：内容没变不重复建点。
+    if (existing.some((item) => item && item.fingerprint === checkpoint.fingerprint)) return null;
+    state.beads.checkpoints = [checkpoint].concat(existing).slice(0, projectStoreModule.MAX_CHECKPOINTS);
+    markUnsavedChanges();
+    renderCheckpointList();
+    return checkpoint;
+  }
+
+  function restoreBeadCheckpoint(checkpointId) {
+    const list = Array.isArray(state.beads.checkpoints) ? state.beads.checkpoints : [];
+    const target = list.find((item) => item && item.id === String(checkpointId));
+    if (!target || !target.payload) {
+      setMessage("没有找到这个检查点。", true);
+      return false;
+    }
+    if (!window.confirm(`恢复到检查点“${target.label || target.reason}”？当前未保存的修改将丢失，恢复后仍可撤销。`)) return false;
+    const payload = JSON.parse(JSON.stringify(target.payload));
+    payload.checkpoints = list.filter((item) => item && item.id !== target.id);
+    if (!applyProjectPayload(payload, false)) return false;
+    state.beads.checkpoints = payload.checkpoints;
+    clearHistory();
+    showEditor();
+    render();
+    renderUsage();
+    if (els.checkpointMenu) els.checkpointMenu.open = false;
+    renderCheckpointList();
+    setMessage(`已恢复到检查点“${target.label || target.reason}”。`);
+    return true;
+  }
+
+  function renderCheckpointList() {
+    const listElement = els.checkpointList;
+    if (!listElement) return;
+    listElement.replaceChildren();
+    const list = Array.isArray(state.beads.checkpoints) ? state.beads.checkpoints : [];
+    if (!list.length) {
+      const empty = document.createElement("p");
+      empty.className = "panel-caption";
+      empty.textContent = "导入、重建、批量替换和色数优化前会自动建立检查点。";
+      listElement.appendChild(empty);
+      return;
+    }
+    const reasonLabels = { import: "导入", rebuild: "重建", "batch-replace": "批量替换", "color-optimize": "色数优化", manual: "手动" };
+    list.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "checkpoint-row";
+      const label = document.createElement("button");
+      label.type = "button";
+      label.className = "checkpoint-restore";
+      const time = item.at ? new Date(item.at) : null;
+      const timeText = time && !Number.isNaN(time.getTime()) ? `${time.getHours().toString().padStart(2, "0")}:${time.getMinutes().toString().padStart(2, "0")}` : "";
+      label.textContent = `${reasonLabels[item.reason] || "检查点"} · ${item.label || ""}${timeText ? ` · ${timeText}` : ""}`;
+      label.addEventListener("click", () => restoreBeadCheckpoint(item.id));
+      row.appendChild(label);
+      listElement.appendChild(row);
+    });
   }
 
   function undoEdit() {
@@ -6840,6 +7239,7 @@
     });
     if (!replacements.size) return 0;
 
+    createBeadCheckpoint("color-optimize", `色数优化到 ${target} 色`);
     pushHistory();
     const cells = getEditableCells() || state.beads.pattern.cells;
     let changed = 0;
@@ -7816,6 +8216,7 @@
       setMessage("请先生成图纸。", true);
       return;
     }
+    createBeadCheckpoint("batch-replace", `${state.beads.replaceFrom} → ${state.beads.replaceTo || "空格"}`);
     pushHistory();
     const changed = replaceColorEverywhere(state.beads.replaceFrom, state.beads.replaceTo);
     if (!changed) {
@@ -9194,10 +9595,14 @@
     if (decor === "none") return;
     ctx.save();
     if (decor === "grain") {
-      ctx.globalAlpha = 0.12 * intensity;
-      for (let i = 0; i < 700; i += 1) {
-        ctx.fillStyle = i % 2 ? "#000" : "#fff";
-        ctx.fillRect((i * 41) % width, (i * 67) % height, 1, 1);
+      // 胶片颗粒：全幅亮度噪声（质感引擎），替代旧的矢量撒点。
+      if (surfaceEngine) surfaceEngine.filmGrain(ctx, 0, 0, width, height, 0.22 * intensity);
+      else {
+        ctx.globalAlpha = 0.12 * intensity;
+        for (let i = 0; i < 700; i += 1) {
+          ctx.fillStyle = i % 2 ? "#000" : "#fff";
+          ctx.fillRect((i * 41) % width, (i * 67) % height, 1, 1);
+        }
       }
     } else if (decor === "sparkle" || decor === "stars") {
       ctx.globalAlpha = 0.5 * intensity;
@@ -9939,23 +10344,142 @@
     const artHeight = pattern.height * cell;
     const artX = Math.round((canvas.width - artWidth) / 2);
     const artY = Math.round((canvas.height - artHeight) / 2);
-    const art = makeSolidPixelArt(pattern, cell, mode);
 
-    drawStyleShadow(ctx, art, artX, artY, shadowColor, shadowAlpha, shadowBlur, shadowOffsetX, shadowOffsetY);
-    drawStyleThickness(ctx, art, artX, artY, thickness);
-    ctx.drawImage(art, artX, artY);
-
-    ctx.save();
-    beginMaterialShapePath(ctx, pattern, artX, artY, cell);
-    ctx.clip();
-    applySurfaceMask(ctx, mode, artX, artY, artWidth, artHeight, cell, pattern, intensity);
-    drawMaterialLight(ctx, artX, artY, artWidth, artHeight, light, intensity);
-    ctx.restore();
+    // 真实质感路径：立体豆体 + 程序化纤维 + 物理光照；引擎缺失时回退旧矢量绘制。
+    if (surfaceEngine && !modeIsFlatFallback(mode)) {
+      const style = materialSpriteStyle(mode, intensity);
+      drawSurfaceArt(ctx, pattern, artX, artY, cell, mode, style, intensity);
+    } else {
+      const art = makeSolidPixelArt(pattern, cell, mode);
+      drawStyleShadow(ctx, art, artX, artY, shadowColor, shadowAlpha, shadowBlur, shadowOffsetX, shadowOffsetY);
+      drawStyleThickness(ctx, art, artX, artY, thickness);
+      ctx.drawImage(art, artX, artY);
+      ctx.save();
+      beginMaterialShapePath(ctx, pattern, artX, artY, cell);
+      ctx.clip();
+      applySurfaceMask(ctx, mode, artX, artY, artWidth, artHeight, cell, pattern, intensity);
+      drawMaterialLight(ctx, artX, artY, artWidth, artHeight, light, intensity);
+      ctx.restore();
+    }
+    if (surfaceEngine && !modeIsFlatFallback(mode)) {
+      // 光照贴在豆阵之上、贴纸之下：与实物拍摄的光层一致。
+      ctx.save();
+      beginMaterialShapePath(ctx, pattern, artX, artY, cell);
+      ctx.clip();
+      surfaceEngine.applyLight(ctx, artX, artY, artWidth, artHeight, light, intensity);
+      ctx.restore();
+    }
     drawMaterialDecor(ctx, canvas.width, canvas.height, decor, intensity);
     drawStyleUserOverlays(ctx);
     applyPreviewZoom(canvas, state.beads.stylePreviewZoom || 1);
     return true;
   }
+
+  // 特殊构图类遮罩继续走旧路径（十字绣/保孔等逐格矢量逻辑更合适）。
+  function modeIsFlatFallback(mode) {
+    return ["cross-stitch", "holes", "bead-3d"].includes(mode);
+  }
+
+  // 遮罩 → 豆体渲染风格映射：熔融度与光泽按材质语义取值；wobble/bleed 提供手工误差与邻色互映。
+  function materialSpriteStyle(mode, intensity) {
+    const profile = {
+      normal: { melt: 0, gloss: .62, noise: .5 },
+      matte: { melt: 0, gloss: .12, noise: .7 },
+      parchment: { melt: .12, gloss: .18, noise: .75 },
+      "coarse-towel": { melt: .55, gloss: .1, noise: .9 },
+      "fine-towel": { melt: .55, gloss: .14, noise: .85 },
+      "felt-mask": { melt: .18, gloss: .08, noise: .95 },
+      linen: { melt: .2, gloss: .12, noise: .85 },
+      canvas: { melt: .2, gloss: .1, noise: .9 },
+      diagonal: { melt: .35, gloss: .3, noise: .5 },
+      wave: { melt: .35, gloss: .34, noise: .5 },
+      ripple: { melt: .4, gloss: .38, noise: .5 },
+      grid: { melt: .3, gloss: .3, noise: .45 },
+      dots: { melt: 0, gloss: .4, noise: .8 },
+      grain: { melt: 0, gloss: .3, noise: 1 },
+      glitter: { melt: 0, gloss: .95, noise: .35 },
+      "black-glitter": { melt: 0, gloss: .95, noise: .3 },
+      "rainbow-glitter": { melt: 0, gloss: .95, noise: .3 },
+      pearl: { melt: 0, gloss: .85, noise: .2 },
+      holographic: { melt: 0, gloss: .9, noise: .2 },
+      plastic: { melt: 0, gloss: .75, noise: .25 },
+      ceramic: { melt: .1, gloss: .8, noise: .3 }
+    }[mode] || { melt: 0, gloss: .6, noise: .5 };
+    // 未烫类保留手工摆放误差；熨烫类按熔融度收敛误差（熨平后更整齐）。
+    const wobble = profile.melt > .3 ? .35 : .55;
+    return {
+      melt: profile.melt * (0.4 + intensity * 0.6),
+      gloss: clamp(profile.gloss * (0.5 + intensity * 0.5), 0, 1),
+      noise: profile.noise,
+      wobble,
+      bleed: clamp(0.2 + intensity * 0.3, 0, 1),
+      seed: (state.beads.stylePreviewSeed | 0) || 7
+    };
+  }
+
+  // 立体豆阵绘制：阴影/厚度用合成路径，豆体走 sprite，纤维/熔融按遮罩叠加。
+  function drawSurfaceArt(ctx, pattern, artX, artY, cell, mode, style, intensity) {
+    const artWidth = pattern.width * cell;
+    const artHeight = pattern.height * cell;
+    const art = document.createElement("canvas");
+    art.width = artWidth;
+    art.height = artHeight;
+    const artCtx = art.getContext("2d");
+    surfaceEngine.beadField(artCtx, pattern, 0, 0, cell, style, (code) => getPaletteColor(code).hex);
+    // 熔融融合：相邻异色豆的渗透与桥接高光。
+    if (style.melt > 0.04) surfaceEngine.meltField(artCtx, pattern, 0, 0, cell, Math.min(1, style.melt * 1.2));
+    // 布纹纤维：毛巾/毛毡/亚麻/帆布用程序化纤维布底叠在豆阵之上（模拟熨烫布压痕）。
+    const fiberType = { "coarse-towel": "towel", "fine-towel": "fine", "felt-mask": "felt", linen: "linen", canvas: "linen" }[mode];
+    if (fiberType) {
+      const fiber = surfaceEngine.fiberTexture(256, fiberType, "#cfc9bb");
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(artX, artY, artWidth, artHeight);
+      ctx.clip();
+      ctx.globalCompositeOperation = "soft-light";
+      ctx.globalAlpha = clamp(0.35 + intensity * 0.5, 0, 1);
+      for (let y = 0; y < artHeight; y += 256) for (let x = 0; x < artWidth; x += 256) ctx.drawImage(fiber, artX + x, artY + y);
+      ctx.restore();
+    }
+    // 闪粉/虹光：金属系高光叠层。
+    if (["glitter", "black-glitter", "rainbow-glitter", "pearl", "holographic"].includes(mode)) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(artX, artY, artWidth, artHeight);
+      ctx.clip();
+      ctx.globalCompositeOperation = mode === "rainbow-glitter" ? "soft-light" : "screen";
+      ctx.globalAlpha = clamp(intensity * 0.5, 0, 1);
+      if (mode === "rainbow-glitter") {
+        const g = ctx.createLinearGradient(artX, artY, artX + artWidth, artY + artHeight);
+        ["rgba(255,0,120,.5)", "rgba(0,180,255,.5)", "rgba(255,230,0,.5)", "rgba(140,80,255,.5)"].forEach((c, i) => g.addColorStop(i / 3, c));
+        ctx.fillStyle = g;
+      } else {
+        ctx.fillStyle = mode === "black-glitter" ? "rgba(210,225,255,.4)" : "rgba(255,255,255,.42)";
+      }
+      for (let i = 0; i < Math.floor(artWidth * artHeight / 4200); i += 1) {
+        const px = artX + (i * 137.5) % artWidth;
+        const py = artY + (i * 89.3) % artHeight;
+        ctx.fillRect(px, py, 1.6, 1.6);
+      }
+      ctx.restore();
+    }
+    // 装饰纹理类遮罩（斜纹/波纹/网格/点）保留几何特征，但改用浮雕叠层而不是纯白线。
+    if (["diagonal", "wave", "ripple", "grid", "dots", "grain", "parchment"].includes(mode)) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(artX, artY, artWidth, artHeight);
+      ctx.clip();
+      surfaceEngine.applyLight(ctx, artX, artY, artWidth, artHeight, "dramatic", intensity * 0.35);
+      ctx.restore();
+    }
+    drawStyleShadow(ctx, art, artX, artY, state.beads.styleShadowColor ? els.styleShadowColorInput.value : "#172033", shadowAlphaForMode(intensity), shadowBlurForCell(cell), Math.max(8, cell * 1.2), Math.max(10, cell * 1.4));
+    drawStyleThickness(ctx, art, artX, artY, Math.min(thicknessForMode(mode), cell * 0.9));
+    ctx.drawImage(art, artX, artY);
+  }
+
+  function shadowAlphaForMode(intensity) { return clamp(0.22 + intensity * 0.18, 0.1, 0.55); }
+  function shadowBlurForCell(cell) { return Math.max(14, cell * 2.2); }
+  function thicknessForMode(mode) { return ["coarse-towel", "fine-towel", "felt-mask", "linen", "canvas"].includes(mode) ? 3 : 6; }
 
   function makeSolidPixelArt(pattern, cell, mode) {
     const art = document.createElement("canvas");
@@ -11450,7 +11974,7 @@
     if (!state.beads.pattern) return null;
     syncCompositePattern();
     return {
-      version: 1,
+      version: 2,
       app: "Q像素",
       type: "bead-pattern",
       id: state.beads.projectId || makeId(),
@@ -11460,7 +11984,16 @@
       savedAt: new Date().toISOString(),
       palette: "Mard-221",
       importRecipe: state.beads.importRecipe ? JSON.parse(JSON.stringify(state.beads.importRecipe)) : null,
+      importSource: state.beads.importSource && typeof state.beads.importSource === "object"
+        ? JSON.parse(JSON.stringify(state.beads.importSource))
+        : (state.beads.importRecipe ? { type: state.beads.importRecipe.type || "unknown", label: state.beads.sourceLabel || "", recipe: JSON.parse(JSON.stringify(state.beads.importRecipe)) } : null),
       rebuildReport: state.beads.rebuildReport ? JSON.parse(JSON.stringify(state.beads.rebuildReport)) : null,
+      inventorySnapshot: state.inventory && Object.keys(state.inventory).length ? JSON.parse(JSON.stringify(state.inventory)) : null,
+      boardPlan: state.beads.boardPlan ? JSON.parse(JSON.stringify(state.beads.boardPlan)) : null,
+      finish3d: state.beads.finish3d ? JSON.parse(JSON.stringify(state.beads.finish3d)) : null,
+      checkpoints: Array.isArray(state.beads.checkpoints)
+        ? state.beads.checkpoints.map((item) => item && item.payload ? item : null).filter(Boolean)
+        : [],
       pattern: {
         width: state.beads.pattern.width,
         height: state.beads.pattern.height,
@@ -11545,9 +12078,29 @@
     state.beads.importRecipe = payload.importRecipe && typeof payload.importRecipe === "object"
       ? JSON.parse(JSON.stringify(payload.importRecipe))
       : null;
+    state.beads.importSource = payload.importSource && typeof payload.importSource === "object"
+      ? JSON.parse(JSON.stringify(payload.importSource))
+      : null;
     state.beads.rebuildReport = payload.rebuildReport && typeof payload.rebuildReport === "object"
       ? JSON.parse(JSON.stringify(payload.rebuildReport))
       : null;
+    state.beads.boardPlan = payload.boardPlan && typeof payload.boardPlan === "object"
+      ? JSON.parse(JSON.stringify(payload.boardPlan))
+      : null;
+    state.beads.finish3d = payload.finish3d && typeof payload.finish3d === "object"
+      ? JSON.parse(JSON.stringify(payload.finish3d))
+      : null;
+    state.beads.checkpoints = Array.isArray(payload.checkpoints)
+      ? payload.checkpoints
+          .map((item) => projectStoreModule ? projectStoreModule.normalizeCheckpoint(item, projectModelModule) : null)
+          .filter(Boolean)
+          .slice(0, projectStoreModule ? projectStoreModule.MAX_CHECKPOINTS : 4)
+      : [];
+    if (payload.inventorySnapshot && typeof payload.inventorySnapshot === "object") {
+      state.inventory = JSON.parse(JSON.stringify(payload.inventorySnapshot));
+      saveInventory();
+      renderInventoryPanel();
+    }
     state.beads.importProcessedSource = null;
     state.beads.exportSettings = Object.assign({}, state.beads.exportSettings, payload.exportSettings || {});
     state.beads.exportRegions = normalizeExportRegions(payload.exportRegions || [], state.beads.pattern);
@@ -11597,6 +12150,7 @@
     state.view.panX = 0;
     state.view.panY = 0;
     clearHistory();
+    renderCheckpointList();
     state.activeSessionStart = Date.now();
     setMode("beads");
     setMessage("源文件已打开。", false);
@@ -11668,9 +12222,12 @@
     try {
       if (state.forceProjectStorageFailureForTest) throw new Error("forced project storage failure");
       normalized.forEach((project) => {
-        if (project.payload) {
-          localStorage.setItem(`${projectPayloadStoragePrefix}${project.id}`, JSON.stringify(project.payload));
-        }
+        if (project.payload && projectStoreModule) {
+          const store = projectStoreModule.createStore({ storage: localStorage, projectId: project.id, model: projectModelModule });
+          const old = store.readPayload().payload;
+          if (!old || payloadFingerprint(old) !== payloadFingerprint(project.payload)) store.writePayload(project.payload);
+          localStorage.removeItem(`${projectPayloadStoragePrefix}${project.id}`);
+        } else if (project.payload) localStorage.setItem(`${projectPayloadStoragePrefix}${project.id}`, JSON.stringify(project.payload));
       });
       const activeIds = new Set(normalized.map((project) => project.id));
       for (let index = localStorage.length - 1; index >= 0; index -= 1) {
@@ -11862,6 +12419,11 @@
     if (!id || !window.fetch) return null;
     const local = getProjects().find((item) => item.id === id);
     let cachedPayload = local && local.payload ? local.payload : state.projectPayloadCache.get(id) || null;
+    if (!cachedPayload && projectStoreModule) {
+      const store = projectStoreModule.createStore({ storage: localStorage, projectId: id, model: projectModelModule });
+      store.recover();
+      cachedPayload = store.readPayload().payload;
+    }
     try {
       if (!cachedPayload) {
         const cached = JSON.parse(localStorage.getItem(`${projectPayloadStoragePrefix}${id}`) || "null");
@@ -12090,15 +12652,58 @@
     }
     if (els.saveTopButton) els.saveTopButton.title = dirty ? "保存未保存修改" : "当前没有未保存修改";
   }
-
   function markUnsavedChanges() {
     state.hasUnsavedChanges = true;
     updateDirtyStatus();
+    if (draftStore && state.beads.pattern) {
+      clearTimeout(draftTimer);
+      draftTimer = window.setTimeout(() => {
+        if (!state.hasUnsavedChanges) return;
+        try {
+          const payload = makeProjectPayload();
+          if (payload) draftStore.writePayload(payload);
+        } catch (error) {
+          console.warn("Q像素自动恢复草稿保存失败", error);
+          setMessage("自动恢复草稿未能写入本机，请手动导出工程文件。", true);
+        }
+      }, 4000);
+    }
   }
 
   function markSaved() {
     state.hasUnsavedChanges = false;
     updateDirtyStatus();
+    clearTimeout(draftTimer);
+  }
+
+  function clearRecoveryDraft() {
+    if (draftStore) {
+      try { localStorage.removeItem(draftStore.mainKey); localStorage.removeItem(draftStore.journalKey); } catch (_) {}
+    }
+  }
+
+  function offerDraftRecovery() {
+    if (!draftStore) return;
+    try {
+      draftStore.recover();
+      const payload = draftStore.readPayload().payload;
+      if (!payload || !payload.pattern) return;
+      const savedProject = getProjects().find((item) => item.id === payload.id);
+      if (savedProject && new Date(savedProject.savedAt || 0).getTime() >= new Date(payload.savedAt || 0).getTime()) return;
+      if (document.getElementById("studioRecoveryBanner")) return;
+      const banner = document.createElement("div");
+      banner.id = "studioRecoveryBanner";
+      banner.className = "studio-recovery-banner";
+      banner.setAttribute("role", "status");
+      const label = document.createElement("span");
+      label.textContent = `找到未保存草稿“${payload.title || "未命名"}”`;
+      const restore = document.createElement("button"); restore.type = "button"; restore.textContent = "恢复编辑";
+      restore.addEventListener("click", () => { if (applyProjectPayload(payload)) { showEditor(); markUnsavedChanges(); } banner.remove(); });
+      const dismiss = document.createElement("button"); dismiss.type = "button"; dismiss.textContent = "稍后";
+      dismiss.addEventListener("click", () => banner.remove());
+      banner.append(label, restore, dismiss);
+      document.body.appendChild(banner);
+    } catch (error) { console.warn("Q像素草稿恢复失败", error); }
   }
 
   function confirmLeaveWithUnsavedChanges() {
@@ -12716,6 +13321,9 @@
       inventory: state.inventory,
       baseboardMode: state.beads.baseboardMode,
       baseboardModeLabel: baseboardLabels[state.beads.baseboardMode] || state.beads.baseboardMode,
+      boardCount: boardPlannerModule && state.beads.pattern && state.beads.pattern.width <= 100 && state.beads.pattern.height <= 100
+        ? boardPlannerModule.splitPattern(state.beads.pattern, { specId: "standard-29" }).length
+        : (boardPlanCache ? boardPlanCache.length : 0),
       exportSettings: state.beads.exportSettings,
       hasUnsavedChanges: state.hasUnsavedChanges
     };
@@ -12748,6 +13356,15 @@
         onAction: (action) => {
           if (action.type === "stage" && controller) controller.setStage(action.stage);
           if (action.type === "save") saveCurrentProject();
+          if (action.type === "inventory-replan") planInventoryRecolor();
+          if (action.type === "fix-all") {
+            (action.checks || []).forEach((check) => {
+              if (!check || !check.action) return;
+              if (check.action.type === "inventory-replan") planInventoryRecolor();
+              else if (check.action.type === "save") saveCurrentProject();
+              else if (check.action.type === "stage" && controller) controller.setStage(check.action.stage);
+            });
+          }
         }
       });
       controller = controllerModule.create({
@@ -12811,10 +13428,12 @@
       payload
     }, existing);
     projects.unshift(nextProject);
-    setProjects(projects, { remote: false });
-    markSaved();
+    const localResult = storeProjectsLocally(projects);
+    if (localResult.localStorage) { markSaved(); clearRecoveryDraft(); }
+    else setMessage("本机空间不足，修改暂存在当前页面；请导出工程文件或释放空间。", true);
     saveProjectToRemote(projects[0]).then((result) => {
-      setMessage(result && result.ok ? "已保存并同步到电脑创作空间。" : "已保存到当前设备，电脑同步服务暂时不可用。", !(result && result.ok));
+      if (result && result.ok) { markSaved(); clearRecoveryDraft(); }
+      setMessage(result && result.ok ? "已保存并同步到电脑创作空间。" : localResult.localStorage ? "已保存到当前设备，电脑同步服务暂时不可用。" : "保存未完成：本机空间不足且电脑同步服务不可用，请导出工程文件。", !(result && result.ok));
     });
     renderProjectList();
     renderHomeProjects();
@@ -13455,6 +14074,11 @@
       state.beads.replaceTo = els.replaceToSelect.value;
     });
     els.replaceAllButton.addEventListener("click", handleReplaceAll);
+    if (els.inventorySaveButton) els.inventorySaveButton.addEventListener("click", saveInventoryBulkInput);
+    if (els.inventoryClearButton) els.inventoryClearButton.addEventListener("click", clearInventoryRecords);
+    if (els.inventoryRecolorButton) els.inventoryRecolorButton.addEventListener("click", planInventoryRecolor);
+    if (els.inventoryDecrementButton) els.inventoryDecrementButton.addEventListener("click", decrementInventoryByPattern);
+    if (els.inventoryUndoDecrementButton) els.inventoryUndoDecrementButton.addEventListener("click", undoLastInventoryDecrement);
     els.undoTopButton.addEventListener("click", undoEdit);
     els.redoTopButton.addEventListener("click", redoEdit);
 
@@ -13632,6 +14256,21 @@
       state.beads.buildNavigation.autoAdvance = els.buildAutoAdvanceToggle.checked;
       markUnsavedChanges();
     });
+    if (els.buildNavModeSelect) els.buildNavModeSelect.addEventListener("change", () => {
+      const mode = els.buildNavModeSelect.value;
+      state.beads.buildNavigation.mode = buildNavigationModule && buildNavigationModule.NAVIGATION_MODES.includes(mode) ? mode : "color";
+      renderBuildNavigation();
+      markUnsavedChanges();
+    });
+    if (els.boardSpecSelect) els.boardSpecSelect.addEventListener("change", () => {
+      boardPlanCache = null;
+      renderBoardPlan();
+    });
+    if (els.boardPreferSeamsToggle) els.boardPreferSeamsToggle.addEventListener("change", () => {
+      boardPlanCache = null;
+      renderBoardPlan();
+    });
+    if (els.boardJumpNextButton) els.boardJumpNextButton.addEventListener("click", jumpToNextBoard);
     if (els.similarColorAnalyzeButton) els.similarColorAnalyzeButton.addEventListener("click", () => analyzeSimilarColors(els.similarColorStrengthSelect && els.similarColorStrengthSelect.value));
     if (els.similarColorApplyAllButton) els.similarColorApplyAllButton.addEventListener("click", () => applySimilarColorSuggestions());
     if (els.similarColorList) els.similarColorList.addEventListener("click", (event) => {
@@ -14801,9 +15440,60 @@
     renderMaterialPicker();
     syncControls();
     wireEvents();
+    if (window.QPixelFinishWorkbench && window.QPixelFinishCore) {
+      const finishWorkbench = window.QPixelFinishWorkbench.create({
+        document, core: window.QPixelFinishCore,
+        getPattern: () => { syncCompositePattern(); return state.beads.pattern; },
+        getSettings: () => state.beads.finish3d,
+        colorOf: (code) => getPaletteColor(code).hex,
+        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js"),
+        onSettings: (settings) => { state.beads.finish3d = settings; markUnsavedChanges(); },
+        onExport: (blob) => saveBlobFile(blob, `Q像素-成品3D-${formatStamp(new Date())}.png`, "image/png", "3D 成品预览已导出。")
+      });
+      document.getElementById("finish3dButton")?.addEventListener("click", () => {
+        finishWorkbench.open().then((opened) => { if (!opened) setMessage("请先创建或导入图纸。", true); });
+      });
+    }
+    document.querySelectorAll("[data-studio-entry]").forEach((button) => button.addEventListener("click", () => {
+      if (!confirmLeaveWithUnsavedChanges()) return;
+      const entry = button.dataset.studioEntry;
+      professionalWorkspaceReady.then(() => {
+        if (!window.QPixelImportRouter) { createNewDesign(); return; }
+        chooseProjectEntry(entry);
+      });
+    }));
+    if (window.QPixelBackgroundTool && window.QPixelBackgroundEngine) {
+      const backgroundTool = window.QPixelBackgroundTool.create({
+        document, engine: window.QPixelBackgroundEngine,
+        getPattern: () => { syncCompositePattern(); return state.beads.pattern; },
+        colorOf: (code) => getPaletteColor(code).hex,
+        onApply: (mask, width, height) => {
+          if (!state.beads.pattern || state.beads.pattern.width !== width || state.beads.pattern.height !== height) return 0;
+          const editable = state.beads.layers.filter((layer) => layer.visible !== false && !layer.locked);
+          let changed = 0;
+          for (const layer of editable) for (let row = 0; row < height; row += 1) for (let col = 0; col < width; col += 1) {
+            if (mask[row * width + col] && layer.cells[row] && layer.cells[row][col]) changed += 1;
+          }
+          if (!changed) return 0;
+          pushHistory();
+          for (const layer of editable) for (let row = 0; row < height; row += 1) for (let col = 0; col < width; col += 1) {
+            if (mask[row * width + col] && layer.cells[row]) layer.cells[row][col] = null;
+          }
+          syncCompositePattern(); markUnsavedChanges(); render(); renderUsage();
+          setMessage(`已清除 ${changed} 个背景像素，可撤销。`);
+          return changed;
+        }
+      });
+      document.getElementById("removeBackgroundButton")?.addEventListener("click", () => {
+        if (!backgroundTool.open()) setMessage("请先创建或导入图纸。", true);
+      });
+    }
+    renderInventoryPanel();
+    populateBoardSpecSelect();
     professionalWorkspaceReady = initializeProfessionalWorkspace();
     setMode("pixel");
     showHome();
+    window.setTimeout(offerDraftRecovery, 100);
     syncProjectsFromRemote();
     syncSharedSettingsFromRemote();
   }

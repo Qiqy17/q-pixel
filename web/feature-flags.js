@@ -5,11 +5,11 @@
 })(typeof window !== "undefined" ? window : globalThis, function (root) {
   "use strict";
 
-  const STORAGE_KEY = "q-pixel-feature-flags-v1";
+  const STORAGE_KEY = "q-pixel-feature-flags-v2";
   const DEFAULTS = Object.freeze({
-    professionalWorkspace: false,
-    patternRebuild: false,
-    photoreal3d: false
+    professionalWorkspace: true,
+    patternRebuild: true,
+    photoreal3d: true
   });
 
   function normalize(source) {
@@ -35,7 +35,11 @@
   function readStored(storage) {
     if (!storage || typeof storage.getItem !== "function") return {};
     try {
-      return normalize(JSON.parse(storage.getItem(STORAGE_KEY) || "{}"));
+      const parsed = JSON.parse(storage.getItem(STORAGE_KEY) || "{}");
+      return Object.keys(DEFAULTS).reduce((result, key) => {
+        if (typeof parsed[key] === "boolean") result[key] = parsed[key];
+        return result;
+      }, {});
     } catch {
       return {};
     }

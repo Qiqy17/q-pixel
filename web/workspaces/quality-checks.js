@@ -27,6 +27,8 @@
     const colorCount = Object.keys(usage).filter((code) => Number(usage[code]) > 0).length;
     const total = Object.values(usage).reduce((sum, count) => sum + Math.max(0, Number(count) || 0), 0);
     const missing = Object.entries(usage).filter(([code, count]) => Number(inventory[code] || 0) < Number(count || 0));
+    const boardCount = Math.max(0, Math.floor(Number(source.boardCount) || 0));
+    const boardLabel = boardCount > 1 ? `需 ${boardCount} 块底板` : boardCount === 1 ? "单块底板可容纳" : "";
     const checks = [];
 
     checks.push(pattern
@@ -38,15 +40,18 @@
       : result("palette-wait", "palette", "warning", "等待图纸", "生成图纸后才能分析配色。"));
 
     checks.push(pattern
-      ? result("inventory", "inventory", missing.length ? "warning" : "pass", "库存覆盖", missing.length ? `${missing.length} 个色号库存不足或尚未录入。` : "当前库存可覆盖图纸用量。", missing.length ? { type: "stage", stage: "color", label: "查看库存" } : null)
+      ? result("inventory", "inventory", missing.length ? "warning" : "pass", "库存覆盖", missing.length ? `${missing.length} 个色号库存不足或尚未录入。` : "当前库存可覆盖图纸用量。", missing.length ? { type: "inventory-replan", label: "仅用库存配色" } : null)
       : result("inventory-wait", "inventory", "warning", "等待图纸", "生成图纸后才能核对库存。"));
 
+    const modeLabel = source.baseboardModeLabel || source.baseboardMode || "";
     checks.push(result(
       "baseboard",
       "baseboard",
-      source.baseboardMode ? "pass" : "warning",
-      "底板设置",
-      source.baseboardMode ? `当前为${source.baseboardModeLabel || source.baseboardMode}。` : "尚未选择底板显示方式。"
+      source.baseboardMode || boardCount ? "pass" : "warning",
+      "底板计划",
+      boardCount
+        ? boardLabel + (modeLabel ? `，当前为${modeLabel}。` : "。") + "拼制阶段可按底板分割推进，导出阶段可每板一页。"
+        : source.baseboardMode ? `当前为${modeLabel}，尚未生成底板分割计划。` : "尚未选择底板显示方式。"
     ));
 
     checks.push(pattern

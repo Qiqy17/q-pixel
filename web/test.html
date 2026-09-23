@@ -158,8 +158,8 @@
       const result = document.getElementById("result");
       try {
         const flags = window.QPixelTest.getFeatureFlagsForTest();
-        if (flags.professionalWorkspace || flags.patternRebuild || flags.photoreal3d) {
-          throw new Error("new workflow flags must default to off");
+        if (!flags.professionalWorkspace || !flags.patternRebuild || !flags.photoreal3d) {
+          throw new Error("professional workflow must default to on");
         }
         const workspaceBaseline = window.QPixelTest.getWorkspaceBaselineForTest();
         if (workspaceBaseline.mode !== "pixel" || workspaceBaseline.tool !== "brush") {
