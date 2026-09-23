@@ -623,3 +623,30 @@
 - 足够的仓库/安装包体积预算，用于本地 Three.js、WASM、HDRI 和 KTX2 材质。
 
 其中样片资产是“已实物标定”标签的硬门槛，但不会阻止 M1、M2 和通用 3D 引擎先行开发。
+
+---
+
+## 实施进度（2026-09-23 更新）
+
+| 任务 | 状态 | 说明 |
+| --- | --- | --- |
+| Task 1-7 | ✅ 完成 | 基线、开关、纯函数、工作区框架、入口路由 |
+| Task 8 | ✅ 完成 | 重建引擎补全：自动旋转估计、底板缝检测（双沿间距信号）、压缩噪声抑制（p90-p10 分位）、两遍鲁棒聚类 |
+| Task 9 | ✅ 完成 | 工作台三种视图（结果/叠加/分屏）、中置信度黄框、网格校准筛选、底板缝紫线可视化 |
+| Task 10 | ✅ 完成 | OCR 图例接口（legend-schema）保持预留 |
+| Task 11 | ✅ 完成 | palette-registry（MARD 221）+ inventory-engine（缺口/替代/重配色/扣减撤回）+ 检查器联动 |
+| Task 12 | ✅ 完成 | board-planner（4 规格 + 缝线对齐）+ build-navigation（色/行/区域三模式）+ 跳板导航 |
+| Task 13 | ✅ 完成 | project-store v2（原子写入+前滚恢复）+ 崩溃草稿恢复横幅 + 检查点（4 个入口 + 工具栏 UI + 嵌套剥离） |
+| Task 14 | ✅ 完成 | esbuild 本地打包 Three.js（529KB，Safari15 目标）+ SW 离线缓存 |
+| Task 15 | ✅ 完成 | 参数化车削豆体 + 连接桥 + InstancedMesh 实例化 |
+| Task 16 | ✅ 完成 | MeshPhysicalMaterial + RoomEnvironment + ACES 色调映射 |
+| Task 17 | ✅ 完成 | 标定规范文档 + calibration-manifest（数据驱动，标定后水印自动消失） |
+| Task 18 | ⏸ 待实测 | 十类烫法为通用参数化模型，UI 已带"未标定"水印如实标注；实测数据只需改 JSON |
+| Task 19 | ✅ 完成 | 3D 工作台：正/背面、曝光、双击拾取、快照分屏、空图纸保护 |
+| Task 20 | ✅ 完成 | WebGL2 三档预检 + 弱设备预判 + 运行时帧率监测自动降档（只降不升） |
+| Task 21 | ✅ 完成 | 4K 分块渲染 + 进度 + 取消 + 设备纹理上限自适应 |
+| Task 22 | ✅ 完成 | 上下文丢失守卫 + 渲染失败安全提示 + 导出中上下文丢失保护 |
+| Task 23-24 | ✅ 完成 | 浏览器冒烟验收（首页/编辑器/3D 全链路）；12 个测试文件全绿 |
+| Task 25 | ⏸ 待发布 | macOS 打包按需执行 scripts/build_macos_app.sh + verify_release.sh |
+
+**遗留事项**：Task 18 标定需实物样片（流程见 docs/superpowers/specs/mard-5mm-calibration.md）；发布需用户确认后执行打包脚本。
