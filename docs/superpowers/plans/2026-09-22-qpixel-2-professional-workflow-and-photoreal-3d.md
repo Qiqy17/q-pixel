@@ -640,13 +640,13 @@
 | Task 14 | ✅ 完成 | esbuild 本地打包 Three.js（529KB，Safari15 目标）+ SW 离线缓存 |
 | Task 15 | ✅ 完成 | 参数化车削豆体 + 连接桥 + InstancedMesh 实例化 |
 | Task 16 | ✅ 完成 | MeshPhysicalMaterial + RoomEnvironment + ACES 色调映射 |
-| Task 17 | ✅ 完成 | 标定规范文档 + calibration-manifest（数据驱动，标定后水印自动消失） |
-| Task 18 | ⏸ 待实测 | 十类烫法为通用参数化模型，UI 已带"未标定"水印如实标注；实测数据只需改 JSON |
+| Task 17 | 🟡 规范完成 | 标定规范与清单已建立；实测资产验证、运行时加载和水印解除机制尚未实现 |
+| Task 18 | ⏸ 待实测 | 十类烫法目前均为未标定通用参数化模型；需要实物样片、纹理、测量值及渲染链集成，不能仅改 JSON |
 | Task 19 | ✅ 完成 | 3D 工作台：正/背面、曝光、双击拾取、快照分屏、空图纸保护 |
 | Task 20 | ✅ 完成 | WebGL2 三档预检 + 弱设备预判 + 运行时帧率监测自动降档（只降不升） |
 | Task 21 | ✅ 完成 | 4K 分块渲染 + 进度 + 取消 + 设备纹理上限自适应 |
 | Task 22 | ✅ 完成 | 上下文丢失守卫 + 渲染失败安全提示 + 导出中上下文丢失保护 |
-| Task 23-24 | ✅ 完成 | 浏览器冒烟验收（首页/编辑器/3D 全链路）；12 个测试文件全绿 |
-| Task 25 | ⏸ 待发布 | macOS 打包按需执行 scripts/build_macos_app.sh + verify_release.sh |
+| Task 23-24 | 🟡 部分验收 | 浏览器、平板布局、PDF 和 4K PNG 流程已测；实物对照、500×500 性能、目标 iPad 及视觉基准仍待测 |
+| Task 25 | 🟡 发布检查中 | 需重新构建、安装与验签，并确认 Git 远端同步 |
 
-**遗留事项**：Task 18 标定需实物样片（流程见 docs/superpowers/specs/mard-5mm-calibration.md）；发布需用户确认后执行打包脚本。
+**遗留事项**：Task 18 标定需实物样片（流程见 docs/superpowers/specs/mard-5mm-calibration.md）；未完成前所有十种烫法必须持续标注“未标定通用模型”。

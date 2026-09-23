@@ -17,6 +17,7 @@
     const canvas = dialog.querySelector("canvas"), ctx = canvas.getContext("2d");
     const status = dialog.querySelector('[data-role="status"]');
     let pattern = null, mask = null, code = null, active = null;
+    let sourceCanvas = null, redrawFrame = 0;
 
     function point(event) {
       const rect = canvas.getBoundingClientRect();
@@ -25,18 +26,32 @@
     function redraw() {
       if (!pattern) return;
       const width = pattern.width, height = pattern.height;
-      canvas.width = Math.max(1, width * Math.max(2, Math.min(12, Math.floor(700 / width))));
-      canvas.height = Math.max(1, height * canvas.width / width);
       const scale = canvas.width / width;
-      ctx.fillStyle = "#faf8f4"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(sourceCanvas, 0, 0);
       for (let row = 0; row < height; row += 1) for (let col = 0; col < width; col += 1) {
-        const cell = pattern.cells[row][col];
-        if (!cell) continue;
-        ctx.fillStyle = colorOf(cell) || "#b5c0ca";
-        ctx.fillRect(col * scale, row * scale, Math.ceil(scale), Math.ceil(scale));
         if (mask[row * width + col]) { ctx.fillStyle = "rgba(20, 184, 166, .60)"; ctx.fillRect(col * scale, row * scale, Math.ceil(scale), Math.ceil(scale)); }
       }
       status.textContent = `识别背景 ${code || "无"} · 已选 ${engine.count(mask).toLocaleString()} 格 · 清除前可继续调整`;
+    }
+    function scheduleRedraw() {
+      if (redrawFrame) return;
+      redrawFrame = root.requestAnimationFrame(() => { redrawFrame = 0; redraw(); });
+    }
+    function buildSourceCanvas() {
+      const width = pattern.width, height = pattern.height;
+      canvas.width = Math.max(1, width * Math.max(2, Math.min(12, Math.floor(700 / width))));
+      canvas.height = Math.max(1, height * canvas.width / width);
+      sourceCanvas = doc.createElement("canvas");
+      sourceCanvas.width = canvas.width; sourceCanvas.height = canvas.height;
+      const source = sourceCanvas.getContext("2d");
+      const scale = canvas.width / width;
+      source.fillStyle = "#faf8f4"; source.fillRect(0, 0, canvas.width, canvas.height);
+      for (let row = 0; row < height; row += 1) for (let col = 0; col < width; col += 1) {
+        const cell = pattern.cells[row][col];
+        if (!cell) continue;
+        source.fillStyle = colorOf(cell) || "#b5c0ca";
+        source.fillRect(col * scale, row * scale, Math.ceil(scale), Math.ceil(scale));
+      }
     }
     function redetect() {
       const result = engine.detect(pattern.cells);
@@ -45,9 +60,10 @@
     function open() {
       pattern = getPattern();
       if (!pattern || !pattern.cells) return false;
+      buildSourceCanvas();
       redetect(); dialog.showModal(); return true;
     }
-    function close() { if (dialog.open) dialog.close(); active = null; }
+    function close() { if (dialog.open) dialog.close(); active = null; sourceCanvas = null; if (redrawFrame) root.cancelAnimationFrame(redrawFrame); redrawFrame = 0; }
     dialog.addEventListener("click", (event) => {
       const action = event.target.closest("[data-action]")?.dataset.action;
       if (action === "close" || action === "cancel") close();
@@ -66,13 +82,13 @@
       active = { pointerId: event.pointerId, tool, start: point(event), points: [point(event)] };
       if (tool === "brush") {
         const size = Number(dialog.querySelector('[data-role="size"]').value);
-        engine.paint(mask, pattern.width, pattern.height, active.points, size - 1, dialog.querySelector('[data-role="operation"]').value === "add"); redraw();
+        engine.paint(mask, pattern.width, pattern.height, active.points, size - 1, dialog.querySelector('[data-role="operation"]').value === "add"); scheduleRedraw();
       }
     });
     canvas.addEventListener("pointermove", (event) => {
       if (!active || active.pointerId !== event.pointerId) return;
       const next = point(event); active.points.push(next);
-      if (active.tool === "brush") { engine.paint(mask, pattern.width, pattern.height, [next], Number(dialog.querySelector('[data-role="size"]').value) - 1, dialog.querySelector('[data-role="operation"]').value === "add"); redraw(); }
+      if (active.tool === "brush") { engine.paint(mask, pattern.width, pattern.height, [next], Number(dialog.querySelector('[data-role="size"]').value) - 1, dialog.querySelector('[data-role="operation"]').value === "add"); scheduleRedraw(); }
     });
     function finish(event) {
       if (!active || active.pointerId !== event.pointerId) return;

@@ -37,7 +37,7 @@
     } catch (_) {
       maxTextureSize = 0;
     }
-    // 4K 导出至少需要 4096 纹理；1024 以下视为弱设备。
+    // 分级用于预览性能提示；4K 导出采用分块渲染，不要求 4096 纹理。
     let tier = "full";
     if (maxTextureSize && maxTextureSize < 4096) tier = "limited";
     if (maxTextureSize && maxTextureSize < 2048) tier = "weak";
@@ -56,7 +56,7 @@
       message: tier === "full"
         ? ""
         : tier === "limited"
-          ? "当前设备 3D 能力有限，4K 导出将自动降为设备支持的最大尺寸。"
+          ? "当前设备 3D 预览能力有限；4K 导出会分块完成，可能需要更长时间。"
           : "当前设备 3D 能力较弱，大图纸预览可能卡顿，建议缩小图纸或使用普通导出。"
     };
   }

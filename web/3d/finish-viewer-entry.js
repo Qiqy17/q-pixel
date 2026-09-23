@@ -39,12 +39,12 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
   controls.dampingFactor = .10;
   controls.minDistance = 10;
   controls.maxDistance = Math.max(pattern.width, pattern.height) * 12 + 80;
-  const ambient = new THREE.HemisphereLight(0xffffff, 0x6e7f78, 2.1);
+  const ambient = new THREE.HemisphereLight(0xffffff, 0x6e7f78, .85);
   scene.add(ambient);
-  const key = new THREE.DirectionalLight(0xfff4e7, 3.2);
+  const key = new THREE.DirectionalLight(0xfff4e7, 2.2);
   key.position.set(-110, 180, 130);
   scene.add(key);
-  const fill = new THREE.DirectionalLight(0xd5e9f6, 1.7);
+  const fill = new THREE.DirectionalLight(0xd5e9f6, .65);
   fill.position.set(130, 90, -70);
   scene.add(fill);
 
@@ -57,12 +57,41 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
   if (memory.suggestLowDetail && currentQuality === "high") currentQuality = "medium";
   const segmentsFor = (level) => (level === "high" ? 24 : level === "medium" ? 12 : 8);
 
-  const beadMaterial = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: .4, envMapIntensity: .7, clearcoat: .22, clearcoatRoughness: .45, iridescence: 0 });
+  // Seeded generic microtexture only; calibration manifest remains uncalibrated.
+  const normalData = new Uint8Array(64 * 64 * 4), roughData = new Uint8Array(64 * 64 * 4);
+  let textureSeed = 1109;
+  for (let texel = 0; texel < 64 * 64; texel += 1) {
+    textureSeed = (Math.imul(textureSeed, 1664525) + 1013904223) >>> 0;
+    const noise = (textureSeed >>> 24) - 128, offset = texel * 4;
+    normalData[offset] = Math.max(0, Math.min(255, 128 + noise * .22));
+    normalData[offset + 1] = Math.max(0, Math.min(255, 128 - noise * .18));
+    normalData[offset + 2] = 255; normalData[offset + 3] = 255;
+    const rough = Math.max(0, Math.min(255, 220 + noise * .12));
+    roughData[offset] = rough; roughData[offset + 1] = rough; roughData[offset + 2] = rough; roughData[offset + 3] = 255;
+  }
+  const normalMap = new THREE.DataTexture(normalData, 64, 64, THREE.RGBAFormat);
+  normalMap.wrapS = normalMap.wrapT = THREE.RepeatWrapping; normalMap.needsUpdate = true;
+  const roughnessMap = new THREE.DataTexture(roughData, 64, 64, THREE.RGBAFormat);
+  roughnessMap.wrapS = roughnessMap.wrapT = THREE.RepeatWrapping; roughnessMap.needsUpdate = true;
+  const beadMaterial = new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: .4, roughnessMap, normalMap, normalScale: new THREE.Vector2(.12, .12), envMapIntensity: .55, clearcoat: .16, clearcoatRoughness: .52, iridescence: 0 });
   const bridgeMaterial = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: .52, envMapIntensity: .48, vertexColors: false });
   const beadMesh = new THREE.InstancedMesh(beadGeometry(core.profile(settings.profile), segmentsFor(currentQuality)), beadMaterial, count);
   beadMesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
   beadMesh.userData.positions = [];
   scene.add(beadMesh);
+  if (count <= 12000) {
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.left = -width * 3;
+    key.shadow.camera.right = width * 3;
+    key.shadow.camera.top = height * 3;
+    key.shadow.camera.bottom = -height * 3;
+    key.shadow.camera.far = 1200;
+    key.shadow.bias = -.0003;
+    beadMesh.castShadow = true;
+  }
   const analysis = core.analyze(cells);
   const bridgeCount = analysis.horizontal + analysis.vertical;
   const bridgeMesh = bridgeCount && currentQuality !== "low" ? new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), bridgeMaterial, bridgeCount) : null;
@@ -124,6 +153,7 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
   const boardMaterial = new THREE.MeshPhysicalMaterial({ color: 0xe9e5da, roughness: .79, metalness: 0 });
   const board = new THREE.Mesh(boardGeometry, boardMaterial);
   board.position.y = -.8;
+  board.receiveShadow = true;
   scene.add(board);
   camera.position.set(width * 4, Math.max(width, height) * 5, height * 4);
   controls.target.set(0, 0, 0);
@@ -161,8 +191,10 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
   controls.addEventListener("change", invalidate);
 
   // 运行时性能监测：2 秒采样窗口，帧率持续偏低时自动降档（只降不升，避免抖动）。
-  let sampleStart = 0, sampleFrames = 0, degraded = false;
+  let sampleStart = 0, sampleFrames = 0, lastFrame = 0, degraded = false;
   function monitorFrame(now) {
+    if (lastFrame && now - lastFrame > 120) { sampleStart = now; sampleFrames = 0; }
+    lastFrame = now;
     if (sampleStart) {
       sampleFrames += 1;
       if (now - sampleStart >= 2000) {
@@ -234,21 +266,17 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     exportCancelled = true;
   }
 
-  // 4K 分块导出：设备纹理上限不足时自动降到上限；上下文丢失时安全失败。
+  // 4K 分块导出：分块尺寸适配设备纹理上限，输出始终保持请求尺寸。
   async function exportPng({ size = 4096, onProgress } = {}) {
     exportCancelled = false;
     const maxTexture = renderer.capabilities ? renderer.capabilities.maxTextureSize : 4096;
-    let targetSize = size;
-    if (maxTexture && size > maxTexture) {
-      targetSize = Math.floor(maxTexture / 2) * 2;
-      onStatus(`设备支持上限 ${maxTexture}px，已自动调整导出尺寸。`);
-    }
+    const targetSize = size;
     const output = document.createElement("canvas");
     output.width = targetSize;
     output.height = targetSize;
     const ctx = output.getContext("2d");
     const before = { aspect: camera.aspect };
-    const tile = 1024;
+    const tile = Math.max(1, Math.min(1024, maxTexture || 1024));
     try {
       camera.aspect = 1;
       camera.updateProjectionMatrix();
@@ -287,6 +315,8 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     controls.dispose();
     beadMesh.geometry.dispose();
     beadMaterial.dispose();
+    normalMap.dispose();
+    roughnessMap.dispose();
     if (bridgeMesh) bridgeMesh.geometry.dispose();
     bridgeMaterial.dispose();
     boardGeometry.dispose();

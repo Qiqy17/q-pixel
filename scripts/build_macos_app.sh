@@ -4,7 +4,7 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 OUTPUT_PATH="${1:-$REPO_DIR/dist/Q像素.app}"
 VERSION="${QPIXEL_VERSION:-2.0.0}"
-BUILD_NUMBER="${QPIXEL_BUILD_NUMBER:-6}"
+BUILD_NUMBER="${QPIXEL_BUILD_NUMBER:-8}"
 SIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 
 case "$OUTPUT_PATH" in

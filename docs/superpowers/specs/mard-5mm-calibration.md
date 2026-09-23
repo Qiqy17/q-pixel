@@ -16,7 +16,7 @@ AIGC:
 
 ## 1. 目标
 
-把 3D 成品预览的豆体几何、表面材质、颜色三层数据全部替换为 MARD 5mm 真实测量值，使预览效果与实物照片肉眼可辨一致（主要视角下 ΔE2000 ≤ 6）。
+把 3D 成品预览的豆体几何、表面材质、颜色三层数据全部替换为 MARD 5mm 真实测量值，并按主规格以标准拍摄条件下主要颜色平均 ΔE2000 ≤ 3 为目标验证。
 
 ## 2. 十类烫法档案
 
@@ -77,13 +77,13 @@ AIGC:
 1. 测量结果填入 `web/3d/calibration/measurements/{profileId}.json`（结构见 manifest `geometryCalibration.requiredMeasurements`）
 2. 纹理放 `web/3d/calibration/textures/`
 3. 颜色数据填 `web/3d/calibration/colors.json`
-4. 把 `web/3d/calibration-manifest.json` 的 `status` 改为 `calibrated`，各 profile `currentSource` 改为 `measured`
-5. `npm run build` 重打包 —— UI 水印自动消失，finish-core 在运行时优先读取实测参数
+4. 实现并测试运行时加载、完整性校验与渲染参数映射；缺失任一必需资产时回退通用模型并保留水印
+5. 通过尺寸、色差和十类照片对照验收后，才把 `web/3d/calibration-manifest.json` 标记为 `calibrated` 并重新打包；仅修改清单或 JSON 不会使当前版本自动成为实物标定模型
 
 ## 7. 验收标准
 
 - 十种烫法各一张预览 vs 实物照，5 人盲评"明显一致"≥ 4 人
-- 221 色在标准视角下与色板 ΔE2000 中位数 ≤ 6
+- 标准拍摄条件下主要颜色平均 ΔE2000 ≤ 3
 - 预览帧率：100×100 图纸在中档设备（M1 MacBook Air / iPad Air）≥ 30fps
 
 > AI生成

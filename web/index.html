@@ -476,11 +476,11 @@
 
         <section id="beadPanel" class="mode-panel">
           <div class="panel-card">
-            <div class="panel-section">
+            <div class="panel-section" data-studio-stages="design output">
               <h2>显示拼豆图纸</h2>
               <p id="usageSummary" class="panel-caption">底部色号栏可查看用量，点击色号可批量替换。</p>
             </div>
-            <div class="panel-section inventory-block">
+            <div class="panel-section inventory-block" data-studio-stages="color make">
               <h2>库存约束</h2>
               <p class="panel-caption">录入现有豆子数量，配色时可只用库存颜色并提示缺口。</p>
               <textarea id="inventoryBulkInput" rows="3" placeholder="每行一条：色号 数量，如 A1 120"></textarea>
@@ -496,7 +496,7 @@
               </div>
               <div id="inventorySubstitutionList"></div>
             </div>
-            <div class="toggle-grid">
+            <div class="toggle-grid" data-studio-stages="design output">
               <label class="check-line">
                 <input id="showCodesToggle" type="checkbox" checked>
                 <span>显示色号</span>
@@ -506,36 +506,36 @@
                 <span>显示网格</span>
               </label>
             </div>
-            <div class="control-row compact-row">
+            <div class="control-row compact-row" data-studio-stages="design output">
               <label for="codeFontScaleRange">色号字号</label>
               <div class="control-inputs">
                 <input id="codeFontScaleRange" type="range" min="80" max="180" value="125">
                 <input id="codeFontScaleNumber" type="number" min="80" max="180" value="125" inputmode="numeric">
               </div>
             </div>
-            <label class="switch-row compact">
+            <label class="switch-row compact" data-studio-stages="design">
               <span><strong>原图对比</strong><em>把原图叠到当前网格下方</em></span>
               <input id="sourceCompareToggle" type="checkbox">
             </label>
-            <div class="control-row compact-row">
+            <div class="control-row compact-row" data-studio-stages="design">
               <label for="sourceCompareOpacityRange">对比透明度</label>
               <div class="control-inputs">
                 <input id="sourceCompareOpacityRange" type="range" min="0" max="85" value="38">
                 <span id="sourceCompareOpacityLabel">38%</span>
               </div>
             </div>
-            <div class="import-summary" id="importSummary">导入图纸后显示模式、尺寸和色号摘要。</div>
-            <div class="quality-summary" id="qualitySummary">导入后可检查杂色、轮廓和高光。</div>
-            <div class="split-actions compact-actions">
+            <div class="import-summary" id="importSummary" data-studio-stages="design">导入图纸后显示模式、尺寸和色号摘要。</div>
+            <div class="quality-summary" id="qualitySummary" data-studio-stages="design">导入后可检查杂色、轮廓和高光。</div>
+            <div class="split-actions compact-actions" data-studio-stages="design output">
               <button class="text-button secondary" id="qualityCheckButton" type="button">检查图纸</button>
               <button class="text-button secondary" id="exportMaterialsButton" type="button">导出材料清单</button>
             </div>
-            <label class="switch-row compact">
+            <label class="switch-row compact" data-studio-stages="make">
               <span><strong>制作模式</strong><em>点击格子标记已完成，不改变色号</em></span>
               <input id="buildModeToggle" type="checkbox">
             </label>
-            <div class="build-progress" id="buildProgress">制作进度：0 / 0</div>
-            <div class="build-navigation hidden" id="buildNavigationPanel">
+            <div class="build-progress" id="buildProgress" data-studio-stages="make">制作进度：0 / 0</div>
+            <div class="build-navigation hidden" id="buildNavigationPanel" data-studio-stages="make">
               <div class="build-current-color"><span id="buildCurrentSwatch"></span><strong id="buildCurrentCode">--</strong><em id="buildCurrentStats">请选择色号</em></div>
               <div class="build-navigation-actions">
                 <button class="text-button secondary" id="buildPreviousColorButton" type="button">上一色</button>
@@ -546,17 +546,17 @@
               <label class="compact-select-row">排序<select id="buildSortModeSelect"><option value="usage">用量从多到少</option><option value="code">按色号</option></select></label>
               <label class="check-line"><input id="buildDimOthersToggle" type="checkbox" checked><span>突出当前色</span></label>
               <label class="check-line"><input id="buildAutoAdvanceToggle" type="checkbox" checked><span>完成后自动下一色</span></label>
-              <div class="board-plan-block">
-                <label class="compact-select-row">底板规格<select id="boardSpecSelect"></select></label>
-                <label class="check-line"><input id="boardPreferSeamsToggle" type="checkbox"><span>优先对齐重建底板缝</span></label>
-                <div id="boardPlanSummary" class="panel-caption">生成图纸后显示底板分割计划。</div>
-                <div class="split-actions"><button class="text-button secondary" id="boardJumpNextButton" type="button">跳到下一块未完成底板</button></div>
-              </div>
             </div>
-            <button class="text-button secondary full-width" id="clearBuildProgressButton" type="button">清除制作进度</button>
+            <div class="board-plan-block" data-studio-stages="make">
+              <label class="compact-select-row">底板规格<select id="boardSpecSelect"></select></label>
+              <label class="check-line"><input id="boardPreferSeamsToggle" type="checkbox"><span>优先对齐重建底板缝</span></label>
+              <div id="boardPlanSummary" class="panel-caption">生成图纸后显示底板分割计划。</div>
+              <div class="split-actions"><button class="text-button secondary" id="boardJumpNextButton" type="button">跳到下一块未完成底板</button></div>
+            </div>
+            <button class="text-button secondary full-width" id="clearBuildProgressButton" type="button" data-studio-stages="make">清除制作进度</button>
           </div>
 
-          <div class="panel-card color-optimize-card">
+          <div class="panel-card color-optimize-card" data-studio-stages="color">
             <div class="panel-section compact">
               <h2>色号优化</h2>
               <p class="panel-caption">控制整幅图纸的色号数量，减少杂色并保留轮廓。</p>
@@ -584,7 +584,7 @@
             </div>
           </div>
 
-          <div class="panel-card">
+          <div class="panel-card" data-studio-stages="design">
             <div class="panel-section compact">
               <h2>图纸尺寸</h2>
             </div>
@@ -609,7 +609,7 @@
             </div>
           </div>
 
-          <div class="panel-card layer-card">
+          <div class="panel-card layer-card" data-studio-stages="design">
             <div class="panel-section panel-headline">
               <h2>图层</h2>
               <button class="icon-plus" id="layerPanelToggle" type="button" title="新建图层">+</button>
@@ -628,7 +628,7 @@
             </div>
           </div>
 
-          <div class="panel-card canvas-edit-card">
+          <div class="panel-card canvas-edit-card" data-studio-stages="design">
             <div class="panel-section compact">
               <h2>画布编辑</h2>
             </div>
@@ -660,7 +660,7 @@
             </div>
           </div>
 
-          <div class="panel-card">
+          <div class="panel-card" data-studio-stages="design">
             <div class="panel-section compact">
               <h2>底板设置</h2>
             </div>
@@ -675,7 +675,7 @@
             </div>
           </div>
 
-          <div class="panel-card">
+          <div class="panel-card" data-studio-stages="version">
             <div class="panel-section compact">
               <h2>画布空间</h2>
               <p class="panel-caption">保存为本地小源文件，下次继续编辑。</p>
@@ -690,6 +690,14 @@
               <button class="text-button secondary" id="exportBeadPixelButton" type="button">导出像素画</button>
             </div>
             <div id="projectList" class="project-list"></div>
+          </div>
+
+          <div class="panel-card studio-output-card" data-studio-stages="output">
+            <div class="panel-section compact"><h2>交付与成品预览</h2><p class="panel-caption">图纸、材料和成品效果分别导出，文件中保留当前色号。</p></div>
+            <button type="button" id="studioOutputPreviewButton">打开图纸导出预览</button>
+            <button type="button" id="studioOutputBoardPdfButton">逐板图纸 PDF</button>
+            <button type="button" id="studioOutputMaterialsButton">材料清单 CSV</button>
+            <button type="button" id="studioOutput3dButton">进入成品 3D</button>
           </div>
 
           <select id="paletteSelect" class="full-select hidden-control" aria-label="当前颜色"></select>

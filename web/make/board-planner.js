@@ -43,6 +43,26 @@
     return boundaries.length ? boundaries : [100000];
   }
 
+  // Prefer a nearby detected seam without ever producing a board larger than the selected physical board.
+  function boundedSeamCuts(size, step, seams) {
+    const candidates = (Array.isArray(seams) ? seams : [])
+      .map((seam) => Math.floor(Number(seam && seam.line !== undefined ? seam.line : seam)))
+      .filter((line) => Number.isInteger(line) && line > 0 && line < size)
+      .sort((a, b) => a - b);
+    const cuts = [];
+    let start = 0;
+    while (start + step < size) {
+      const limit = start + step;
+      const minimum = start + Math.max(1, Math.floor(step / 2));
+      const preferred = candidates.filter((line) => line >= minimum && line <= limit).pop();
+      const next = preferred || limit;
+      cuts.push(next);
+      start = next;
+    }
+    cuts.push(size);
+    return cuts;
+  }
+
   // 分割图纸为底板列表；可选用重建报告的底板缝对齐真实拼接线。
   function splitPattern(pattern, options) {
     const settings = options || {};
@@ -51,9 +71,12 @@
     const width = Math.max(0, Math.floor(Number(pattern.width) || (pattern.cells[0] ? pattern.cells[0].length : 0)));
     if (!height || !width) return [];
     const spec = getSpec(settings.specId);
-    const useSeams = settings.preferSeams && (Array.isArray(settings.seamColumns) || Array.isArray(settings.seamRows));
-    const columnCuts = boundariesFromSize(width, useSeams ? NaN : spec.columns, settings.seamColumns);
-    const rowCuts = boundariesFromSize(height, useSeams ? NaN : spec.rows, settings.seamRows);
+    const columnCuts = settings.preferSeams
+      ? boundedSeamCuts(width, spec.columns, settings.seamColumns)
+      : boundariesFromSize(width, spec.columns);
+    const rowCuts = settings.preferSeams
+      ? boundedSeamCuts(height, spec.rows, settings.seamRows)
+      : boundariesFromSize(height, spec.rows);
     const boards = [];
     let rowStart = 0;
     let boardIndex = 0;

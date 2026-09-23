@@ -42,13 +42,17 @@ assert.equal(board1Progress.total, 29 * 29);
 assert.equal(board1Progress.done, 2);
 assert.equal(planner.progressOfBoard(boards[4], progress).done, 1);
 
-// 缝线对齐：重建报告的底板缝优先于规格分割。
+// 缝线对齐：优先采用附近缝线，但任何分块都不超出真实底板尺寸。
 const seamBoards = planner.splitPattern(pattern, { specId: "standard-29", preferSeams: true, seamColumns: [{ line: 20 }], seamRows: [{ line: 20 }] });
-assert.equal(seamBoards.length, 4);
+assert.equal(seamBoards.length, 6);
 assert.equal(seamBoards[0].columns, 20);
 assert.equal(seamBoards[0].rows, 20);
 assert.equal(seamBoards[1].columnStart, 20);
-assert.equal(seamBoards[2].rowStart, 20);
+assert.equal(seamBoards[3].rowStart, 20);
+assert.ok(seamBoards.every((board) => board.columns <= 29 && board.rows <= 29));
+assert.equal(planner.summarizeBoards(seamBoards).totalCells, 60 * 40);
+const emptySeamBoards = planner.splitPattern(pattern, { specId: "standard-29", preferSeams: true, seamColumns: [], seamRows: [] });
+assert.equal(emptySeamBoards.length, 6);
 
 // 拼制导航：进度统计。
 const navCells = [
