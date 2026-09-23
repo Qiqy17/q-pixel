@@ -46,6 +46,7 @@ cp "$REPO_DIR/web/import/import-router.js" "$RESOURCES_DIR/import/import-router.
 cp "$REPO_DIR/web/pattern-rebuild/rebuild-engine.js" "$RESOURCES_DIR/pattern-rebuild/rebuild-engine.js"
 cp "$REPO_DIR/web/pattern-rebuild/rebuild-worker.js" "$RESOURCES_DIR/pattern-rebuild/rebuild-worker.js"
 cp "$REPO_DIR/web/pattern-rebuild/legend-schema.js" "$RESOURCES_DIR/pattern-rebuild/legend-schema.js"
+cp "$REPO_DIR/web/pattern-rebuild/rebuild-workbench.js" "$RESOURCES_DIR/pattern-rebuild/rebuild-workbench.js"
 mkdir -p "$RESOURCES_DIR/assets"
 cp -R "$REPO_DIR/web/assets/materials" "$RESOURCES_DIR/assets/materials"
 cp "$REPO_DIR/scripts/qpixel_ipad_https_server.py" "$RESOURCES_DIR/qpixel_ipad_https_server.py"

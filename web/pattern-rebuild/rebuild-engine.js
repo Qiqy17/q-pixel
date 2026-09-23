@@ -9,6 +9,85 @@
   function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
   function gray(data, index) { return .299 * data[index] + .587 * data[index + 1] + .114 * data[index + 2]; }
 
+  function pixelAt(data, width, height, x, y) {
+    const px = clamp(x, 0, width - 1);
+    const py = clamp(y, 0, height - 1);
+    const x0 = Math.floor(px), y0 = Math.floor(py);
+    const x1 = Math.min(width - 1, x0 + 1), y1 = Math.min(height - 1, y0 + 1);
+    const tx = px - x0, ty = py - y0;
+    const output = [0, 0, 0, 0];
+    [[x0, y0, (1 - tx) * (1 - ty)], [x1, y0, tx * (1 - ty)], [x0, y1, (1 - tx) * ty], [x1, y1, tx * ty]].forEach(([sx, sy, weight]) => {
+      const index = (sy * width + sx) * 4;
+      for (let channel = 0; channel < 4; channel += 1) output[channel] += data[index + channel] * weight;
+    });
+    return output;
+  }
+
+  function warpQuadrilateral(image, width, height, corners, outputWidth, outputHeight) {
+    const points = Array.isArray(corners) && corners.length === 4 ? corners : [{ x: 0, y: 0 }, { x: width - 1, y: 0 }, { x: width - 1, y: height - 1 }, { x: 0, y: height - 1 }];
+    const outWidth = clamp(Math.round(outputWidth || width), 1, 4096);
+    const outHeight = clamp(Math.round(outputHeight || height), 1, 4096);
+    const output = new Uint8ClampedArray(outWidth * outHeight * 4);
+    const [p0, p1, p2, p3] = points;
+    const dx1 = p1.x - p2.x, dx2 = p3.x - p2.x, dx3 = p0.x - p1.x + p2.x - p3.x;
+    const dy1 = p1.y - p2.y, dy2 = p3.y - p2.y, dy3 = p0.y - p1.y + p2.y - p3.y;
+    const divisor = dx1 * dy2 - dx2 * dy1;
+    const projectiveG = Math.abs(divisor) > 1e-8 ? (dx3 * dy2 - dx2 * dy3) / divisor : 0;
+    const projectiveH = Math.abs(divisor) > 1e-8 ? (dx1 * dy3 - dx3 * dy1) / divisor : 0;
+    const matrix = {
+      a: p1.x - p0.x + projectiveG * p1.x,
+      b: p3.x - p0.x + projectiveH * p3.x,
+      c: p0.x,
+      d: p1.y - p0.y + projectiveG * p1.y,
+      e: p3.y - p0.y + projectiveH * p3.y,
+      f: p0.y,
+      g: projectiveG,
+      h: projectiveH
+    };
+    for (let y = 0; y < outHeight; y += 1) for (let x = 0; x < outWidth; x += 1) {
+      const u = outWidth === 1 ? 0 : x / (outWidth - 1);
+      const v = outHeight === 1 ? 0 : y / (outHeight - 1);
+      const denominator = matrix.g * u + matrix.h * v + 1;
+      const sampleX = (matrix.a * u + matrix.b * v + matrix.c) / denominator;
+      const sampleY = (matrix.d * u + matrix.e * v + matrix.f) / denominator;
+      const sample = pixelAt(image.data, width, height, sampleX, sampleY);
+      const index = (y * outWidth + x) * 4;
+      for (let channel = 0; channel < 4; channel += 1) output[index + channel] = sample[channel];
+    }
+    return { data: output, width: outWidth, height: outHeight };
+  }
+
+  function rotateImage(image, width, height, degrees) {
+    const angle = Number(degrees || 0) * Math.PI / 180;
+    if (Math.abs(angle) < .0001) return { data: new Uint8ClampedArray(image.data), width, height };
+    const output = new Uint8ClampedArray(width * height * 4);
+    const cx = (width - 1) / 2, cy = (height - 1) / 2;
+    const cos = Math.cos(-angle), sin = Math.sin(-angle);
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+      const dx = x - cx, dy = y - cy;
+      const sample = pixelAt(image.data, width, height, cx + dx * cos - dy * sin, cy + dx * sin + dy * cos);
+      const index = (y * width + x) * 4;
+      for (let channel = 0; channel < 4; channel += 1) output[index + channel] = sample[channel];
+    }
+    return { data: output, width, height };
+  }
+
+  function boundaryCandidates(image, width, height) {
+    const data = image.data;
+    const background = [data[0], data[1], data[2]];
+    let left = width, top = height, right = -1, bottom = -1;
+    for (let y = 0; y < height; y += 1) for (let x = 0; x < width; x += 1) {
+      const i = (y * width + x) * 4;
+      const distance = Math.hypot(data[i] - background[0], data[i + 1] - background[1], data[i + 2] - background[2]);
+      if (data[i + 3] > 20 && distance > 24) { left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x); bottom = Math.max(bottom, y); }
+    }
+    const full = { id: "full", left: 0, top: 0, right: width - 1, bottom: height - 1, score: .5 };
+    if (right <= left || bottom <= top) return [full];
+    const content = { id: "content", left, top, right, bottom, score: .82 };
+    const inset = Math.max(1, Math.round(Math.min(width, height) * .015));
+    return [content, full, { id: "inset", left: inset, top: inset, right: width - 1 - inset, bottom: height - 1 - inset, score: .62 }];
+  }
+
   function edgeProjection(image, width, height, axis) {
     const data = image.data || image;
     const length = axis === "x" ? width : height;
@@ -24,7 +103,8 @@
         projection[y] += Math.abs(gray(data, i) - gray(data, i - width * 4));
       }
     }
-    const max = Math.max(1, ...projection);
+    let max = 1;
+    for (const value of projection) max = Math.max(max, value);
     return projection.map((value) => value / max);
   }
 
@@ -59,46 +139,78 @@
   function sampleCell(data, width, height, left, top, right, bottom) {
     const insetX = Math.max(1, Math.floor((right - left) * .22));
     const insetY = Math.max(1, Math.floor((bottom - top) * .22));
-    let r = 0, g = 0, b = 0, count = 0, variance = 0;
-    const values = [];
+    const red = [], green = [], blue = [], values = [];
     for (let y = clamp(Math.floor(top + insetY), 0, height - 1); y < clamp(Math.ceil(bottom - insetY), 1, height); y += 1) {
       for (let x = clamp(Math.floor(left + insetX), 0, width - 1); x < clamp(Math.ceil(right - insetX), 1, width); x += 1) {
         const i = (y * width + x) * 4;
         if (data[i + 3] < 16) continue;
-        r += data[i]; g += data[i + 1]; b += data[i + 2]; count += 1; values.push(gray(data, i));
+        red.push(data[i]); green.push(data[i + 1]); blue.push(data[i + 2]); values.push(gray(data, i));
       }
     }
+    const count = values.length;
     if (!count) return { color: null, confidence: 0, reason: "transparent" };
+    red.sort((a, b) => a - b); green.sort((a, b) => a - b); blue.sort((a, b) => a - b);
+    const middle = Math.floor(count / 2);
+    const color = { r: red[middle], g: green[middle], b: blue[middle] };
     const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-    variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
-    return { color: { r: Math.round(r / count), g: Math.round(g / count), b: Math.round(b / count) }, confidence: clamp(1 - Math.sqrt(variance) / 90, 0, 1), reason: variance > 1600 ? "mixed-color" : "uniform" };
+    const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / values.length;
+    return { color, confidence: clamp(1 - Math.sqrt(variance) / 78, 0, 1), reason: variance > 1200 ? "mixed-color" : "uniform" };
+  }
+
+  function normalizeCellColors(cells, threshold) {
+    const limit = Math.max(2, Number(threshold || 14));
+    const clusters = [];
+    cells.forEach((row) => row.forEach((cell) => {
+      if (!cell.color) return;
+      let cluster = clusters.find((item) => Math.hypot(item.r - cell.color.r, item.g - cell.color.g, item.b - cell.color.b) <= limit);
+      if (!cluster) { cluster = { r: cell.color.r, g: cell.color.g, b: cell.color.b, count: 0, id: clusters.length }; clusters.push(cluster); }
+      cluster.count += 1;
+      const weight = 1 / cluster.count;
+      cluster.r += (cell.color.r - cluster.r) * weight; cluster.g += (cell.color.g - cluster.g) * weight; cluster.b += (cell.color.b - cluster.b) * weight;
+      cell.clusterId = cluster.id;
+    }));
+    cells.forEach((row) => row.forEach((cell) => {
+      const cluster = Number.isInteger(cell.clusterId) ? clusters[cell.clusterId] : null;
+      if (cluster) cell.color = { r: Math.round(cluster.r), g: Math.round(cluster.g), b: Math.round(cluster.b) };
+    }));
+    return clusters.map((cluster) => ({ id: cluster.id, color: { r: Math.round(cluster.r), g: Math.round(cluster.g), b: Math.round(cluster.b) }, count: cluster.count }));
   }
 
   function analyze(image, width, height, options) {
     const settings = options || {};
     if (!image || !image.data || image.data.length !== width * height * 4) throw new Error("重建输入尺寸不匹配");
+    let working = rotateImage(image, width, height, settings.rotation || 0);
+    const candidates = boundaryCandidates(working, working.width, working.height);
+    const selectedBoundary = settings.boundary || null;
+    if (selectedBoundary) {
+      const corners = [{ x: selectedBoundary.left, y: selectedBoundary.top }, { x: selectedBoundary.right, y: selectedBoundary.top }, { x: selectedBoundary.right, y: selectedBoundary.bottom }, { x: selectedBoundary.left, y: selectedBoundary.bottom }];
+      working = warpQuadrilateral(working, working.width, working.height, corners, selectedBoundary.right - selectedBoundary.left + 1, selectedBoundary.bottom - selectedBoundary.top + 1);
+    }
+    if (Array.isArray(settings.corners) && settings.corners.length === 4) working = warpQuadrilateral(working, working.width, working.height, settings.corners, settings.outputWidth || working.width, settings.outputHeight || working.height);
+    const processedWidth = working.width, processedHeight = working.height;
     const minPeriod = clamp(Number(settings.minPeriod || 4), 2, 64);
-    const maxPeriod = clamp(Number(settings.maxPeriod || Math.min(48, Math.floor(Math.min(width, height) / 2))), minPeriod, 96);
-    const xGrid = settings.cellWidth ? { period: Number(settings.cellWidth), offset: Number(settings.offsetX || 0), score: 1, candidates: [] } : detectGrid(edgeProjection(image, width, height, "x"), minPeriod, maxPeriod);
-    const yGrid = settings.cellHeight ? { period: Number(settings.cellHeight), offset: Number(settings.offsetY || 0), score: 1, candidates: [] } : detectGrid(edgeProjection(image, width, height, "y"), minPeriod, maxPeriod);
-    const columns = clamp(Number(settings.columns || Math.floor((width - xGrid.offset) / xGrid.period)), 1, 500);
-    const rows = clamp(Number(settings.rows || Math.floor((height - yGrid.offset) / yGrid.period)), 1, 500);
+    const maxPeriod = clamp(Number(settings.maxPeriod || Math.min(48, Math.floor(Math.min(processedWidth, processedHeight) / 2))), minPeriod, 96);
+    const xGrid = settings.cellWidth ? { period: Number(settings.cellWidth), offset: Number(settings.offsetX || 0), score: 1, candidates: [] } : detectGrid(edgeProjection(working, processedWidth, processedHeight, "x"), minPeriod, maxPeriod);
+    const yGrid = settings.cellHeight ? { period: Number(settings.cellHeight), offset: Number(settings.offsetY || 0), score: 1, candidates: [] } : detectGrid(edgeProjection(working, processedWidth, processedHeight, "y"), minPeriod, maxPeriod);
+    const columns = clamp(Number(settings.columns || Math.floor((processedWidth - xGrid.offset) / xGrid.period)), 1, 500);
+    const rows = clamp(Number(settings.rows || Math.floor((processedHeight - yGrid.offset) / yGrid.period)), 1, 500);
     const cells = [];
     let confidenceSum = 0;
     for (let row = 0; row < rows; row += 1) {
       const line = [];
       for (let col = 0; col < columns; col += 1) {
-        const cell = sampleCell(image.data, width, height, xGrid.offset + col * xGrid.period, yGrid.offset + row * yGrid.period, xGrid.offset + (col + 1) * xGrid.period, yGrid.offset + (row + 1) * yGrid.period);
+        const cell = sampleCell(working.data, processedWidth, processedHeight, xGrid.offset + col * xGrid.period, yGrid.offset + row * yGrid.period, xGrid.offset + (col + 1) * xGrid.period, yGrid.offset + (row + 1) * yGrid.period);
         confidenceSum += cell.confidence;
         line.push(cell);
       }
       cells.push(line);
     }
+    const clusters = normalizeCellColors(cells, settings.colorTolerance);
     const cellConfidence = rows * columns ? confidenceSum / (rows * columns) : 0;
     const gridConfidence = (xGrid.score + yGrid.score) / 2;
     const confidence = clamp(gridConfidence * .65 + cellConfidence * .35, 0, 1);
-    return { version: VERSION, width, height, grid: { offsetX: xGrid.offset, offsetY: yGrid.offset, cellWidth: xGrid.period, cellHeight: yGrid.period, columns, rows, confidence: gridConfidence, candidatesX: xGrid.candidates, candidatesY: yGrid.candidates }, cells, confidence, reasons: [gridConfidence < .45 ? "grid-low-confidence" : "grid-detected", cellConfidence < .55 ? "cell-colors-mixed" : "cell-colors-stable"], legend: settings.legend || null };
+    return { version: VERSION, width, height, processedWidth, processedHeight, calibration: { rotation: Number(settings.rotation || 0), corners: settings.corners || null, boundary: selectedBoundary }, boundaryCandidates: candidates, grid: { offsetX: xGrid.offset, offsetY: yGrid.offset, cellWidth: xGrid.period, cellHeight: yGrid.period, columns, rows, confidence: gridConfidence, candidatesX: xGrid.candidates, candidatesY: yGrid.candidates }, cells, clusters, confidence, reasons: [gridConfidence < .45 ? "grid-low-confidence" : "grid-detected", cellConfidence < .55 ? "cell-colors-mixed" : "cell-colors-stable"], legend: settings.legend || null };
   }
 
-  return Object.freeze({ VERSION, analyze, detectGrid, edgeProjection, sampleCell });
+  return Object.freeze({ VERSION, analyze, boundaryCandidates, detectGrid, edgeProjection, normalizeCellColors, rotateImage, sampleCell, warpQuadrilateral });
 });

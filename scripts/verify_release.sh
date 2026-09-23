@@ -25,6 +25,7 @@ node --check "$RESOURCES_DIR/import/import-router.js"
 node --check "$RESOURCES_DIR/pattern-rebuild/rebuild-engine.js"
 node --check "$RESOURCES_DIR/pattern-rebuild/rebuild-worker.js"
 node --check "$RESOURCES_DIR/pattern-rebuild/legend-schema.js"
+node --check "$RESOURCES_DIR/pattern-rebuild/rebuild-workbench.js"
 node --check "$RESOURCES_DIR/import-engine.js"
 node --check "$RESOURCES_DIR/import-processing.js"
 node --check "$RESOURCES_DIR/import-worker.js"
@@ -52,7 +53,7 @@ for file in quality-checks.js context-inspector.js workspace-controller.js; do
 done
 
 cmp -s "$RESOURCES_DIR/import/import-router.js" "$REPO_DIR/web/import/import-router.js"
-for file in rebuild-engine.js rebuild-worker.js legend-schema.js; do
+for file in rebuild-engine.js rebuild-worker.js legend-schema.js rebuild-workbench.js; do
   cmp -s "$RESOURCES_DIR/pattern-rebuild/$file" "$REPO_DIR/web/pattern-rebuild/$file"
 done
 

@@ -1224,6 +1224,56 @@
     </div>
   </section>
 
+  <section class="project-action-modal hidden" id="rebuildModal" aria-label="已有图纸重建工作台">
+    <div class="project-action-card rebuild-card">
+      <button class="project-action-close" id="rebuildCloseButton" type="button" title="关闭">×</button>
+      <div class="project-action-head rebuild-head">
+        <div>
+          <h2>已有图纸重建</h2>
+          <p><span id="rebuildFileName">未命名图片</span> · 先校准网格和颜色，确认后才创建新项目副本。</p>
+        </div>
+        <div class="rebuild-confidence" id="rebuildConfidence">等待分析</div>
+      </div>
+      <div class="rebuild-status" id="rebuildStatus" role="status" aria-live="polite">等待分析</div>
+      <div class="rebuild-body">
+        <main class="rebuild-previews">
+          <section><div><strong>原图与识别网格</strong><span>蓝线应对齐原图格线</span></div><div class="rebuild-canvas-wrap"><canvas id="rebuildSourceCanvas" width="720" height="480"></canvas></div></section>
+          <section><div><strong>重建图纸</strong><span>红框为低置信度或疑似空格</span></div><div class="rebuild-canvas-wrap checker"><canvas id="rebuildResultCanvas" width="720" height="480"></canvas></div></section>
+        </main>
+        <aside class="rebuild-controls">
+          <div class="rebuild-control-grid">
+            <label>旋转校正（°）<input id="rebuildRotationInput" type="number" min="-45" max="45" step="0.1" value="0"></label>
+            <label>边界<select id="rebuildBoundarySelect"><option value="-1">自动检测（不裁切）</option></select></label>
+            <label>格宽（px）<input id="rebuildCellWidthInput" type="number" min="2" max="200" step="0.1" placeholder="自动"></label>
+            <label>格高（px）<input id="rebuildCellHeightInput" type="number" min="2" max="200" step="0.1" placeholder="自动"></label>
+            <label>横向偏移<input id="rebuildOffsetXInput" type="number" min="0" max="200" step="0.1" value="0"></label>
+            <label>纵向偏移<input id="rebuildOffsetYInput" type="number" min="0" max="200" step="0.1" value="0"></label>
+            <label>列数<input id="rebuildColumnsInput" type="number" min="1" max="500" placeholder="自动"></label>
+            <label>行数<input id="rebuildRowsInput" type="number" min="1" max="500" placeholder="自动"></label>
+            <label class="wide">压缩噪声容差<input id="rebuildColorToleranceInput" type="range" min="2" max="40" value="14"></label>
+          </div>
+          <details class="rebuild-corners">
+            <summary>四角透视校正（可选）</summary>
+            <p>依次填写左上、右上、右下、左下坐标；留空则不校正。</p>
+            <div>
+              <label>左上 X<input id="rebuildCorner0X" type="number" min="0" step="0.1"></label><label>Y<input id="rebuildCorner0Y" type="number" min="0" step="0.1"></label>
+              <label>右上 X<input id="rebuildCorner1X" type="number" min="0" step="0.1"></label><label>Y<input id="rebuildCorner1Y" type="number" min="0" step="0.1"></label>
+              <label>右下 X<input id="rebuildCorner2X" type="number" min="0" step="0.1"></label><label>Y<input id="rebuildCorner2Y" type="number" min="0" step="0.1"></label>
+              <label>左下 X<input id="rebuildCorner3X" type="number" min="0" step="0.1"></label><label>Y<input id="rebuildCorner3Y" type="number" min="0" step="0.1"></label>
+            </div>
+          </details>
+          <button class="text-button secondary rebuild-analyze" id="rebuildAnalyzeButton" type="button">按当前参数重新分析</button>
+          <div class="rebuild-review-head"><strong>低置信度复核</strong><select id="rebuildIssueFilter"><option value="all">全部问题</option><option value="color">混色格</option><option value="empty">疑似空格</option></select></div>
+          <div class="rebuild-issue-list" id="rebuildIssueList"><p class="rebuild-empty-state">分析后显示待复核格子。</p></div>
+        </aside>
+      </div>
+      <footer class="rebuild-footer">
+        <span>取消不会改动当前项目；应用后生成未保存的新项目副本。</span>
+        <div><button class="text-button secondary" id="rebuildCancelButton" type="button">取消重建</button><button class="text-button" id="rebuildApplyButton" type="button" disabled>应用为新项目副本</button></div>
+      </footer>
+    </div>
+  </section>
+
   <section class="project-action-modal hidden" id="aiGenerateModal" aria-label="AI生成像素图">
     <div class="project-action-card ai-generate-card">
       <button class="project-action-close" id="aiGenerateCloseButton" type="button" title="关闭">×</button>

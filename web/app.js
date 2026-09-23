@@ -326,6 +326,7 @@
       restorationFingerprint: "",
       importMode: "fidelity",
       importRecipe: null,
+      rebuildReport: null,
       importProcessedSource: null,
       sourceCompareEnabled: false,
       sourceCompareOpacity: 38,
@@ -510,6 +511,7 @@
   let professionalWorkspaceLoadError = "";
   let professionalWorkspaceReady = Promise.resolve(null);
   let pendingProjectEntry = null;
+  let rebuildWorkbench = null;
   const watermarkSettingKeys = [
     "watermark",
     "watermarkEnabled",
@@ -643,6 +645,9 @@
       "colorOptimizeLimitInput", "colorOptimizeButton", "colorOptimizeUndoButton", "restoreLightButton", "restoreBalancedButton", "restoreDetailButton",
       "sourceCompareToggle", "sourceCompareOpacityRange", "sourceCompareOpacityLabel", "lockedColorSummary",
       "trashModal", "trashCloseButton", "trashList", "projectEntryModal", "projectEntryCloseButton", "projectEntryGrid",
+      "rebuildModal", "rebuildCloseButton", "rebuildFileName", "rebuildStatus", "rebuildConfidence", "rebuildSourceCanvas", "rebuildResultCanvas",
+      "rebuildRotationInput", "rebuildBoundarySelect", "rebuildCellWidthInput", "rebuildCellHeightInput", "rebuildOffsetXInput", "rebuildOffsetYInput",
+      "rebuildColumnsInput", "rebuildRowsInput", "rebuildColorToleranceInput", "rebuildAnalyzeButton", "rebuildIssueFilter", "rebuildIssueList", "rebuildCancelButton", "rebuildApplyButton",
       "usageLayoutWrapButton", "usageLayoutGridButton", "usageFontSizeRange", "usageFontSizeLabel",
       "usageStyleChipsButton", "usageStyleTableButton", "exportAxisToggle", "exportOuterBorderToggle",
       "paperPresetSelect", "paperOrientationPortraitButton", "paperOrientationLandscapeButton", "exportRatioSelect", "exportRatioWidthInput", "exportRatioHeightInput",
@@ -4164,7 +4169,16 @@
         intent: options.intent || "photo"
       };
       analyzeImportSession(state.importSession);
-      openImportChoiceModal();
+      if (state.importSession.intent === "rebuild") {
+        professionalWorkspaceReady.then(() => {
+          if (!isCurrentImportSession(sessionId)) return;
+          if (rebuildWorkbench && rebuildWorkbench.open(state.importSession)) return;
+          setMessage("图纸重建模块暂不可用，已切换到普通导入。", true);
+          openImportChoiceModal();
+        });
+      } else {
+        openImportChoiceModal();
+      }
     };
     img.onerror = () => {
       URL.revokeObjectURL(url);
@@ -4731,6 +4745,7 @@
     state.beads.restorationFingerprint = "";
     state.beads.sourceCompareEnabled = true;
     state.beads.importRecipe = recipe;
+    state.beads.rebuildReport = null;
     state.beads.importProcessedSource = processedSource;
     updateLockedColorsFromPattern(pattern);
     ensureLayers();
@@ -4768,6 +4783,98 @@
     importWizard = null;
     closeImportChoiceModal();
     closeCalibrationModal();
+  }
+
+  function applyRebuildResult(result, session, options) {
+    if (!result || !result.grid || !Array.isArray(result.cells) || !session || state.importSession !== session) return false;
+    const detectedWidth = clamp(Number(result.grid.columns || 0), 1, bounds.beadSize.max);
+    const detectedHeight = clamp(Number(result.grid.rows || 0), 1, bounds.beadSize.max);
+    if (!detectedWidth || !detectedHeight || result.cells.length !== detectedHeight) {
+      setMessage("重建结果尺寸异常，请重新分析。", true);
+      return false;
+    }
+    const width = clamp(detectedWidth, bounds.beadSize.min, bounds.beadSize.max);
+    const height = clamp(detectedHeight, bounds.beadSize.min, bounds.beadSize.max);
+    const cells = makeEmptyCells(height, width);
+    let lowConfidenceCount = 0;
+    let manualReviewCount = 0;
+    for (let row = 0; row < detectedHeight; row += 1) {
+      if (!Array.isArray(result.cells[row]) || result.cells[row].length !== detectedWidth) {
+        setMessage("重建结果网格不完整，请重新分析。", true);
+        return false;
+      }
+      for (let column = 0; column < detectedWidth; column += 1) {
+        const cell = result.cells[row][column];
+        if (cell.confidence < .55 || cell.reason === "transparent") lowConfidenceCount += 1;
+        if (String(cell.reason || "").startsWith("manual-")) manualReviewCount += 1;
+        if (cell.color) cells[row][column] = nearestBeadColor(cell.color.r, cell.color.g, cell.color.b).code;
+      }
+    }
+    const hadPattern = Boolean(state.beads.pattern);
+    if (hadPattern) pushHistory();
+    if (state.image && state.image !== session.image && state.image.src && state.image.src.startsWith("blob:")) URL.revokeObjectURL(state.image.src);
+    const now = new Date().toISOString();
+    const baseName = String(session.name || "未命名图片").replace(/\.[^.]+$/, "") || "未命名图片";
+    state.image = session.image;
+    state.imageName = session.name;
+    state.importCalibration = null;
+    state.beads.pattern = { width, height, cells, sourceLabel: session.name, createdAt: now };
+    state.beads.width = width;
+    state.beads.height = height;
+    state.beads.layers = [];
+    state.beads.activeLayerId = "";
+    state.beads.projectId = null;
+    state.beads.projectTitle = `${baseName} 重建`;
+    state.beads.projectCreatedAt = now;
+    state.beads.sourceLabel = session.name;
+    state.beads.selectedCells = [];
+    state.beads.clipboard = null;
+    state.beads.inspectedCell = null;
+    state.beads.pixelSignature = "";
+    state.beads.restorationFingerprint = "";
+    state.beads.sourceCompareEnabled = false;
+    state.beads.importProcessedSource = null;
+    state.beads.importRecipe = {
+      type: "pattern-rebuild",
+      algorithmVersion: result.version || "pattern-rebuild-1",
+      confidence: Number(Number(result.confidence || 0).toFixed(4)),
+      grid: Object.assign({}, result.grid),
+      calibration: Object.assign({}, result.calibration || {}, options || {}),
+      createdAt: now
+    };
+    state.beads.rebuildReport = {
+      version: result.version || "pattern-rebuild-1",
+      sourceName: session.name,
+      detectedSize: { width: detectedWidth, height: detectedHeight },
+      appliedSize: { width, height },
+      confidence: Number(Number(result.confidence || 0).toFixed(4)),
+      gridConfidence: Number(Number(result.grid.confidence || 0).toFixed(4)),
+      lowConfidenceCount,
+      manualReviewCount,
+      reasons: Array.isArray(result.reasons) ? result.reasons.slice() : [],
+      clusters: Array.isArray(result.clusters) ? result.clusters.map((cluster) => Object.assign({}, cluster, { color: Object.assign({}, cluster.color) })) : [],
+      createdAt: now
+    };
+    updateLockedColorsFromPattern(state.beads.pattern);
+    ensureLayers();
+    syncCompositePattern();
+    if (!hadPattern) clearHistory();
+    state.view.zoom = 1;
+    state.view.panX = 0;
+    state.view.panY = 0;
+    state.importSession = null;
+    importWizard = null;
+    importAiAssist = null;
+    state.activeSessionStart = Date.now();
+    if (els.imageStatus) els.imageStatus.textContent = state.beads.projectTitle;
+    if (els.projectTitleInput) els.projectTitleInput.value = state.beads.projectTitle;
+    syncBeadControls();
+    setMode("beads");
+    showEditor();
+    markUnsavedChanges();
+    const padded = width !== detectedWidth || height !== detectedHeight ? `，为兼容编辑器已扩展为 ${width} × ${height}` : "";
+    setMessage(`重建完成：识别 ${detectedWidth} × ${detectedHeight} 格${padded}，已创建未保存的新项目副本。`, false);
+    return true;
   }
 
   function openImportChoiceModal() {
@@ -4866,6 +4973,7 @@
       state.beads.restorationFingerprint = "";
       updateLockedColorsFromPattern(pattern);
       state.beads.importRecipe = makeImportRecipe(session, "balanced");
+      state.beads.rebuildReport = null;
       state.beads.importProcessedSource = result.processedSource;
       state.view.zoom = 1;
       state.view.panX = 0;
@@ -5124,6 +5232,7 @@
     state.beads.restorationFingerprint = "";
     state.beads.sourceCompareEnabled = true;
     state.beads.importRecipe = makeImportRecipe(session, getImportMode());
+    state.beads.rebuildReport = null;
     state.beads.importProcessedSource = processedSource;
     updateLockedColorsFromPattern(pattern);
     ensureLayers();
@@ -5319,6 +5428,7 @@
     state.beads.activeLayerId = "";
     state.beads.sourceLabel = "空白画布";
     state.beads.importRecipe = null;
+    state.beads.rebuildReport = null;
     state.beads.importProcessedSource = null;
     ensureLayers();
     syncCompositePattern();
@@ -11350,6 +11460,7 @@
       savedAt: new Date().toISOString(),
       palette: "Mard-221",
       importRecipe: state.beads.importRecipe ? JSON.parse(JSON.stringify(state.beads.importRecipe)) : null,
+      rebuildReport: state.beads.rebuildReport ? JSON.parse(JSON.stringify(state.beads.rebuildReport)) : null,
       pattern: {
         width: state.beads.pattern.width,
         height: state.beads.pattern.height,
@@ -11433,6 +11544,9 @@
     state.beads.sourceLabel = payload.sourceLabel || "本地源文件";
     state.beads.importRecipe = payload.importRecipe && typeof payload.importRecipe === "object"
       ? JSON.parse(JSON.stringify(payload.importRecipe))
+      : null;
+    state.beads.rebuildReport = payload.rebuildReport && typeof payload.rebuildReport === "object"
+      ? JSON.parse(JSON.stringify(payload.rebuildReport))
       : null;
     state.beads.importProcessedSource = null;
     state.beads.exportSettings = Object.assign({}, state.beads.exportSettings, payload.exportSettings || {});
@@ -12038,6 +12152,9 @@
     state.beads.inspectedCell = null;
     state.beads.sourceCompareEnabled = false;
     state.beads.sourceCompareOpacity = 38;
+    state.beads.importRecipe = null;
+    state.beads.rebuildReport = null;
+    state.beads.importProcessedSource = null;
     state.beads.lockedColorCodes = [];
     state.beads.lockedColorRoles = {};
     ensureLayers();
@@ -12616,6 +12733,9 @@
       await moduleLoader.loadScript("./workspaces/context-inspector.js", { async: false });
       await moduleLoader.loadScript("./workspaces/workspace-controller.js", { async: false });
       await moduleLoader.loadScript("./import/import-router.js", { async: false });
+      await moduleLoader.loadScript("./pattern-rebuild/rebuild-engine.js", { async: false });
+      await moduleLoader.loadScript("./pattern-rebuild/legend-schema.js", { async: false });
+      await moduleLoader.loadScript("./pattern-rebuild/rebuild-workbench.js", { async: false });
       const quality = window.QPixelQualityChecks;
       const inspectorModule = window.QPixelContextInspector;
       const controllerModule = window.QPixelWorkspaceController;
@@ -12639,11 +12759,22 @@
         onStateChange: (nextState) => { professionalWorkspaceState = nextState; }
       });
       controller.mount(inspector);
+      const rebuildModule = window.QPixelRebuildWorkbench;
+      if (rebuildModule && window.QPixelRebuildEngine && els.rebuildModal) {
+        rebuildWorkbench = rebuildModule.create({
+          document,
+          engine: window.QPixelRebuildEngine,
+          workerUrl: "./pattern-rebuild/rebuild-worker.js",
+          onApply: applyRebuildResult,
+          onCancel: cancelImportSession
+        });
+      }
       professionalWorkspaceRuntime = { controller, inspector, quality };
       professionalWorkspaceLoadError = "";
       return professionalWorkspaceRuntime;
     } catch (error) {
       professionalWorkspaceRuntime = null;
+      rebuildWorkbench = null;
       professionalWorkspaceLoadError = error && error.message ? error.message : "专业工作区加载失败";
       document.body.classList.remove("professional-workspace");
       console.error("Q像素专业工作区加载失败，已回到稳定界面。", error);
@@ -14320,6 +14451,7 @@
       processImportImageDataForTest: (data, width, height, settings) => importEngine && importEngine.processImageData(data, width, height, settings),
       deltaE2000ForTest: (left, right) => importEngine && importEngine.deltaE2000(left, right),
       getImportRecipeForTest: () => state.beads.importRecipe ? JSON.parse(JSON.stringify(state.beads.importRecipe)) : null,
+      getRebuildReportForTest: () => state.beads.rebuildReport ? JSON.parse(JSON.stringify(state.beads.rebuildReport)) : null,
       getImportMode: () => getImportMode(),
       setImportMode: (mode) => {
         setImportMode(mode);
@@ -14365,6 +14497,12 @@
       reducePatternToColorLimit,
       undoEdit,
       getFeatureFlagsForTest: () => featureFlags.all(),
+      selectProjectEntryForTest: (entryId) => {
+        if (!window.QPixelImportRouter) return null;
+        pendingProjectEntry = window.QPixelImportRouter.createSession(entryId);
+        if (els.projectEntryModal) els.projectEntryModal.classList.add("hidden");
+        return pendingProjectEntry ? pendingProjectEntry.entryId : null;
+      },
       getWorkspaceStateForTest: () => professionalWorkspaceState ? Object.assign({}, professionalWorkspaceState) : null,
       reduceWorkspaceStateForTest: (action) => {
         if (!workspaceStateModule || !professionalWorkspaceState) return null;
@@ -14391,6 +14529,7 @@
       waitForProfessionalWorkspaceForTest: () => professionalWorkspaceReady.then(() => ({
         ready: Boolean(professionalWorkspaceRuntime),
         error: professionalWorkspaceLoadError,
+        rebuildReady: Boolean(rebuildWorkbench),
         state: professionalWorkspaceRuntime ? professionalWorkspaceRuntime.controller.getState() : null
       })),
       setProfessionalStageForTest: (stage) => professionalWorkspaceRuntime

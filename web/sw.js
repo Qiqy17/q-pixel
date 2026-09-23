@@ -1,4 +1,4 @@
-const CACHE_NAME = "q-pixel-v20260922-module-boundary-1";
+const CACHE_NAME = "q-pixel-v20260923-pattern-rebuild-2";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -15,6 +15,7 @@ const APP_SHELL = [
   "./pattern-rebuild/rebuild-engine.js",
   "./pattern-rebuild/rebuild-worker.js",
   "./pattern-rebuild/legend-schema.js",
+  "./pattern-rebuild/rebuild-workbench.js",
   "./import-engine.js",
   "./import-processing.js",
   "./import-worker.js",
