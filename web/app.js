@@ -11,7 +11,14 @@
   const projectModelModule = window.QPixelProjectModel;
   const projectStoreModule = window.QPixelProjectStore || null;
   const draftStore = projectStoreModule ? projectStoreModule.createStore({ storage: window.localStorage, projectId: "__autosave__", model: projectModelModule }) : null;
+  const autoDraftModule = window.QPixelAutoDraft || null;
+  const draftVault = autoDraftModule ? autoDraftModule.createVault({ indexedDB: window.indexedDB, storage: window.localStorage, legacyStore: draftStore }) : null;
+  const draftIntervalKey = "q-pixel-auto-draft-interval";
+  let draftInterval = autoDraftModule ? autoDraftModule.normalizeInterval(window.localStorage.getItem(draftIntervalKey)) : 180000;
   let draftTimer = 0;
+  let draftRevision = 0;
+  let persistedDraftRevision = 0;
+  let draftWriteQueue = Promise.resolve();
   const workspaceStateModule = window.QPixelWorkspaceState || null;
   const domUtils = window.QPixelDomUtils || null;
   const paletteRegistryModule = window.QPixelPaletteRegistry || null;
@@ -521,7 +528,7 @@
       "homeNewFolderButton", "homeFolderBar", "homeFolderBackButton", "homeFolderName", "homeFolderCount",
       "homeOpenProjectButton", "homeProjectSearch", "homeProjectSort",
       "editorTopbar", "editorWorkspace", "controlPanel", "topbarCollapseButton", "topbarExpandButton",
-      "sidePanelCollapseButton", "sidePanelExpandButton", "backHomeButton", "saveTopButton", "saveStatus", "aiGenerateTopButton",
+      "sidePanelCollapseButton", "sidePanelExpandButton", "backHomeButton", "saveTopButton", "saveStatus", "aiGenerateTopButton", "autoDraftIntervalSelect", "openCurrentHistoryButton",
       "fileInput", "dropZone", "previewCanvas", "emptyState", "emptyTitle",
       "emptyDescription", "imageStatus", "canvasSize", "renderHint", "message",
       "precisionRange", "precisionNumber", "gapRange", "gapNumber", "radiusRange",
@@ -12049,6 +12056,9 @@
     const normalized = projects.map(normalizeProject).slice(0, 120);
     normalized.forEach((project) => {
       if (project.payload) state.projectPayloadCache.set(project.id, project.payload);
+      if (draftVault && Array.isArray(project.history) && project.history.length) {
+        draftVault.saveHistory(project.id, project.history).catch((error) => console.warn("Q像素本机历史版本写入失败", error));
+      }
     });
     state.projectCache = normalized;
     state.projectCacheReady = true;
@@ -12303,10 +12313,20 @@
   }
 
   async function hydrateProjectHistory(id) {
-    const local = getProjects().find((item) => item.id === id);
+    let local = getProjects().find((item) => item.id === id);
     if (!local) return null;
     if (normalizeProjectHistory(local.history).length >= Number(local.historyCount || 0)) return local;
-    const remote = await fetchRemoteProjectRecord(id);
+    if (draftVault) {
+      const storedHistory = normalizeProjectHistory(await draftVault.loadHistory(id));
+      if (storedHistory.length) {
+        const updated = Object.assign({}, local, { history: storedHistory, historyCount: Math.max(storedHistory.length, local.historyCount || 0) });
+        storeProjectsLocally(getProjects().map((item) => item.id === id ? updated : item));
+        local = updated;
+        if (storedHistory.length >= Number(local.historyCount || 0)) return updated;
+      }
+    }
+    let remote = null;
+    try { remote = await fetchRemoteProjectRecord(id); } catch (_) { return local; }
     if (!remote) return local;
     const history = normalizeProjectHistory(remote.history);
     const updated = Object.assign({}, local, {
@@ -12512,43 +12532,60 @@
     }
     if (els.saveTopButton) els.saveTopButton.title = dirty ? "保存未保存修改" : "当前没有未保存修改";
   }
+  function queueDraftWrite(work) {
+    draftWriteQueue = draftWriteQueue.catch(() => {}).then(work);
+    return draftWriteQueue;
+  }
+
+  function persistRecoveryDraft() {
+    if (!draftVault || !state.hasUnsavedChanges || !state.beads.pattern || draftRevision === persistedDraftRevision) return Promise.resolve(false);
+    const revision = draftRevision;
+    let payload;
+    try { payload = makeProjectPayload(); } catch (error) { return Promise.reject(error); }
+    if (!payload) return Promise.resolve(false);
+    return queueDraftWrite(() => draftVault.save(payload)).then(() => {
+      persistedDraftRevision = Math.max(persistedDraftRevision, revision);
+      return true;
+    }).catch((error) => {
+      console.warn("Q像素自动恢复草稿保存失败", error);
+      setMessage("自动恢复草稿未能写入本机，请手动导出工程文件。", true);
+      return false;
+    });
+  }
+
+  function scheduleRecoveryDraft() {
+    if (draftTimer || !draftInterval || !state.hasUnsavedChanges || !draftVault) return;
+    draftTimer = window.setTimeout(() => {
+      draftTimer = 0;
+      persistRecoveryDraft().finally(scheduleRecoveryDraft);
+    }, draftInterval);
+  }
+
   function markUnsavedChanges() {
     state.hasUnsavedChanges = true;
+    draftRevision += 1;
     updateDirtyStatus();
-    if (draftStore && state.beads.pattern) {
-      clearTimeout(draftTimer);
-      draftTimer = window.setTimeout(() => {
-        if (!state.hasUnsavedChanges) return;
-        try {
-          const payload = makeProjectPayload();
-          if (payload) draftStore.writePayload(payload);
-        } catch (error) {
-          console.warn("Q像素自动恢复草稿保存失败", error);
-          setMessage("自动恢复草稿未能写入本机，请手动导出工程文件。", true);
-        }
-      }, 4000);
-    }
+    scheduleRecoveryDraft();
   }
 
   function markSaved() {
     state.hasUnsavedChanges = false;
     updateDirtyStatus();
     clearTimeout(draftTimer);
+    draftTimer = 0;
   }
 
   function clearRecoveryDraft() {
-    if (draftStore) {
-      try { localStorage.removeItem(draftStore.mainKey); localStorage.removeItem(draftStore.journalKey); } catch (_) {}
-    }
+    if (draftVault) queueDraftWrite(() => draftVault.clear()).catch((error) => console.warn("Q像素清理草稿失败", error));
   }
 
-  function offerDraftRecovery() {
-    if (!draftStore) return;
+  async function offerDraftRecovery() {
+    if (!draftVault) return;
     try {
-      draftStore.recover();
-      const payload = draftStore.readPayload().payload;
+      const payload = await draftVault.load();
       if (!payload || !payload.pattern) return;
       const savedProject = getProjects().find((item) => item.id === payload.id);
+      if (savedProject && savedProject.payload && payloadFingerprint(savedProject.payload) === payloadFingerprint(payload)) return;
       if (savedProject && new Date(savedProject.savedAt || 0).getTime() >= new Date(payload.savedAt || 0).getTime()) return;
       if (document.getElementById("studioRecoveryBanner")) return;
       const banner = document.createElement("div");
@@ -12566,18 +12603,18 @@
     } catch (error) { console.warn("Q像素草稿恢复失败", error); }
   }
 
-  function confirmLeaveWithUnsavedChanges() {
+  async function confirmLeaveWithUnsavedChanges() {
     if (!state.hasUnsavedChanges) return true;
     const shouldSave = window.confirm("当前设计有未保存修改。点击“确定”先保存，点击“取消”继续选择。");
     if (shouldSave) {
-      saveCurrentProject();
+      await saveCurrentProject();
       return !state.hasUnsavedChanges;
     }
     return window.confirm("确定放弃未保存修改并继续吗？");
   }
 
-  function showHomeWithGuard() {
-    if (confirmLeaveWithUnsavedChanges()) showHome();
+  async function showHomeWithGuard() {
+    if (await confirmLeaveWithUnsavedChanges()) showHome();
   }
 
   function showEditor() {
@@ -12649,8 +12686,8 @@
     els.projectEntryModal.classList.remove("hidden");
   }
 
-  function startNewProjectFlow() {
-    if (confirmLeaveWithUnsavedChanges()) openProjectEntryModal();
+  async function startNewProjectFlow() {
+    if (await confirmLeaveWithUnsavedChanges()) openProjectEntryModal();
   }
 
   function chooseProjectEntry(entryId) {
@@ -13013,8 +13050,8 @@
     if (els.projectHistoryModal) els.projectHistoryModal.classList.add("hidden");
   }
 
-  function previewProjectHistoryVersion(projectId, versionId) {
-    if (!confirmLeaveWithUnsavedChanges()) return;
+  async function previewProjectHistoryVersion(projectId, versionId) {
+    if (!await confirmLeaveWithUnsavedChanges()) return;
     const project = getProjects().find((item) => item.id === projectId);
     const version = project && normalizeProjectHistory(project.history).find((item) => item.id === versionId);
     if (!project || !version || !version.payload) {
@@ -13033,6 +13070,7 @@
   }
 
   async function restoreProjectHistoryVersionFromUi(projectId, versionId) {
+    if (state.hasUnsavedChanges && !await confirmLeaveWithUnsavedChanges()) return;
     const project = getProjects().find((item) => item.id === projectId);
     if (!project) {
       setMessage("没有找到这个设计文件，当前设计没有变化。", true);
@@ -13403,42 +13441,47 @@
     }
   }
 
-  function saveCurrentProject() {
+  async function saveCurrentProject() {
     ensureBlankPatternForSave();
     const payload = makeProjectPayload();
     if (!payload) {
       setMessage("保存失败，请先创建画布。", true);
       return;
     }
+    const savingRevision = draftRevision;
     const existing = getProjects().find((item) => item.id === payload.id);
+    let previousProject = existing;
+    if (existing && draftVault && normalizeProjectHistory(existing.history).length < Number(existing.historyCount || 0)) {
+      const history = normalizeProjectHistory(await draftVault.loadHistory(existing.id));
+      if (history.length) previousProject = Object.assign({}, existing, { history, historyCount: Math.max(history.length, existing.historyCount || 0) });
+    }
     const sessionSeconds = consumeSessionSeconds();
     const today = dateKey(payload.savedAt);
-    const designDates = Object.assign({}, existing && existing.designDates);
+    const designDates = Object.assign({}, previousProject && previousProject.designDates);
     designDates[today] = Math.max(0, Number(designDates[today] || 0)) + Math.max(1, sessionSeconds);
     state.beads.projectId = payload.id;
     const projects = getProjects().filter((item) => item.id !== payload.id);
     const nextProject = withProjectHistory({
       id: payload.id,
       title: payload.title,
-      createdAt: (existing && existing.createdAt) || payload.createdAt || payload.savedAt,
+      createdAt: (previousProject && previousProject.createdAt) || payload.createdAt || payload.savedAt,
       savedAt: payload.savedAt,
       updatedAt: payload.savedAt,
       width: payload.pattern.width,
       height: payload.pattern.height,
       thumbnail: makeProjectThumbnail(state.beads.pattern),
-      editSeconds: Math.max(0, Number(existing && existing.editSeconds || 0)) + Math.max(1, sessionSeconds),
-      openCount: Math.max(0, Number(existing && existing.openCount || 0)),
+      editSeconds: Math.max(0, Number(previousProject && previousProject.editSeconds || 0)) + Math.max(1, sessionSeconds),
+      openCount: Math.max(0, Number(previousProject && previousProject.openCount || 0)),
       designDates,
       payload
-    }, existing);
+    }, previousProject);
     projects.unshift(nextProject);
     const localResult = storeProjectsLocally(projects);
-    if (localResult.localStorage) { markSaved(); clearRecoveryDraft(); }
+    if (localResult.localStorage && savingRevision === draftRevision) { markSaved(); clearRecoveryDraft(); }
     else setMessage("本机空间不足，修改暂存在当前页面；请导出工程文件或释放空间。", true);
     saveProjectToRemote(projects[0]).then((result) => {
       if (result && result.ok) {
-        markSaved();
-        clearRecoveryDraft();
+        if (savingRevision === draftRevision) { markSaved(); clearRecoveryDraft(); }
         // 远程确认成功后刷新一次列表，让 remoteUpdatedAt 落地；避免下轮同步合并时列表跳变。
         renderProjectList();
         renderHomeProjects();
@@ -13447,10 +13490,11 @@
     });
     renderProjectList();
     renderHomeProjects();
+    return Boolean(localResult.localStorage);
   }
 
   async function loadProject(id) {
-    if (state.hasUnsavedChanges && state.beads.projectId !== id && !confirmLeaveWithUnsavedChanges()) return;
+    if (state.hasUnsavedChanges && state.beads.projectId !== id && !await confirmLeaveWithUnsavedChanges()) return;
     const project = getProjects().find((item) => item.id === id);
     if (!project) {
       setMessage("没有找到这个本地作品。", true);
@@ -13847,6 +13891,29 @@
     if (els.sidePanelCollapseButton) els.sidePanelCollapseButton.addEventListener("click", () => setSidePanelCollapsed(true));
     if (els.sidePanelExpandButton) els.sidePanelExpandButton.addEventListener("click", () => setSidePanelCollapsed(false));
     els.saveTopButton.addEventListener("click", saveCurrentProject);
+    if (els.autoDraftIntervalSelect) {
+      els.autoDraftIntervalSelect.value = String(draftInterval);
+      els.autoDraftIntervalSelect.addEventListener("change", () => {
+        draftInterval = autoDraftModule.normalizeInterval(els.autoDraftIntervalSelect.value);
+        localStorage.setItem(draftIntervalKey, String(draftInterval));
+        clearTimeout(draftTimer);
+        draftTimer = 0;
+        scheduleRecoveryDraft();
+        setMessage(draftInterval ? `自动草稿间隔已设为 ${els.autoDraftIntervalSelect.selectedOptions[0].textContent}。手动保存才更新正式工程。` : "自动草稿已关闭；仍可手动保存工程。", false);
+      });
+    }
+    if (els.openCurrentHistoryButton) els.openCurrentHistoryButton.addEventListener("click", () => {
+      const projectId = state.beads.projectId;
+      if (!projectId || !getProjects().some((item) => item.id === projectId)) {
+        setMessage("请先手动保存一次当前工程，再查看历史版本。", true);
+        return;
+      }
+      openProjectHistoryModal(projectId);
+    });
+    window.addEventListener("pagehide", () => { if (draftInterval && state.hasUnsavedChanges) persistRecoveryDraft(); });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden" && draftInterval && state.hasUnsavedChanges) persistRecoveryDraft();
+    });
     els.chooseTopButton.addEventListener("click", openFileDialog);
     els.chooseEmptyButton.addEventListener("click", openFileDialog);
     els.replaceButton.addEventListener("click", openFileDialog);
@@ -15481,8 +15548,8 @@
         finishWorkbench.open().then((opened) => { if (!opened) setMessage("请先创建或导入图纸。", true); });
       });
     }
-    document.querySelectorAll("[data-studio-entry]").forEach((button) => button.addEventListener("click", () => {
-      if (!confirmLeaveWithUnsavedChanges()) return;
+    document.querySelectorAll("[data-studio-entry]").forEach((button) => button.addEventListener("click", async () => {
+      if (!await confirmLeaveWithUnsavedChanges()) return;
       const entry = button.dataset.studioEntry;
       professionalWorkspaceReady.then(() => {
         if (!window.QPixelImportRouter) { createNewDesign(); return; }

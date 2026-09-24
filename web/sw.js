@@ -1,4 +1,4 @@
-const CACHE_NAME = "q-pixel-v20260924-scenes-finish-3";
+const CACHE_NAME = "q-pixel-v20260924-autodraft-4";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -9,6 +9,7 @@ const APP_SHELL = [
   "./core/workspace-state.js",
   "./core/dom-utils.js",
   "./core/project-store.js",
+  "./core/auto-draft.js",
   "./color/palette-registry.js",
   "./color/inventory-engine.js",
   "./make/board-planner.js",

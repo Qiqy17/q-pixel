@@ -96,7 +96,7 @@
         <span class="save-status" id="saveStatus">已保存</span>
         <details class="top-action-menu"><summary class="text-button secondary">预览</summary><div><button class="text-button secondary" id="materialPreviewButton" type="button">展示图</button><button class="text-button secondary" id="finish3dButton" type="button">成品质感 3D</button></div></details>
         <button class="text-button" id="exportTopButton" type="button">导出</button>
-        <details class="top-action-menu"><summary class="text-button secondary" aria-label="更多工具">更多</summary><div><button class="text-button secondary" id="removeBackgroundButton" type="button">去背景</button><button class="text-button secondary" id="aiGenerateTopButton" type="button">AI 灵感</button><button type="button" data-workflow-stage-button="version" aria-selected="false">版本与恢复</button></div></details>
+        <details class="top-action-menu"><summary class="text-button secondary" aria-label="更多工具">更多</summary><div><button class="text-button secondary" id="removeBackgroundButton" type="button">去背景</button><button class="text-button secondary" id="aiGenerateTopButton" type="button">AI 灵感</button><button type="button" id="openCurrentHistoryButton">版本与恢复</button><label class="autosave-menu-label" for="autoDraftIntervalSelect">自动保存草稿<select id="autoDraftIntervalSelect" aria-label="自动保存草稿间隔"><option value="0">关闭</option><option value="15000">15 秒</option><option value="30000">30 秒</option><option value="60000">1 分钟</option><option value="180000" selected>3 分钟</option><option value="300000">5 分钟</option></select></label></div></details>
       </div>
       <button class="chrome-toggle topbar-collapse-button" id="topbarCollapseButton" type="button" title="收起顶部栏" aria-label="收起顶部栏">⌃</button>
     </header>
@@ -1532,6 +1532,7 @@
   <script src="./module-loader.js"></script>
   <script src="./core/project-model.js"></script>
   <script src="./core/project-store.js"></script>
+  <script src="./core/auto-draft.js"></script>
   <script src="./core/workspace-state.js"></script>
   <script src="./core/dom-utils.js"></script>
   <script src="./color/palette-registry.js"></script>

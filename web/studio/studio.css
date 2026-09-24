@@ -119,6 +119,8 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .top-action-menu[open] > div { position:absolute; z-index:60; right:0; top:calc(100% + 7px); display:grid; gap:4px; min-width:165px; padding:7px; border:1px solid #dfe9df; border-radius:11px; background:#fffefa; box-shadow:0 14px 35px #153e302a; }
 .top-action-menu[open] > div button { min-height:38px; width:100%; padding:7px 11px; border:0; border-radius:7px; background:transparent; color:#244d40; text-align:left; cursor:pointer; font-size:12px; font-weight:700; }
 .top-action-menu[open] > div button:hover { background:#eaf4e9; }
+.autosave-menu-label { display:grid; gap:6px; padding:8px 10px 5px; color:#45675b; font-size:11px; font-weight:750; white-space:nowrap; }
+.autosave-menu-label select { min-height:38px; border:1px solid #cfded3; border-radius:8px; padding:0 8px; background:#fff; color:#214c40; font:inherit; }
 .professional-workspace .workflow-inspector { border-color:#dfebe1; background:#fbfdfa; }
 .professional-workspace .workflow-inspector[data-empty="true"] { display:none; }
 @media (min-width:768px) and (max-width:1250px) {
