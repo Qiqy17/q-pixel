@@ -22,14 +22,27 @@ function surfaceMaps(profile) {
   const normals = new Uint8Array(size * size * 4);
   const roughness = new Uint8Array(size * size * 4);
   const flakes = new Uint8Array(size * size * 4);
+  const fibers = new Uint8Array(size * size * 4);
+  const noiseAt = (x, y) => {
+    const ix = Math.floor(x), iy = Math.floor(y);
+    const fx = x - ix, fy = y - iy;
+    const smoothX = fx * fx * (3 - 2 * fx), smoothY = fy * fy * (3 - 2 * fy);
+    const hash = (a, b) => {
+      const value = Math.sin(a * 127.1 + b * 311.7) * 43758.5453;
+      return (value - Math.floor(value)) * 2 - 1;
+    };
+    const top = hash(ix, iy) * (1 - smoothX) + hash(ix + 1, iy) * smoothX;
+    const bottom = hash(ix, iy + 1) * (1 - smoothX) + hash(ix + 1, iy + 1) * smoothX;
+    return top * (1 - smoothY) + bottom * smoothY;
+  };
   const heightAt = (x, y) => {
     const grain = Math.sin(x * 37.7 + y * 19.3) * Math.sin(y * 43.1 - x * 13.7);
-    if (profile.texture === "towel") return grain * .42 + Math.sin(y * .88 + Math.sin(x * .22)) * .16;
-    if (profile.texture === "bath") return grain * .28 + Math.sin(x * .39 + y * .31) * Math.sin(x * .31 - y * .39) * .38;
+    if (profile.texture === "towel") return noiseAt(x * .58, y * .58) * .72 + noiseAt(x * .19, y * .19) * .22;
+    if (profile.texture === "bath") return noiseAt(x * .36, y * .36) * .48 + Math.sin(x * .43) * Math.sin(y * .43) * .24;
     if (profile.texture === "waffle") return Math.cos(x * Math.PI / 12) * .35 + Math.cos(y * Math.PI / 12) * .35;
     if (profile.texture === "fabric") return Math.sin(x * .73) * Math.sin(y * .73) * .26 + grain * .12;
     if (profile.texture === "ribbed") return Math.sin(y * .76) * .34 + grain * .06;
-    return grain * .08;
+    return noiseAt(x * .53, y * .53) * .08;
   };
   for (let y = 0; y < size; y += 1) for (let x = 0; x < size; x += 1) {
     const i = (y * size + x) * 4;
@@ -41,8 +54,13 @@ function surfaceMaps(profile) {
     const noise = ((Math.imul(x + 31, 1103515245) ^ Math.imul(y + 17, 12345)) >>> 8) & 255;
     const r = Math.max(55, Math.min(255, Math.round(profile.roughness * 255 + (noise - 128) * .11)));
     roughness[i] = roughness[i + 1] = roughness[i + 2] = r; roughness[i + 3] = 255;
-    const coarseSeed = ((Math.imul(Math.floor(x / 8) + 31, 1103515245) ^ Math.imul(Math.floor(y / 8) + 17, 12345)) >>> 8) & 255;
-    const coarseFlake = coarseSeed > 224 && x % 8 > 1 && x % 8 < 6 && y % 8 > 1 && y % 8 < 6;
+    const fiberLight = Math.max(204, Math.min(255, Math.round(235 + heightAt(x, y) * 38)));
+    fibers[i] = fibers[i + 1] = fibers[i + 2] = fiberLight; fibers[i + 3] = 255;
+    const coarseSeed = ((Math.imul(Math.floor(x / 10) + 31, 1103515245) ^ Math.imul(Math.floor(y / 10) + 17, 12345)) >>> 8) & 255;
+    const flakeX = x % 10 - (3 + (coarseSeed & 3));
+    const flakeY = y % 10 - (3 + ((coarseSeed >> 2) & 3));
+    const flakeRadius = 1.8 + ((coarseSeed >> 4) & 3) * .27;
+    const coarseFlake = coarseSeed > 215 && flakeX * flakeX + flakeY * flakeY < flakeRadius * flakeRadius;
     const flake = profile.texture === "glitter-coarse" ? coarseFlake ? 255 : 0 : profile.glitter && noise > (profile.texture === "glitter-fine" ? 253 : 249) ? 255 : 0;
     flakes[i] = flakes[i + 1] = flakes[i + 2] = flake; flakes[i + 3] = 255;
   }
@@ -52,7 +70,7 @@ function surfaceMaps(profile) {
     map.needsUpdate = true;
     return map;
   };
-  return { normal: texture(normals), roughness: texture(roughness), flakes: texture(flakes) };
+  return { normal: texture(normals), roughness: texture(roughness), flakes: texture(flakes), fibers: texture(fibers) };
 }
 
 // 每个条带生成相接的实心色块与外缘侧壁。正面、背面和侧壁分开，便于保孔/背熔切换。
@@ -73,7 +91,7 @@ function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, optica
       bucket.position.push(p[0], p[1], p[2]);
       bucket.normal.push(...normal);
       bucket.color.push(tint.r, tint.g, tint.b);
-      bucket.uv.push(p[0] / 20, p[2] / 20);
+      bucket.uv.push(p[0] / 80, p[2] / 80);
     });
   }
   for (let row = firstRow; row < lastRow; row += 1) {
@@ -382,18 +400,27 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     const previousMaps = maps;
     maps = surfaceMaps(next);
     const opaque = beadMaterials.opaque;
+    const woven = ["towel", "bath", "waffle", "fabric", "ribbed"].includes(next.texture);
+    opaque.map = woven ? maps.fibers : null;
     opaque.normalMap = maps.normal;
     opaque.roughnessMap = maps.roughness;
-    opaque.normalScale.set(next.texture === "waffle" ? .24 : next.texture ? .18 : .07, next.texture === "waffle" ? .24 : next.texture ? .18 : .07);
+    const textureStrength = {
+      towel: .82, bath: .72, waffle: .65, fabric: .58, ribbed: .55
+    }[next.texture] || (next.texture ? .28 : .07);
+    opaque.normalScale.set(textureStrength, textureStrength);
     opaque.roughness = next.roughness;
     opaque.clearcoat = next.glitter ? .38 : next.iridescence ? .45 : .18;
     opaque.metalness = next.glitter ? .5 : 0;
     opaque.metalnessMap = next.glitter ? maps.flakes : null;
+    opaque.emissive.setHex(next.glitter ? 0xffffff : 0x000000);
+    opaque.emissiveMap = next.glitter ? maps.flakes : null;
+    opaque.emissiveIntensity = next.glitter ? .22 : 0;
     opaque.iridescence = next.iridescence ? .85 : 0;
     opaque.iridescenceIOR = 1.25;
     opaque.iridescenceThicknessRange = [100, 280];
     opaque.needsUpdate = true;
     const fusedOpaque = fusedMaterials.opaque;
+    fusedOpaque.map = opaque.map;
     fusedOpaque.normalMap = maps.normal;
     fusedOpaque.roughnessMap = maps.roughness;
     fusedOpaque.normalScale.copy(opaque.normalScale);
@@ -401,6 +428,9 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     fusedOpaque.clearcoat = opaque.clearcoat;
     fusedOpaque.metalness = opaque.metalness;
     fusedOpaque.metalnessMap = opaque.metalnessMap;
+    fusedOpaque.emissive.copy(opaque.emissive);
+    fusedOpaque.emissiveMap = opaque.emissiveMap;
+    fusedOpaque.emissiveIntensity = opaque.emissiveIntensity;
     fusedOpaque.iridescence = opaque.iridescence;
     fusedOpaque.needsUpdate = true;
     for (const kind of ["translucent", "clear"]) {
