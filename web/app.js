@@ -12329,7 +12329,7 @@
     let remote = null;
     try { remote = await fetchRemoteProjectRecord(id); } catch (_) { return local; }
     if (!remote) return local;
-    const history = normalizeProjectHistory(remote.history);
+    const history = normalizeProjectHistory([...(local.history || []), ...(remote.history || [])]);
     const updated = Object.assign({}, local, {
       history,
       historyCount: Math.max(history.length, Number(remote.historyCount || 0))
@@ -13033,7 +13033,7 @@
     state.activeHistoryProjectId = id;
     if (els.projectHistoryTitle) els.projectHistoryTitle.textContent = `${project.title || "未命名"} · 历史版本`;
     els.projectHistoryModal.classList.remove("hidden");
-    if (!normalizeProjectHistory(project.history).length && Number(project.historyCount || 0) > 0) {
+    if (normalizeProjectHistory(project.history).length < Number(project.historyCount || 0)) {
       if (els.projectHistoryList) {
         els.projectHistoryList.innerHTML = '<div class="project-history-empty">正在读取历史版本...</div>';
       }
@@ -13053,7 +13053,7 @@
 
   async function previewProjectHistoryVersion(projectId, versionId) {
     if (!await confirmLeaveWithUnsavedChanges()) return;
-    const project = getProjects().find((item) => item.id === projectId);
+    const project = await hydrateProjectHistory(projectId);
     const version = project && normalizeProjectHistory(project.history).find((item) => item.id === versionId);
     if (!project || !version || !version.payload) {
       setMessage("历史版本内容不存在，当前设计没有变化。", true);
@@ -13072,7 +13072,7 @@
 
   async function restoreProjectHistoryVersionFromUi(projectId, versionId) {
     if (state.hasUnsavedChanges && !await confirmLeaveWithUnsavedChanges()) return;
-    const project = getProjects().find((item) => item.id === projectId);
+    const project = await hydrateProjectHistory(projectId);
     if (!project) {
       setMessage("没有找到这个设计文件，当前设计没有变化。", true);
       return;
@@ -13092,15 +13092,21 @@
       return;
     }
     const projects = [restored, ...getProjects().filter((item) => item.id !== projectId)];
-    setProjects(projects, { remote: false });
-    applyProjectPayload(restored.payload);
+    const localResult = storeProjectsLocally(projects);
+    let historySaved = false;
+    try { historySaved = Boolean(draftVault && await draftVault.saveHistory(projectId, restored.history)); } catch (_) {}
+    if (!localResult.localStorage) {
+      setMessage("本机空间不足，恢复内容暂存在当前页面；请导出工程文件或释放空间。", true);
+      return;
+    }
+    if (!applyProjectPayload(restored.payload)) return;
     markSaved();
     closeProjectHistoryModal();
     closeProjectActionModal();
     renderProjectList();
     renderHomeProjects();
     saveProjectToRemote(restored).then((result) => {
-      setMessage(result && result.ok ? "已恢复历史版本并同步到电脑创作空间。" : "已恢复到当前设备，电脑同步服务暂时不可用。", !(result && result.ok));
+      setMessage(result && result.ok ? "已恢复历史版本并同步到电脑创作空间。" : historySaved ? "已恢复到当前设备，电脑同步服务暂时不可用。" : "已恢复当前版本；本机历史记录未能写入，请导出工程文件备份。", !(result && result.ok));
     });
   }
 
@@ -15566,7 +15572,7 @@
         setTool: (tool) => document.querySelector(`.canvas-tool-rail .tool-button[data-tool="${tool}"]`)?.click(),
         onEdit: forward3dEdit,
         onHistory: (action) => action === "undo" ? undoEdit() : redoEdit(),
-        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js?v=20260924-finish-edit-7"),
+        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js?v=20260924-finish-edit-8"),
         onSettings: (settings) => { state.beads.finish3d = settings; markUnsavedChanges(); },
         onExport: (blob) => saveBlobFile(blob, `Q像素-成品3D-${formatStamp(new Date())}.png`, "image/png", "3D 成品预览已导出。")
       });

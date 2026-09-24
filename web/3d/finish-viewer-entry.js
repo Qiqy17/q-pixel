@@ -372,6 +372,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   const pick = (event) => {
     const rect = canvas.getBoundingClientRect();
     pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
+    editPlane.constant = camera.position.y < 0 ? 0 : -.5;
     raycaster.setFromCamera(pointer, camera);
     const point = new THREE.Vector3();
     if (!raycaster.ray.intersectPlane(editPlane, point)) return null;
@@ -508,7 +509,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
       const x = col * 5 - centerX, z = row * 5 - centerZ;
       const p = project(x, z);
       if (!p.visible || p.x < -density || p.y < -density || p.x > pixelWidth + density || p.y > pixelHeight + density) continue;
-      if (++drawn > 12000) return;
+      if (++drawn > 12000 && !highlightedCode) return;
       if (highlightedCode && code === highlightedCode) {
         ctx.fillStyle = "rgba(255,231,84,.64)";
         ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(3, density * .42), 0, Math.PI * 2); ctx.fill();

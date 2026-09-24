@@ -1,4 +1,4 @@
-const CACHE_NAME = "q-pixel-v20260924-finish-edit-7";
+const CACHE_NAME = "q-pixel-v20260924-finish-edit-8";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -15,7 +15,7 @@ const APP_SHELL = [
   "./make/board-planner.js",
   "./make/build-navigation.js",
   "./studio/studio.css",
-  "./studio/studio.css?v=20260924-finish-edit-7",
+  "./studio/studio.css?v=20260924-finish-edit-8",
   "./studio/background-engine.js",
   "./studio/background-tool.js",
   "./studio/surface-engine.js",
@@ -27,13 +27,13 @@ const APP_SHELL = [
   "./assets/materials/marble_01_diff_4k.jpg",
   "./assets/materials/concrete_diff_4k.jpg",
   "./3d/finish-core.js",
-  "./3d/finish-core.js?v=20260924-finish-edit-7",
+  "./3d/finish-core.js?v=20260924-finish-edit-8",
   "./3d/calibration-manifest.json",
   "./3d/webgl-support.js",
   "./3d/finish-workbench.js",
-  "./3d/finish-workbench.js?v=20260924-finish-edit-7",
+  "./3d/finish-workbench.js?v=20260924-finish-edit-8",
   "./generated/finish-viewer.bundle.js",
-  "./generated/finish-viewer.bundle.js?v=20260924-finish-edit-7",
+  "./generated/finish-viewer.bundle.js?v=20260924-finish-edit-8",
   "./workspaces/quality-checks.js",
   "./workspaces/context-inspector.js",
   "./workspaces/workspace-controller.js",
@@ -46,7 +46,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20260924-finish-edit-7",
+  "./app.js?v=20260924-finish-edit-8",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"
