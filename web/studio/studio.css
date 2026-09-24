@@ -142,3 +142,44 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .professional-workspace .control-panel { top:170px; max-height:calc(100dvh - 182px); }
 }
 .material-true-color-note { margin:12px 0 0; padding:10px 12px; border:1px solid #d7e7df; border-radius:10px; background:#f4faf6; color:#527166; font-size:12px; line-height:1.55; }
+
+/* 将专业工作区的长工具列表收进三个清晰的抽屉。 */
+.professional-workspace .canvas-tool-rail:not(.rail-b) { width:110px; top:12px; transform:none; max-height:calc(100% - 24px); gap:6px; padding:7px; border-radius:16px; }
+.professional-workspace .canvas-tool-rail:not(.rail-b).is-collapsed { width:56px; }
+.professional-workspace .canvas-tool-rail.is-collapsed .tool-rail-group { display:none; }
+.tool-rail-group { min-width:0; display:grid; gap:5px; padding:3px; border:1px solid #e0e9e0; border-radius:12px; background:#f9fcf9; }
+.tool-rail-group > summary { display:flex; align-items:center; justify-content:space-between; min-height:44px; padding:0 10px; border-radius:9px; color:#40665a; cursor:pointer; font-size:12px; font-weight:850; list-style:none; }
+.tool-rail-group > summary::-webkit-details-marker { display:none; }
+.tool-rail-group > summary::after { content:"⌄"; color:#7b9a8c; font-size:16px; transition:transform .18s ease; }
+.tool-rail-group[open] > summary { background:#e5f3e9; color:#196858; }
+.tool-rail-group[open] > summary::after { transform:rotate(180deg); }
+.tool-rail-group > summary:focus-visible { outline:3px solid #7ac7af; outline-offset:2px; }
+.professional-workspace .canvas-tool-rail:not(.rail-b) .tool-button { position:relative; width:100%; min-height:48px; grid-template-columns:30px minmax(0,1fr); gap:5px; padding:5px 6px; border-radius:10px; font-size:12px; }
+.professional-workspace .canvas-tool-rail .tool-button.has-svg-icon::before { display:none; }
+.tool-svg-icon { width:29px; height:29px; padding:4px; border-radius:9px; background:#e8f4eb; color:#3b8875; fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
+.tool-button.active .tool-svg-icon { background:rgba(255,255,255,.2); color:#fff; }
+.tool-button-label { line-height:1.2; overflow-wrap:anywhere; }
+.professional-workspace .canvas-tool-rail .tool-badge { position:absolute; top:2px; right:2px; min-width:17px; height:17px; padding:0 3px; font-size:10px; }
+.professional-workspace .canvas-tool-options { left:134px; max-height:calc(100% - 24px); overflow:auto; }
+
+/* 顶部留出品牌和操作区的呼吸空间，窄屏按行排列。 */
+.professional-workspace .topbar { min-height:122px; grid-template-columns:minmax(220px,1fr) minmax(270px,auto) minmax(485px,1fr); gap:10px 28px; padding:18px 62px 18px 24px; }
+.professional-workspace .topbar .brand { gap:18px; align-self:center; }
+.professional-workspace .topbar .top-actions { align-self:center; flex-wrap:wrap; justify-content:flex-end; row-gap:8px; }
+.professional-workspace .topbar .workflow-stagebar { align-self:end; }
+.professional-workspace .topbar .workflow-stagebar button { min-height:38px; }
+@media (min-width:768px) and (max-width:1250px) {
+  .professional-workspace .topbar { min-height:154px; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto auto auto; gap:9px 16px; padding:12px 56px 12px 18px; }
+  .professional-workspace .topbar .brand { grid-column:1; grid-row:1; }
+  .professional-workspace .topbar .mode-tabs { grid-column:2; grid-row:1; }
+  .professional-workspace .topbar .workflow-stagebar { grid-column:1/-1; grid-row:2; justify-self:start; }
+  .professional-workspace .topbar .top-actions { grid-column:1/-1; grid-row:3; justify-self:start; justify-content:flex-start; }
+}
+@media (max-width:767px) {
+  .professional-workspace .topbar { min-height:0; grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto auto; gap:8px; padding:10px 48px 10px 12px; }
+  .professional-workspace .topbar .brand { grid-column:1; grid-row:1; }
+  .professional-workspace .topbar .workflow-stagebar { grid-column:1; grid-row:2; }
+  .professional-workspace .topbar .top-actions { grid-column:1; grid-row:3; justify-self:stretch; justify-content:flex-start; }
+  .professional-workspace .canvas-tool-rail:not(.rail-b) { width:94px; }
+  .professional-workspace .canvas-tool-options { left:116px; width:min(220px,calc(100vw - 132px)); }
+}

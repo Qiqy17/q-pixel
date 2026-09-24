@@ -13381,7 +13381,7 @@
     try {
       await moduleLoader.loadScript("./workspaces/quality-checks.js", { async: false });
       await moduleLoader.loadScript("./workspaces/context-inspector.js", { async: false });
-      await moduleLoader.loadScript("./workspaces/workspace-controller.js", { async: false });
+      await moduleLoader.loadScript("./workspaces/workspace-controller.js?v=20260924-tool-groups", { async: false });
       await moduleLoader.loadScript("./import/import-router.js", { async: false });
       await moduleLoader.loadScript("./pattern-rebuild/rebuild-engine.js", { async: false });
       await moduleLoader.loadScript("./pattern-rebuild/legend-schema.js", { async: false });
