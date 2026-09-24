@@ -17,7 +17,7 @@ function beadGeometry(profile, segments) {
 }
 
 // 可重复的微表面：只改变法线与粗糙度，不改变色号基色。
-function surfaceMaps(profile) {
+function surfaceMaps(profile, opacity = .75) {
   const size = 128;
   const normals = new Uint8Array(size * size * 4);
   const roughness = new Uint8Array(size * size * 4);
@@ -54,7 +54,7 @@ function surfaceMaps(profile) {
     const noise = ((Math.imul(x + 31, 1103515245) ^ Math.imul(y + 17, 12345)) >>> 8) & 255;
     const r = Math.max(55, Math.min(255, Math.round(profile.roughness * 255 + (noise - 128) * .11)));
     roughness[i] = roughness[i + 1] = roughness[i + 2] = r; roughness[i + 3] = 255;
-    const fiberLight = Math.max(204, Math.min(255, Math.round(235 + heightAt(x, y) * 38)));
+    const fiberLight = Math.max(204, Math.min(255, Math.round(255 + (heightAt(x, y) * 38 - 20) * opacity)));
     fibers[i] = fibers[i + 1] = fibers[i + 2] = fiberLight; fibers[i + 3] = 255;
     const coarseSeed = ((Math.imul(Math.floor(x / 10) + 31, 1103515245) ^ Math.imul(Math.floor(y / 10) + 17, 12345)) >>> 8) & 255;
     const flakeX = x % 10 - (3 + (coarseSeed & 3));
@@ -62,7 +62,7 @@ function surfaceMaps(profile) {
     const flakeRadius = 1.8 + ((coarseSeed >> 4) & 3) * .27;
     const coarseFlake = coarseSeed > 215 && flakeX * flakeX + flakeY * flakeY < flakeRadius * flakeRadius;
     const flake = profile.texture === "glitter-coarse" ? coarseFlake ? 255 : 0 : profile.glitter && noise > (profile.texture === "glitter-fine" ? 253 : 249) ? 255 : 0;
-    flakes[i] = flakes[i + 1] = flakes[i + 2] = flake; flakes[i + 3] = 255;
+    flakes[i] = flakes[i + 1] = flakes[i + 2] = Math.round(flake * opacity); flakes[i + 3] = 255;
   }
   const texture = (data) => {
     const map = new THREE.DataTexture(data, size, size, THREE.RGBAFormat);
@@ -74,7 +74,7 @@ function surfaceMaps(profile) {
 }
 
 // 每个条带生成相接的实心色块与外缘侧壁。正面、背面和侧壁分开，便于保孔/背熔切换。
-function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, opticalClass) {
+function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, opticalClass, meltEdge = 0) {
   const buckets = {};
   const colorCache = new Map();
   const cellAt = (row, col) => cells[row] && cells[row][col];
@@ -94,6 +94,26 @@ function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, optica
       bucket.uv.push(p[0] / 80, p[2] / 80);
     });
   }
+  // Only convex silhouette corners are rounded. Shared interior edges stay coincident,
+  // so adjacent colors remain gap-free even at the strongest melt setting.
+  function surface(face, kind, outline, elevation, code) {
+    const key = `${face}:${kind}`;
+    const bucket = buckets[key] || (buckets[key] = { position: [], normal: [], color: [], uv: [] });
+    const tint = colorFor(code);
+    const cx = outline.reduce((sum, point) => sum + point[0], 0) / outline.length;
+    const cz = outline.reduce((sum, point) => sum + point[1], 0) / outline.length;
+    const normal = face === "front" ? [0, 1, 0] : [0, -1, 0];
+    for (let index = 0; index < outline.length; index += 1) {
+      const a = outline[index], b = outline[(index + 1) % outline.length];
+      const triangle = face === "front" ? [[cx, cz], a, b] : [[cx, cz], b, a];
+      for (const point of triangle) {
+        bucket.position.push(point[0], elevation, point[1]);
+        bucket.normal.push(...normal);
+        bucket.color.push(tint.r, tint.g, tint.b);
+        bucket.uv.push(point[0] / 80, point[1] / 80);
+      }
+    }
+  }
   for (let row = firstRow; row < lastRow; row += 1) {
     for (let col = 0; col < (cells[row] || []).length; col += 1) {
       const code = cellAt(row, col);
@@ -101,12 +121,29 @@ function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, optica
       const kind = opticalClass(code);
       const x0 = col * 5 - centerX - 2.5, x1 = x0 + 5;
       const z0 = row * 5 - centerZ - 2.5, z1 = z0 + 5;
-      quad("front", kind, [[x0, 1, z0], [x0, 1, z1], [x1, 1, z1], [x1, 1, z0]], [0, 1, 0], code);
-      quad("back", kind, [[x0, 0, z0], [x1, 0, z0], [x1, 0, z1], [x0, 0, z1]], [0, -1, 0], code);
-      if (!cellAt(row - 1, col)) quad("side", kind, [[x0, 0, z0], [x0, 1, z0], [x1, 1, z0], [x1, 0, z0]], [0, 0, -1], code);
-      if (!cellAt(row + 1, col)) quad("side", kind, [[x1, 0, z1], [x1, 1, z1], [x0, 1, z1], [x0, 0, z1]], [0, 0, 1], code);
-      if (!cellAt(row, col - 1)) quad("side", kind, [[x0, 0, z1], [x0, 1, z1], [x0, 1, z0], [x0, 0, z0]], [-1, 0, 0], code);
-      if (!cellAt(row, col + 1)) quad("side", kind, [[x1, 0, z0], [x1, 1, z0], [x1, 1, z1], [x1, 0, z1]], [1, 0, 0], code);
+      const top = !cellAt(row - 1, col), bottom = !cellAt(row + 1, col);
+      const left = !cellAt(row, col - 1), right = !cellAt(row, col + 1);
+      const radius = Math.min(1.12, Math.max(0, meltEdge) * .0112);
+      const outline = [];
+      // Winding follows the former front quad. Diagonal cuts soften singletons and perimeter tips.
+      if (top && left && radius) outline.push([x0, z0 + radius], [x0 + radius * .3, z0 + radius * .3], [x0 + radius, z0]);
+      else outline.push([x0, z0]);
+      if (bottom && left && radius) outline.push([x0, z1 - radius], [x0 + radius * .3, z1 - radius * .3], [x0 + radius, z1]);
+      else outline.push([x0, z1]);
+      if (bottom && right && radius) outline.push([x1 - radius, z1], [x1 - radius * .3, z1 - radius * .3], [x1, z1 - radius]);
+      else outline.push([x1, z1]);
+      if (top && right && radius) outline.push([x1, z0 + radius], [x1 - radius * .3, z0 + radius * .3], [x1 - radius, z0]);
+      else outline.push([x1, z0]);
+      surface("front", kind, outline, 1, code);
+      surface("back", kind, outline, 0, code);
+      for (let index = 0; index < outline.length; index += 1) {
+        const a = outline[index], b = outline[(index + 1) % outline.length];
+        const interior = (!top && a[1] === z0 && b[1] === z0) || (!bottom && a[1] === z1 && b[1] === z1)
+          || (!left && a[0] === x0 && b[0] === x0) || (!right && a[0] === x1 && b[0] === x1);
+        if (interior) continue;
+        const dx = b[0] - a[0], dz = b[1] - a[1], length = Math.hypot(dx, dz) || 1;
+        quad("side", kind, [[a[0], 0, a[1]], [a[0], 1, a[1]], [b[0], 1, b[1]], [b[0], 0, b[1]]], [-dz / length, 0, dx / length], code);
+      }
     }
   }
   return Object.entries(buckets).map(([key, data]) => {
@@ -118,7 +155,7 @@ function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, optica
   });
 }
 
-function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
+function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSelection, onPick, onEdit, onStatus }) {
   const core = window.QPixelFinishCore;
   const support = window.QPixelWebGLSupport;
   const scene = new THREE.Scene();
@@ -139,6 +176,7 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
   scene.environment = envMap;
   scene.background = settings.background === "transparent" ? null : new THREE.Color(0xe6e9e5);
   const controls = new OrbitControls(camera, canvas);
+  controls.enabled = false;
   controls.enableDamping = true;
   controls.dampingFactor = .10;
   controls.minDistance = 10;
@@ -152,24 +190,25 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
   fill.position.set(130, 90, -70);
   scene.add(fill);
 
-  const width = pattern.width, height = pattern.height, cells = pattern.cells;
+  const width = pattern.width, height = pattern.height;
+  let cells = pattern.cells;
   let minCol = width, maxCol = -1, minRow = height, maxRow = -1;
   for (let row = 0; row < height; row += 1) for (let col = 0; col < width; col += 1) {
     if (!cells[row] || !cells[row][col]) continue;
     minCol = Math.min(minCol, col); maxCol = Math.max(maxCol, col);
     minRow = Math.min(minRow, row); maxRow = Math.max(maxRow, row);
   }
-  const occupiedWidth = Math.max(1, maxCol - minCol + 1);
-  const occupiedHeight = Math.max(1, maxRow - minRow + 1);
-  const centerX = (minCol + maxCol) * 2.5, centerZ = (minRow + maxRow) * 2.5;
-  const count = core.analyze(cells).count;
+  const occupiedWidth = width, occupiedHeight = height;
+  const focusWidth = Math.max(6, maxCol - minCol + 1), focusHeight = Math.max(6, maxRow - minRow + 1);
+  const centerX = (width - 1) * 2.5, centerZ = (height - 1) * 2.5;
+  let count = core.analyze(cells).count;
   // LOD：图纸规模 → 基础档位；弱设备（低内存/少核心）再降一档。
   const memory = support ? support.memoryBudget() : { suggestLowDetail: false };
   let currentQuality = core.lod(count, canvas.clientWidth);
   if (memory.suggestLowDetail && currentQuality === "high") currentQuality = "medium";
   const segmentsFor = (level) => (level === "high" ? 24 : level === "medium" ? 12 : 8);
 
-  let maps = surfaceMaps(core.profile(settings.profile));
+  let maps = surfaceMaps(core.profile(settings.profile), core.tuningFor(settings, settings.profile).textureOpacity / 100);
   const beadMaterials = {
     opaque: new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: .42, normalMap: maps.normal, normalScale: new THREE.Vector2(.16, .16), envMapIntensity: .75, clearcoat: .18, clearcoatRoughness: .48 }),
     translucent: new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: .24, transmission: .36, thickness: 1.2, ior: 1.45, envMapIntensity: 1, clearcoat: .2, side: THREE.DoubleSide }),
@@ -181,11 +220,15 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     const entry = palette && palette.colorOf(code);
     return entry && ["clear", "translucent"].includes(entry.opticalClass) ? entry.opticalClass : "opaque";
   };
-  const groups = { opaque: [], translucent: [], clear: [] };
-  for (let row = 0; row < height; row += 1) for (let col = 0; col < width; col += 1) {
-    const code = cells[row] && cells[row][col];
-    if (code) groups[opticalClass(code)].push({ row, col, code });
+  let groups = { opaque: [], translucent: [], clear: [] };
+  function regroup() {
+    groups = { opaque: [], translucent: [], clear: [] };
+    for (let row = 0; row < height; row += 1) for (let col = 0; col < width; col += 1) {
+      const code = cells[row] && cells[row][col];
+      if (code) groups[opticalClass(code)].push({ row, col, code });
+    }
   }
+  regroup();
   const beadMeshes = [];
   const dummy = new THREE.Object3D(), tint = new THREE.Color();
   function ensureBeadMeshes() {
@@ -217,7 +260,7 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
   const fusedGroups = { front: new THREE.Group(), back: new THREE.Group(), side: new THREE.Group() };
   Object.values(fusedGroups).forEach((group) => scene.add(group));
   const fusedMeshes = [];
-  let fusedReady = false;
+  let fusedReady = false, fusedGeneration = 0, fusedStarted = false, fusedBuildPromise = Promise.resolve();
   const finishStatus = () => {
     const current = core.profile(settings.profile);
     return `${count.toLocaleString()} 颗 · ${current.frontTopology === "fused" ? "连续无孔" : current.backTopology === "fused" ? "正面保孔 / 背面融合" : "逐颗保孔"} · ${currentQuality} 精度 · 未实物标定`;
@@ -236,7 +279,7 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
   }
   const analysis = core.analyze(cells);
   const bridgeCount = analysis.horizontal + analysis.vertical;
-  const bridgeMesh = bridgeCount && count <= 12000 && currentQuality !== "low" ? new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), bridgeMaterial, bridgeCount) : null;
+  let bridgeMesh = bridgeCount && count <= 12000 && currentQuality !== "low" ? new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), bridgeMaterial, bridgeCount) : null;
   if (bridgeMesh) scene.add(bridgeMesh);
 
   // 逐豆实例布局：5mm 网格，中心对齐原点，颜色写实例缓冲。
@@ -250,11 +293,11 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     fusedGroups.side.visible = frontFused || backFused;
     Object.values(fusedGroups).forEach((group) => { group.scale.y = profile.height; });
   }
-  async function buildFusedSurfaces() {
+  async function buildFusedSurfaces(generation) {
     const stripeHeight = currentQuality === "low" ? 24 : 32;
     for (let row = 0; row < height; row += stripeHeight) {
-      if (disposed) return;
-      fusedStripe(cells, row, Math.min(height, row + stripeHeight), centerX, centerZ, colorOf, opticalClass).forEach(({ face, kind, geometry }) => {
+      if (disposed || generation !== fusedGeneration) return;
+      fusedStripe(cells, row, Math.min(height, row + stripeHeight), centerX, centerZ, colorOf, opticalClass, core.tuningFor(settings, settings.profile).meltEdge).forEach(({ face, kind, geometry }) => {
         const mesh = new THREE.Mesh(geometry, fusedMaterials[kind]);
         mesh.castShadow = kind !== "clear";
         fusedGroups[face].add(mesh);
@@ -269,6 +312,15 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     fusedReady = true;
     onStatus(`${finishStatus()} · 表面已就绪`);
     invalidate();
+  }
+  function rebuildSurfaces() {
+    fusedStarted = true;
+    fusedGeneration += 1;
+    fusedReady = false;
+    fusedMeshes.splice(0).forEach((mesh) => { mesh.parent.remove(mesh); mesh.geometry.dispose(); });
+    fusedBuildPromise = buildFusedSurfaces(fusedGeneration);
+    invalidate();
+    return fusedBuildPromise;
   }
 
   // 融合颈：用局部圆润接触替换明显的长方体连杆。
@@ -309,24 +361,86 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
   board.position.y = -.8;
   board.receiveShadow = true;
   scene.add(board);
-  camera.position.set(occupiedWidth * 4, Math.max(occupiedWidth, occupiedHeight) * 5, occupiedHeight * 4);
-  controls.target.set(0, 0, 0);
+  const focusX = (minCol + maxCol) * 2.5 - centerX, focusZ = (minRow + maxRow) * 2.5 - centerZ;
+  camera.position.set(focusX + focusWidth * 4, Math.max(focusWidth, focusHeight) * 5, focusZ + focusHeight * 4);
+  controls.target.set(focusX, 0, focusZ);
   controls.update();
 
-  // 双击拾取：射线检测实例网格，回调行/列/色号。
+  // Raycast the entire editable plane, including empty cells.
   const raycaster = new THREE.Raycaster(), pointer = new THREE.Vector2();
+  const editPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -.5);
   const pick = (event) => {
     const rect = canvas.getBoundingClientRect();
     pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
     raycaster.setFromCamera(pointer, camera);
-    const hit = raycaster.intersectObjects([...beadMeshes.filter((mesh) => mesh.visible), ...fusedMeshes.filter((mesh) => mesh.parent && mesh.parent.visible)], false)[0];
-    if (!hit || !onPick) return;
-    if (hit.instanceId != null) return onPick(hit.object.userData.positions[hit.instanceId]);
-    const col = Math.floor((hit.point.x + centerX + 2.5) / 5);
-    const row = Math.floor((hit.point.z + centerZ + 2.5) / 5);
-    if (cells[row] && cells[row][col]) onPick({ row, col, code: cells[row][col] });
+    const point = new THREE.Vector3();
+    if (!raycaster.ray.intersectPlane(editPlane, point)) return null;
+    const col = Math.floor((point.x + centerX + 2.5) / 5);
+    const row = Math.floor((point.z + centerZ + 2.5) / 5);
+    return row >= 0 && row < height && col >= 0 && col < width ? { row, col, code: cells[row] && cells[row][col] || null } : null;
   };
-  canvas.addEventListener("dblclick", pick);
+  let activePointer = null, longPressTimer = 0, highlightedCode = null;
+  function clearPress() {
+    clearTimeout(longPressTimer);
+    activePointer = null;
+    highlightedCode = null;
+    invalidate();
+  }
+  function pointerDown(event) {
+    if (event.button != null && event.button !== 0) return;
+    const cell = pick(event);
+    if (!cell) return;
+    event.preventDefault();
+    canvas.setPointerCapture(event.pointerId);
+    activePointer = { id: event.pointerId, start: cell, last: cell, x: event.clientX, y: event.clientY, drawing: false, held: false };
+    if (onPick) onPick(cell);
+    if (cell.code) longPressTimer = setTimeout(() => {
+      if (!activePointer || activePointer.id !== event.pointerId || activePointer.drawing) return;
+      activePointer.held = true;
+      highlightedCode = cell.code;
+      onStatus(`已高亮所有 ${cell.code} 豆位 · 松开退出`);
+      invalidate();
+    }, 2000);
+  }
+  function editStroke(phase, cell) {
+    if (onEdit && cell) onEdit(phase, cell);
+  }
+  function pointerMove(event) {
+    if (!activePointer || activePointer.id !== event.pointerId || activePointer.held) return;
+    const moved = Math.hypot(event.clientX - activePointer.x, event.clientY - activePointer.y);
+    if (moved < 5 && !activePointer.drawing) return;
+    clearTimeout(longPressTimer);
+    const cell = pick(event);
+    if (!cell) return;
+    if (!activePointer.drawing) {
+      activePointer.drawing = true;
+      editStroke("start", activePointer.start);
+    }
+    if (cell.row !== activePointer.last.row || cell.col !== activePointer.last.col) {
+      const from = activePointer.last;
+      const steps = Math.max(Math.abs(cell.row - from.row), Math.abs(cell.col - from.col));
+      for (let index = 1; index <= steps; index += 1) {
+        const row = Math.round(from.row + (cell.row - from.row) * index / steps);
+        const col = Math.round(from.col + (cell.col - from.col) * index / steps);
+        editStroke("move", { row, col, code: cells[row] && cells[row][col] || null });
+      }
+      activePointer.last = cell;
+    }
+  }
+  function pointerUp(event) {
+    if (!activePointer || activePointer.id !== event.pointerId) return;
+    const press = activePointer;
+    clearTimeout(longPressTimer);
+    if (!press.held) {
+      if (!press.drawing) editStroke("start", press.start);
+      editStroke("end", press.last);
+    }
+    clearPress();
+  }
+  canvas.addEventListener("pointerdown", pointerDown);
+  canvas.addEventListener("pointermove", pointerMove);
+  canvas.addEventListener("pointerup", pointerUp);
+  canvas.addEventListener("pointercancel", clearPress);
 
   let disposed = false, frame = 0, exportCancelled = false;
 
@@ -341,6 +455,79 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     if (disposed || contextLost) return;
     controls.update();
     renderer.render(scene, camera);
+    drawOverlay();
+  }
+  function drawOverlay(target = overlay, outputWidth, outputHeight) {
+    if (!target) return;
+    const pixelWidth = outputWidth || Math.max(1, Math.round(canvas.clientWidth));
+    const pixelHeight = outputHeight || Math.max(1, Math.round(canvas.clientHeight));
+    if (!outputWidth && (target.width !== pixelWidth || target.height !== pixelHeight)) {
+      target.width = pixelWidth; target.height = pixelHeight;
+    }
+    const ctx = target.getContext("2d");
+    if (!outputWidth) ctx.clearRect(0, 0, pixelWidth, pixelHeight);
+    const guides = getGuides ? getGuides() : [];
+    const selected = getSelection ? getSelection() : [];
+    if (!settings.showCodes && !settings.showGrid && !highlightedCode && !guides.length && !selected.length) return;
+    const project = (x, z) => {
+      const surfaceY = camera.position.y < 0 ? -.15 : core.profile(settings.profile).height + .15;
+      const v = new THREE.Vector3(x, surfaceY, z).project(camera);
+      return { x: (v.x + 1) * pixelWidth / 2, y: (1 - v.y) * pixelHeight / 2, visible: v.z >= -1 && v.z <= 1 };
+    };
+    const a = project(-centerX, -centerZ);
+    const b = project(5 - centerX, -centerZ);
+    const c = project(-centerX, 5 - centerZ);
+    const density = Math.max(Math.hypot(a.x - b.x, a.y - b.y), Math.hypot(a.x - c.x, a.y - c.y));
+    if (density < 5 && !highlightedCode && !guides.length && !selected.length) return;
+    const showGrid = settings.showGrid && density >= 7;
+    const showCodes = settings.showCodes && density >= 17;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.lineWidth = Math.max(.6, density * .025);
+    ctx.strokeStyle = "rgba(21,55,52,.38)";
+    ctx.font = `700 ${Math.max(8, Math.min(38, density * (.23 + settings.codeSize / 250)))}px system-ui, sans-serif`;
+    let drawn = 0;
+    guides.forEach((guide) => {
+      const horizontal = guide.orientation === "horizontal";
+      const index = Math.max(0, Math.min(horizontal ? height : width, Number(guide.index) || 0));
+      const from = horizontal ? project(-centerX - 2.5, index * 5 - centerZ - 2.5) : project(index * 5 - centerX - 2.5, -centerZ - 2.5);
+      const to = horizontal ? project((width - 1) * 5 - centerX + 2.5, index * 5 - centerZ - 2.5) : project(index * 5 - centerX - 2.5, (height - 1) * 5 - centerZ + 2.5);
+      ctx.save(); ctx.globalAlpha = (Number(guide.opacity) || 80) / 100;
+      ctx.strokeStyle = guide.color || "#ff9d38"; ctx.lineWidth = Math.max(1.5, density * .08);
+      ctx.setLineDash(guide.style === "solid" ? [] : [Math.max(5, density * .3), Math.max(4, density * .2)]);
+      ctx.beginPath(); ctx.moveTo(from.x, from.y); ctx.lineTo(to.x, to.y); ctx.stroke(); ctx.restore();
+    });
+    selected.slice(0, 12000).forEach(({ row, col }) => {
+      const p = project(col * 5 - centerX, row * 5 - centerZ);
+      if (!p.visible) return;
+      ctx.fillStyle = "rgba(52,175,159,.42)";
+      ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(3, density * .38), 0, Math.PI * 2); ctx.fill();
+    });
+    for (let row = 0; row < height; row += 1) for (let col = 0; col < width; col += 1) {
+      const code = cells[row] && cells[row][col];
+      if (!code && !showGrid) continue;
+      const x = col * 5 - centerX, z = row * 5 - centerZ;
+      const p = project(x, z);
+      if (!p.visible || p.x < -density || p.y < -density || p.x > pixelWidth + density || p.y > pixelHeight + density) continue;
+      if (++drawn > 12000) return;
+      if (highlightedCode && code === highlightedCode) {
+        ctx.fillStyle = "rgba(255,231,84,.64)";
+        ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(3, density * .42), 0, Math.PI * 2); ctx.fill();
+      }
+      if (showGrid) {
+        const corners = [[-2.5,-2.5],[2.5,-2.5],[2.5,2.5],[-2.5,2.5]].map(([dx,dz]) => project(x+dx,z+dz));
+        ctx.beginPath(); ctx.moveTo(corners[0].x,corners[0].y);
+        corners.slice(1).forEach((corner) => ctx.lineTo(corner.x,corner.y));
+        ctx.closePath(); ctx.stroke();
+      }
+      if (showCodes && code) {
+        ctx.globalAlpha = settings.codeOpacity / 100;
+        ctx.lineWidth = Math.max(1.5, density * .07);
+        ctx.strokeStyle = "rgba(255,255,255,.92)";
+        ctx.strokeText(code, p.x, p.y);
+        ctx.fillStyle = "#18332e"; ctx.fillText(code, p.x, p.y);
+        ctx.globalAlpha = 1;
+      }
+    }
   }
   function invalidate() {
     if (disposed || frame) return;
@@ -398,7 +585,8 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     updateTopology(next);
     beadMeshes.forEach((mesh) => { mesh.geometry.dispose(); mesh.geometry = beadGeometry(next, segmentsFor(currentQuality)); });
     const previousMaps = maps;
-    maps = surfaceMaps(next);
+    const tuning = core.tuningFor(settings, next.id);
+    maps = surfaceMaps(next, tuning.textureOpacity / 100);
     const opaque = beadMaterials.opaque;
     const woven = ["towel", "bath", "waffle", "fabric", "ribbed"].includes(next.texture);
     opaque.map = woven ? maps.fibers : null;
@@ -407,14 +595,14 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     const textureStrength = {
       towel: .82, bath: .72, waffle: .65, fabric: .58, ribbed: .55
     }[next.texture] || (next.texture ? .28 : .07);
-    opaque.normalScale.set(textureStrength, textureStrength);
-    opaque.roughness = next.roughness;
+    opaque.normalScale.set(textureStrength * tuning.textureOpacity / 75 * (.55 + tuning.textureRoughness / 100), textureStrength * tuning.textureOpacity / 75 * (.55 + tuning.textureRoughness / 100));
+    opaque.roughness = Math.max(.08, Math.min(.98, next.roughness + (tuning.textureRoughness - 50) / 170));
     opaque.clearcoat = next.glitter ? .38 : next.iridescence ? .45 : .18;
     opaque.metalness = next.glitter ? .5 : 0;
     opaque.metalnessMap = next.glitter ? maps.flakes : null;
     opaque.emissive.setHex(next.glitter ? 0xffffff : 0x000000);
     opaque.emissiveMap = next.glitter ? maps.flakes : null;
-    opaque.emissiveIntensity = next.glitter ? .22 : 0;
+    opaque.emissiveIntensity = next.glitter ? .22 * tuning.textureOpacity / 75 : 0;
     opaque.iridescence = next.iridescence ? .85 : 0;
     opaque.iridescenceIOR = 1.25;
     opaque.iridescenceThicknessRange = [100, 280];
@@ -446,8 +634,57 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     Object.values(previousMaps).forEach((map) => map.dispose());
     updateBridges(next);
     if (bridgeMesh) bridgeMesh.visible = next.frontTopology === "beads" && next.bridge > 0;
+    if (fusedStarted) rebuildSurfaces();
     onStatus(finishStatus());
     invalidate();
+  }
+  function setOverlay(next) {
+    for (const key of ["showCodes", "showGrid", "codeOpacity", "codeSize"]) settings[key] = next[key];
+    invalidate();
+  }
+  function snapshot() {
+    draw();
+    const output = document.createElement("canvas");
+    output.width = canvas.width; output.height = canvas.height;
+    const ctx = output.getContext("2d");
+    ctx.drawImage(canvas, 0, 0);
+    if (overlay) ctx.drawImage(overlay, 0, 0, output.width, output.height);
+    return output.toDataURL("image/png");
+  }
+  function moveCamera(action) {
+    const offset = camera.position.clone().sub(controls.target);
+    const spherical = new THREE.Spherical().setFromVector3(offset);
+    if (action === "rotate-left") spherical.theta -= Math.PI / 12;
+    if (action === "rotate-right") spherical.theta += Math.PI / 12;
+    if (action === "tilt-up") spherical.phi = Math.max(.15, spherical.phi - Math.PI / 18);
+    if (action === "tilt-down") spherical.phi = Math.min(Math.PI - .15, spherical.phi + Math.PI / 18);
+    if (action === "zoom-in") spherical.radius = Math.max(10, spherical.radius * .78);
+    if (action === "zoom-out") spherical.radius = Math.min(controls.maxDistance, spherical.radius * 1.28);
+    camera.position.copy(new THREE.Vector3().setFromSpherical(spherical).add(controls.target));
+    camera.lookAt(controls.target);
+    invalidate();
+  }
+  function updatePattern(next) {
+    if (!next || next.width !== width || next.height !== height) return;
+    cells = next.cells;
+    count = core.analyze(cells).count;
+    beadMeshes.splice(0).forEach((mesh) => { scene.remove(mesh); mesh.geometry.dispose(); });
+    regroup();
+    updateTopology(core.profile(settings.profile));
+    if (bridgeMesh) { scene.remove(bridgeMesh); bridgeMesh.geometry.dispose(); bridgeMesh = null; }
+    const adjacent = core.analyze(cells);
+    const totalBridges = adjacent.horizontal + adjacent.vertical;
+    if (totalBridges && count <= 12000 && currentQuality !== "low") {
+      bridgeMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), bridgeMaterial, totalBridges);
+      scene.add(bridgeMesh);
+      updateBridges(core.profile(settings.profile));
+    }
+    rebuildSurfaces();
+    invalidate();
+  }
+  function setTuning(tuning) {
+    settings.profileTuning = { ...(settings.profileTuning || {}), [settings.profile]: { ...tuning } };
+    setProfile(settings.profile);
   }
   function setExposure(value) {
     renderer.toneMappingExposure = value;
@@ -469,9 +706,9 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
   }
   function view(side) {
     board.visible = side !== "back";
-    const reach = Math.max(occupiedWidth, occupiedHeight) * 11.5;
-    camera.position.set(side === "angle" ? reach * .75 : 0, side === "back" ? -reach : side === "angle" ? reach * .85 : reach, side === "angle" ? reach * .7 : 1);
-    camera.lookAt(0, 0, 0);
+    const reach = Math.max(focusWidth, focusHeight) * 11.5;
+    camera.position.set(controls.target.x + (side === "angle" ? reach * .75 : 0), side === "back" ? -reach : side === "angle" ? reach * .85 : reach, controls.target.z + (side === "angle" ? reach * .7 : 1));
+    camera.lookAt(controls.target);
     controls.update();
     invalidate();
   }
@@ -509,6 +746,9 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
           await new Promise((resolve) => setTimeout(resolve, 0));
         }
       }
+      camera.clearViewOffset();
+      camera.updateProjectionMatrix();
+      drawOverlay(output, targetSize, targetSize);
       return await new Promise((resolve, reject) => output.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("PNG 编码失败"))), "image/png"));
     } finally {
       camera.clearViewOffset();
@@ -525,7 +765,11 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     cancelExport();
     unwatch();
     observer.disconnect();
-    canvas.removeEventListener("dblclick", pick);
+    canvas.removeEventListener("pointerdown", pointerDown);
+    canvas.removeEventListener("pointermove", pointerMove);
+    canvas.removeEventListener("pointerup", pointerUp);
+    canvas.removeEventListener("pointercancel", clearPress);
+    clearPress();
     controls.dispose();
     beadMeshes.forEach((mesh) => mesh.geometry.dispose());
     fusedMeshes.forEach((mesh) => mesh.geometry.dispose());
@@ -544,11 +788,11 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
 
   setProfile(settings.profile);
   setLighting(settings.lightIntensity, settings.lightTemperature);
-  const fusedBuildPromise = buildFusedSurfaces();
+  rebuildSurfaces();
   setBackground(settings.background);
   view(settings.side);
   onStatus(`${count.toLocaleString()} 颗 · ${currentQuality} 精度 · ${memory.suggestLowDetail ? "弱设备模式 · " : ""}未实物标定参考模型`);
-  return { setProfile, setExposure, setLighting, setBackground, view, exportPng, cancelExport, dispose, draw, getQuality: () => currentQuality };
+  return { setProfile, setTuning, setOverlay, moveCamera, updatePattern, snapshot, setExposure, setLighting, setBackground, view, exportPng, cancelExport, dispose, draw, getQuality: () => currentQuality };
 }
 
 export { create };

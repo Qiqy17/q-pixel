@@ -64,6 +64,27 @@
     return "high";
   }
 
+  const DEFAULT_MELT = Object.freeze({ raw: 0, light: 22, standard: 58, flat: 80, back: 45, towel: 62, bath: 60, waffle: 52, glitter: 56, laser: 54, "glitter-fine": 56, "glitter-coarse": 60, fabric: 58, ribbed: 55 });
+  function clampPercent(value, fallback) {
+    if (value == null || value === "") return fallback;
+    const number = Number(value);
+    return Number.isFinite(number) ? Math.max(0, Math.min(100, Math.round(number))) : fallback;
+  }
+  function defaultTuning(id) {
+    const selected = profile(id);
+    return { textureRoughness: 50, textureOpacity: 75, meltEdge: DEFAULT_MELT[selected.id] ?? 55 };
+  }
+  function tuningFor(settings, id) {
+    const selected = profile(id);
+    const fallback = defaultTuning(selected.id);
+    const override = settings && settings.profileTuning && settings.profileTuning[selected.id];
+    return {
+      textureRoughness: clampPercent(override && override.textureRoughness, fallback.textureRoughness),
+      textureOpacity: clampPercent(override && override.textureOpacity, fallback.textureOpacity),
+      meltEdge: clampPercent(override && override.meltEdge, fallback.meltEdge)
+    };
+  }
+
   function normalizeSettings(input) {
     const value = input && typeof input === "object" ? input : {};
     return {
@@ -74,9 +95,14 @@
       lightTemperature: ["neutral", "warm", "cool"].includes(value.lightTemperature) ? value.lightTemperature : "neutral",
       side: ["front", "back", "angle"].includes(value.side) ? value.side : "angle",
       background: ["photo", "dark", "transparent"].includes(value.background) ? value.background : "photo",
+      showCodes: value.showCodes === true,
+      showGrid: value.showGrid !== false,
+      codeOpacity: clampPercent(value.codeOpacity, 90),
+      codeSize: clampPercent(value.codeSize, 50),
+      profileTuning: Object.fromEntries(PROFILES.filter((item) => value.profileTuning && value.profileTuning[item.id]).map((item) => [item.id, tuningFor(value, item.id)])),
       calibrated: isCalibrated()
     };
   }
 
-  return Object.freeze({ PROFILES, profile, analyze, lod, normalizeSettings, readManifestSync, isCalibrated });
+  return Object.freeze({ PROFILES, profile, analyze, lod, defaultTuning, tuningFor, normalizeSettings, readManifestSync, isCalibrated });
 });

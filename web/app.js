@@ -6487,6 +6487,7 @@
   }
 
   function getCellFromPointer(event) {
+    if (event && event.__qpixelCell) return event.__qpixelCell;
     if (!state.beads.pattern || !state.beads.lastGridRect) return null;
     const point = getCanvasPoint(event);
     const x = point.x;
@@ -15535,12 +15536,37 @@
     document.getElementById("studioOutputMaterialsButton")?.addEventListener("click", exportMaterialsCsv);
     document.getElementById("studioOutput3dButton")?.addEventListener("click", () => document.getElementById("finish3dButton")?.click());
     if (window.QPixelFinishWorkbench && window.QPixelFinishCore) {
+      const forward3dEdit = (phase, cell) => {
+        const tool = state.beads.editTool;
+        if (tool === "pan") return { changed: false };
+        if (phase === "start" && getActiveLayer()?.locked && ["brush", "eraser", "bucket", "rect-clear", "rect-fill", "shape"].includes(tool)) {
+          setMessage("当前图层已锁定，请先解锁。", true);
+          return { changed: false };
+        }
+        const synthetic = { __qpixelCell: cell, pointerType: "mouse", preventDefault() {} };
+        if (phase === "start") handleCanvasPointerDown(synthetic);
+        if (phase === "move") handleCanvasPointerMove(synthetic);
+        if (phase === "end") handleCanvasPointerUp(synthetic);
+        const editable = ["brush", "eraser", "bucket", "rect-clear", "rect-fill", "shape"].includes(tool);
+        if (editable && phase !== "move") { syncCompositePattern(); renderUsage(); }
+        return { changed: editable };
+      };
       const finishWorkbench = window.QPixelFinishWorkbench.create({
         document, core: window.QPixelFinishCore,
-        getPattern: () => { syncCompositePattern(); return state.beads.pattern; },
+        getPattern: () => {
+          if (state.mode === "pixel" && state.image) ensurePixelEditablePattern(false);
+          syncCompositePattern();
+          return state.beads.pattern;
+        },
         getSettings: () => state.beads.finish3d,
         colorOf: (code) => getPaletteColor(code).hex,
-        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js"),
+        getGuides: () => state.beads.guideLines || [],
+        getSelection: () => state.beads.selectedCells || [],
+        getTool: () => state.beads.editTool,
+        setTool: (tool) => document.querySelector(`.canvas-tool-rail .tool-button[data-tool="${tool}"]`)?.click(),
+        onEdit: forward3dEdit,
+        onHistory: (action) => action === "undo" ? undoEdit() : redoEdit(),
+        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js?v=20260924-finish-edit-7"),
         onSettings: (settings) => { state.beads.finish3d = settings; markUnsavedChanges(); },
         onExport: (blob) => saveBlobFile(blob, `Q像素-成品3D-${formatStamp(new Date())}.png`, "image/png", "3D 成品预览已导出。")
       });
