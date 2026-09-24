@@ -19,13 +19,7 @@
     <section class="home-view" id="homeView" aria-label="Q像素首页">
       <header class="home-header">
         <div class="brand home-brand">
-          <div class="brand-mark" aria-hidden="true">
-            <span></span><span></span><span></span><span></span><span></span>
-            <span></span><span></span><span></span><span></span><span></span>
-            <span></span><span></span><span></span><span></span><span></span>
-            <span></span><span></span><span></span><span></span><span></span>
-            <span></span><span></span><span></span><span></span><span></span>
-          </div>
+          <img class="brand-logo" src="./icon.svg" alt="" width="52" height="52">
           <div>
             <h1>Q像素</h1>
             <p>像素画、拼豆图纸与本地创作空间</p>
@@ -38,12 +32,10 @@
         </div>
       </header>
 
-      <section class="studio-home-hero" aria-label="Q像素 2.0 工作台">
-        <div class="studio-hero-copy"><span class="studio-eyebrow">Q PIXEL / CREATIVE WORKSPACE 2.0</span><h2>从灵感到拼制，<br>每一颗都刚刚好。</h2><p>导入图片、还原图纸、调整色号与库存，再按底板一步步完成作品。</p><div class="studio-hero-actions"><button type="button" class="studio-primary" data-studio-entry="photo">导入图片开始</button><button type="button" data-studio-entry="blank">创建空白画布</button></div></div>
-        <div class="studio-hero-art" aria-hidden="true"><div class="studio-hero-grid"></div><div class="studio-art-frame"><span class="studio-art-flower">✿</span><span class="studio-art-leaf leaf-one">✦</span><span class="studio-art-leaf leaf-two">✦</span></div><div class="studio-art-tag">MARD · 5 mm<br><strong>逐格构筑你的作品</strong></div></div>
+      <section class="studio-home-intro" aria-label="继续创作">
+        <div><span class="studio-eyebrow">YOUR WORKSPACE</span><h2>继续你的创作</h2><p>从最近的图纸接着做，或导入图片开始新项目。</p></div>
+        <button type="button" class="studio-primary" data-studio-entry="photo">导入图片</button>
       </section>
-
-      <div class="studio-route-strip" aria-label="开始方式"><button type="button" data-studio-entry="photo"><span>01</span><strong>图片转图纸</strong><small>自动识别 · 可选优化</small></button><button type="button" data-studio-entry="rebuild"><span>02</span><strong>重建已有图纸</strong><small>校正网格 · 复核色号</small></button><button type="button" data-studio-entry="trace"><span>03</span><strong>参考图描绘</strong><small>保留原图 · 手动创作</small></button><button type="button" data-studio-entry="blank"><span>04</span><strong>空白画布</strong><small>自由绘制 · 完整工具</small></button></div>
 
       <section class="home-grid">
         <section class="home-card creation-space">
@@ -53,8 +45,10 @@
               <p>保存在本机的 Q像素源文件都会出现在这里。</p>
             </div>
             <div class="home-card-head-actions">
+              <label class="home-search"><span class="sr-only">搜索作品</span><input id="homeProjectSearch" type="search" placeholder="搜索作品、文件夹" autocomplete="off"></label>
+              <label class="home-sort"><span class="sr-only">排序</span><select id="homeProjectSort" aria-label="作品排序"><option value="recent">最近编辑</option><option value="name">名称</option><option value="created">创建时间</option></select></label>
               <button class="text-button secondary" id="homeNewFolderButton" type="button">新建文件夹</button>
-              <button class="icon-button" id="homeNewDesignButton" type="button" title="新建设计">+</button>
+              <button class="icon-button" id="homeNewDesignButton" type="button" title="新建设计" aria-label="新建设计">+</button>
             </div>
           </div>
           <div class="home-folder-bar hidden" id="homeFolderBar">
@@ -65,35 +59,11 @@
           <div class="home-project-grid" id="homeProjectGrid"></div>
         </section>
 
-        <aside class="home-card profile-space">
-          <h2>我的</h2>
-          <div class="profile-head">
-            <div class="profile-avatar"><span>Q</span><button type="button" title="编辑头像">✎</button></div>
-            <div>
-              <strong id="homeProfileName">Qigy</strong>
-              <p id="homeSignature">个性签名 ······</p>
-            </div>
-          </div>
-          <section class="design-record">
-            <h3>设计记录</h3>
-            <div class="record-month">
-              <button class="mini-button" id="homeRecordPrevButton" type="button" title="上个月">‹</button>
-              <strong id="homeRecordYear">2026 年</strong><em id="homeRecordMonth">6 月</em>
-              <button class="mini-button" id="homeRecordNextButton" type="button" title="下个月">›</button>
-            </div>
-            <div class="record-calendar" id="homeRecordCalendar" aria-label="设计日历"></div>
-            <p>设计天数累积 <strong id="homeDesignDays">0</strong> 天，平均每天设计时长 <strong id="homeAvgDayTime">0</strong> 小时</p>
-            <p>共计产出作品 <strong id="homeProjectCount">0</strong> 个，平均每个作品耗时 <strong id="homeAvgWorkTime">0</strong> 小时</p>
-            <p>累计拼豆 <strong id="homeBeadCount">0</strong> 颗</p>
-          </section>
-          <section class="recent-records">
-            <h3>最近记录</h3>
-            <div class="home-record-list" id="homeRecordList"></div>
-          </section>
-          <div class="profile-actions">
-            <button class="text-button secondary" id="homeOpenProjectButton" type="button">打开源文件</button>
-            <button class="text-button secondary" id="homeImportImageButton" type="button">导入图片</button>
-          </div>
+        <aside class="home-card home-quick-start">
+          <h2>开始新项目</h2>
+          <p>选择与你手头素材匹配的方式，后续都能继续编辑。</p>
+          <div class="studio-route-strip" aria-label="开始方式"><button type="button" data-studio-entry="photo"><span>01</span><strong>图片转图纸</strong><small>自动识别 · 优化可跳过</small></button><button type="button" data-studio-entry="rebuild"><span>02</span><strong>重建已有图纸</strong><small>校正网格 · 复核色号</small></button><button type="button" data-studio-entry="trace"><span>03</span><strong>参考图描绘</strong><small>保留原图 · 手动创作</small></button><button type="button" data-studio-entry="blank"><span>04</span><strong>空白画布</strong><small>自由绘制 · 完整工具</small></button></div>
+          <button class="text-button secondary home-open-source" id="homeOpenProjectButton" type="button">打开 .qpx 源文件</button>
         </aside>
       </section>
     </section>
@@ -101,13 +71,7 @@
     <header class="topbar" id="editorTopbar">
       <div class="brand">
         <button class="back-button" id="backHomeButton" type="button" title="返回首页">‹</button>
-        <div class="brand-mark" aria-hidden="true">
-          <span></span><span></span><span></span><span></span><span></span>
-          <span></span><span></span><span></span><span></span><span></span>
-          <span></span><span></span><span></span><span></span><span></span>
-          <span></span><span></span><span></span><span></span><span></span>
-          <span></span><span></span><span></span><span></span><span></span>
-        </div>
+        <img class="brand-logo" src="./icon.svg" alt="" width="40" height="40">
         <div>
           <h1>Q像素</h1>
           <p id="imageStatus">选择一张图片开始创作</p>
@@ -119,27 +83,23 @@
         <button id="modeBeadsButton" type="button" data-mode="beads">拼豆图纸</button>
       </nav>
 
+      <nav class="workflow-stagebar" id="workflowStagebar" aria-label="创作工具">
+        <button type="button" class="active" data-workflow-stage-button="design" aria-selected="true">画图</button>
+        <button type="button" data-workflow-stage-button="color" aria-selected="false">配色</button>
+        <button type="button" data-workflow-stage-button="make" aria-selected="false">拼制</button>
+        <button type="button" data-workflow-stage-button="output" aria-selected="false">导出</button>
+      </nav>
+
       <div class="top-actions">
         <button class="text-button secondary" id="chooseTopButton" type="button">导入</button>
-        <button class="text-button secondary" id="removeBackgroundButton" type="button">去背景</button>
         <button class="text-button secondary" id="saveTopButton" type="button">保存</button>
         <span class="save-status" id="saveStatus">已保存</span>
-        <button class="text-button secondary subtle-action" id="aiGenerateTopButton" type="button">AI灵感</button>
-        <button class="text-button secondary subtle-action" id="materialPreviewButton" type="button">展示效果</button>
-        <button class="text-button secondary" id="finish3dButton" type="button">成品 3D</button>
+        <details class="top-action-menu"><summary class="text-button secondary">预览</summary><div><button class="text-button secondary" id="materialPreviewButton" type="button">展示图</button><button class="text-button secondary" id="finish3dButton" type="button">成品质感 3D</button></div></details>
         <button class="text-button" id="exportTopButton" type="button">导出</button>
+        <details class="top-action-menu"><summary class="text-button secondary" aria-label="更多工具">更多</summary><div><button class="text-button secondary" id="removeBackgroundButton" type="button">去背景</button><button class="text-button secondary" id="aiGenerateTopButton" type="button">AI 灵感</button><button type="button" data-workflow-stage-button="version" aria-selected="false">版本与恢复</button></div></details>
       </div>
       <button class="chrome-toggle topbar-collapse-button" id="topbarCollapseButton" type="button" title="收起顶部栏" aria-label="收起顶部栏">⌃</button>
     </header>
-
-    <nav class="workflow-stagebar" id="workflowStagebar" aria-label="专业工作阶段" aria-hidden="true">
-      <span class="workflow-stage-label">工作阶段</span>
-      <button type="button" class="active" data-workflow-stage-button="design" aria-selected="true"><span>01</span>设计</button>
-      <button type="button" data-workflow-stage-button="color" aria-selected="false" tabindex="-1"><span>02</span>配色</button>
-      <button type="button" data-workflow-stage-button="make" aria-selected="false" tabindex="-1"><span>03</span>拼制</button>
-      <button type="button" data-workflow-stage-button="output" aria-selected="false" tabindex="-1"><span>04</span>输出</button>
-      <button type="button" data-workflow-stage-button="version" aria-selected="false" tabindex="-1"><span>05</span>版本</button>
-    </nav>
 
     <button class="floating-chrome-toggle topbar-restore-button hidden-control" id="topbarExpandButton" type="button">⌄ 顶部</button>
 
@@ -721,7 +681,7 @@
       <div class="export-preview-head">
         <div>
           <h2>样式预览</h2>
-          <p>组合背景、边框、阴影、厚度和表面遮罩，预览成品展示效果。</p>
+          <p>保持图纸原色，组合摄影背景、构图、边框与阴影。</p>
         </div>
         <button class="back-button" id="materialPreviewCloseButton" type="button" title="关闭">×</button>
       </div>
@@ -789,6 +749,7 @@
               </div>
             </div>
             <select id="materialBackgroundSelect" class="material-legacy-select" aria-hidden="true" tabindex="-1">
+              <option value="white-plaster">白色灰泥</option>
               <option value="felt">毛毡板</option>
               <option value="glass">玻璃板</option>
               <option value="wood">木纹板</option>
@@ -808,34 +769,7 @@
             <span id="styleBackgroundImageName">未选择</span>
             <input id="styleBackgroundImageInput" type="file" accept="image/*" hidden>
           </div>
-          <label>表面材质遮罩
-            <select id="materialModeSelect">
-              <option value="normal">01 亮面胶感</option>
-              <option value="matte">02 哑光柔面</option>
-              <option value="parchment">03 烘焙纸雾面</option>
-              <option value="coarse-towel">04 粗纹毛巾</option>
-              <option value="fine-towel">05 细纹毛巾</option>
-              <option value="felt-mask">06 毛毡纤维</option>
-              <option value="linen">07 亚麻布纹</option>
-              <option value="canvas">08 帆布纹</option>
-              <option value="diagonal">09 斜纹压纹</option>
-              <option value="wave">10 波纹压纹</option>
-              <option value="ripple">11 水波纹</option>
-              <option value="grid">12 微格纹</option>
-              <option value="dots">13 细点颗粒</option>
-              <option value="grain">14 胶片颗粒</option>
-              <option value="glitter">15 银闪</option>
-              <option value="black-glitter">16 黑闪</option>
-              <option value="rainbow-glitter">17 彩闪</option>
-              <option value="pearl">18 珍珠光</option>
-              <option value="holographic">19 镭射膜</option>
-              <option value="plastic">20 透明塑封</option>
-              <option value="ceramic">21 陶瓷釉面</option>
-              <option value="cross-stitch">22 十字绣针脚</option>
-              <option value="bead-3d">23 拼豆立体</option>
-              <option value="holes">24 保孔颗粒</option>
-            </select>
-          </label>
+          <p class="material-true-color-note">展示图保留图纸原色。豆体、烫法与透明材质请在「成品质感 3D」中查看。</p>
           <label>边框类型
             <select id="materialBaseSelect">
               <option value="none">无边框</option>

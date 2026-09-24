@@ -1,6 +1,6 @@
 {
   "name": "qpixel-studio", "version": "2.0.0", "private": true,
-  "scripts": {"build": "node scripts/build_web_assets.mjs", "test": "node tests/studio-engine.test.js"},
+  "scripts": {"build": "node scripts/build_web_assets.mjs", "test": "node tests/run.js"},
   "dependencies": {"three": "0.180.0"},
   "devDependencies": {"esbuild": "0.25.10"}
 }

@@ -28,7 +28,7 @@
   }
 
   // 全应用共用同一品牌色卡，避免色号数据在编辑器与库存模块中分叉。
-  const rawBeadPalette = paletteRegistryModule.defaultPalette().colors.map((color) => [color.code, color.name, color.hex]);
+  const rawBeadPalette = paletteRegistryModule.defaultPalette().allColors.map((color) => [color.code, color.name, color.hex]);
 
   function getPaletteSortGroup(color) {
     const { r, g, b } = color.rgb;
@@ -83,6 +83,8 @@
     {
       label: "基础常用",
       items: [
+        { value: "white-plaster", label: "暖灰石膏", texture: "concrete", colors: ["#e8e4da", "#d7d3ca", "#f5f3ed"], grain: .6 },
+        { value: "rough-linen", label: "天然亚麻", texture: "fabric", colors: ["#c8c0ad", "#a49c88", "#e9e2d3"], weave: 1.1 },
         { value: "felt", label: "毛毡板", texture: "fabric", colors: ["#c4c5bd", "#aeb2aa", "#ece9dd"], grain: 1.05, weave: 0.7 },
         { value: "glass", label: "玻璃板", texture: "glass", colors: ["#f8fbff", "#dcecff", "#b7cff1"], gloss: 1.2, blur: 0.7 },
         { value: "wood", label: "木纹板", texture: "wood", colors: ["#d2aa78", "#8c5d34", "#f0d0a3"], grain: 0.9, lines: 1.2 },
@@ -217,6 +219,8 @@
   );
 
   const styleMaterialBitmapSources = {
+    "white-plaster": "/assets/materials/white_plaster_02_diff_1k.jpg",
+    "rough-linen": "/assets/materials/rough_linen_diff_1k.jpg",
     felt: "/assets/materials/poly_wool_herringbone_diff_4k.jpg",
     "linen-bg": "/assets/materials/poly_wool_herringbone_diff_4k.jpg",
     "fabric-denim": "/assets/materials/poly_wool_herringbone_diff_4k.jpg",
@@ -225,7 +229,7 @@
     "bamboo-board": "/assets/materials/synthetic_wood_diff_4k.jpg",
     marble: "/assets/materials/marble_01_diff_4k.jpg",
     "concrete-studio": "/assets/materials/concrete_diff_4k.jpg",
-    "slate-board": "/assets/materials/concrete_diff_4k.jpg"
+    "slate-board": "/assets/materials/dark_rock_diff_1k.jpg"
   };
 
   const styleMaterialColorPresets = [
@@ -268,7 +272,6 @@
       touchGestureSnapshot: null,
       touchUndoDepth: 0
     },
-    homeRecordMonthOffset: 0,
     lastRender: null,
     activeSessionStart: Date.now(),
     hasUnsavedChanges: false,
@@ -515,9 +518,7 @@
     [
       "homeView", "homeProjectGrid", "homeNewDesignButton", "homeNewTopButton", "homeSyncButton", "homeTrashButton",
       "homeNewFolderButton", "homeFolderBar", "homeFolderBackButton", "homeFolderName", "homeFolderCount",
-      "homeOpenProjectButton", "homeImportImageButton", "homeProjectCount", "homeBeadCount",
-      "homeRecordYear", "homeRecordMonth", "homeRecordPrevButton", "homeRecordNextButton", "homeRecordCalendar", "homeDesignDays",
-      "homeAvgDayTime", "homeAvgWorkTime", "homeRecordList", "homeSignature",
+      "homeOpenProjectButton", "homeProjectSearch", "homeProjectSort",
       "editorTopbar", "editorWorkspace", "controlPanel", "topbarCollapseButton", "topbarExpandButton",
       "sidePanelCollapseButton", "sidePanelExpandButton", "backHomeButton", "saveTopButton", "saveStatus", "aiGenerateTopButton",
       "fileInput", "dropZone", "previewCanvas", "emptyState", "emptyTitle",
@@ -1039,6 +1040,7 @@
     let best = beadPalette[0];
     let bestDistance = Infinity;
     for (const color of beadPalette) {
+      if (color.code === "T1") continue; // 透明扩展豆只由用户明确选择，不能由白色照片像素自动匹配。
       const distance = labDistance(lab, color.lab);
       if (distance < bestDistance) {
         best = color;
@@ -3819,10 +3821,12 @@
     if (!els.materialCategoryList || !els.materialOptionList || !els.materialColorPresetList) return;
     const selectedValue = els.materialBackgroundSelect ? els.materialBackgroundSelect.value : "felt";
     const selectedMaterial = getStyleBackgroundMaterial(selectedValue);
-    const groups = styleBackgroundMaterialGroups.map((group) => ({ label: group.label, items: group.items }));
-    groups.push({ label: "纯色/自定义", items: [{ value: "plain", label: "纯色" }, { value: "custom", label: "自定义图片" }] });
+    const featured = ["white-plaster", "wood", "rough-linen", "slate-board", "marble", "concrete-studio", "kraft"];
+    const groups = [{ label: "摄影材质", items: featured.map(getStyleBackgroundMaterial).filter(Boolean) }];
+    if (selectedMaterial && !featured.includes(selectedValue)) groups.push({ label: "旧项目背景", items: [selectedMaterial] });
+    groups.push({ label: "自定义", items: [{ value: "plain", label: "纯色" }, { value: "custom", label: "自定义图片" }] });
     let category = state.beads.styleMaterialPickerCategory;
-    if (!category || !groups.some((group) => group.label === category)) category = selectedMaterial ? selectedMaterial.group : "纯色/自定义";
+    if (!category || !groups.some((group) => group.label === category)) category = selectedMaterial ? featured.includes(selectedValue) ? "摄影材质" : "旧项目背景" : "自定义";
     if (!groups.some((group) => group.label === category)) category = groups[0].label;
     state.beads.styleMaterialPickerCategory = category;
 
@@ -3872,8 +3876,8 @@
     if (!els.materialBackgroundSelect) return;
     els.materialBackgroundSelect.value = value;
     const material = getStyleBackgroundMaterial(value);
-    if (material) state.beads.styleMaterialPickerCategory = material.group;
-    else state.beads.styleMaterialPickerCategory = "纯色/自定义";
+    if (material) state.beads.styleMaterialPickerCategory = ["white-plaster", "wood", "rough-linen", "slate-board", "marble", "concrete-studio", "kraft"].includes(value) ? "摄影材质" : "旧项目背景";
+    else state.beads.styleMaterialPickerCategory = "自定义";
     renderMaterialPicker();
     drawMaterialPreview();
   }
@@ -9553,44 +9557,6 @@
     return { valid: true, variance, opaqueRatio: opaque / count, active };
   }
 
-  function drawMaterialLight(ctx, x, y, width, height, light, intensity) {
-    if (light === "none") return;
-    ctx.save();
-    const drawGradient = (gradient, color0, color1, composite = "screen") => {
-      ctx.globalCompositeOperation = composite;
-      gradient.addColorStop(0, color0);
-      gradient.addColorStop(0.56, "rgba(255,255,255,0)");
-      gradient.addColorStop(1, color1);
-      ctx.fillStyle = gradient;
-      ctx.fillRect(x, y, width, height);
-    };
-    if (light === "left") {
-      drawGradient(ctx.createLinearGradient(x, y, x + width, y + height), `rgba(255,255,255,${0.32 * intensity})`, `rgba(0,0,0,${0.08 * intensity})`);
-    } else if (light === "right") {
-      drawGradient(ctx.createLinearGradient(x + width, y, x, y + height), `rgba(255,255,255,${0.32 * intensity})`, `rgba(0,0,0,${0.08 * intensity})`);
-    } else if (light === "top") {
-      drawGradient(ctx.createLinearGradient(x, y, x, y + height), `rgba(255,255,255,${0.34 * intensity})`, `rgba(0,0,0,${0.08 * intensity})`);
-    } else if (light === "bottom") {
-      drawGradient(ctx.createLinearGradient(x, y + height, x, y), `rgba(255,255,255,${0.22 * intensity})`, `rgba(0,0,0,${0.04 * intensity})`);
-    } else if (light === "front") {
-      drawGradient(ctx.createRadialGradient(x + width * 0.5, y + height * 0.42, 1, x + width * 0.5, y + height * 0.42, Math.max(width, height) * 0.68), `rgba(255,255,255,${0.30 * intensity})`, `rgba(0,0,0,${0.05 * intensity})`);
-    } else if (light === "backlit") {
-      ctx.globalCompositeOperation = "source-atop";
-      ctx.shadowColor = `rgba(255,255,255,${0.78 * intensity})`;
-      ctx.shadowBlur = Math.max(12, Math.min(width, height) * 0.055);
-      ctx.strokeStyle = `rgba(255,255,255,${0.18 * intensity})`;
-      ctx.lineWidth = Math.max(2, Math.min(width, height) * 0.012);
-      ctx.strokeRect(x, y, width, height);
-    } else if (light === "warm" || light === "cool") {
-      const color = light === "warm" ? "255,220,156" : "172,218,255";
-      drawGradient(ctx.createRadialGradient(x + width * 0.32, y + height * 0.2, 1, x + width * 0.32, y + height * 0.2, Math.max(width, height) * 0.75), `rgba(${color},${0.33 * intensity})`, `rgba(0,0,0,${0.06 * intensity})`);
-    } else {
-      const gradient = ctx.createRadialGradient(x + width * 0.34, y + height * 0.18, 1, x + width * 0.34, y + height * 0.18, Math.max(width, height) * 0.72);
-      drawGradient(gradient, `rgba(255,255,255,${(light === "dramatic" ? 0.45 : 0.28) * intensity})`, `rgba(0,0,0,${(light === "dramatic" ? 0.22 : 0.08) * intensity})`);
-    }
-    ctx.restore();
-  }
-
   function drawMaterialDecor(ctx, width, height, decor, intensity) {
     if (decor === "none") return;
     ctx.save();
@@ -10295,20 +10261,26 @@
     });
   }
 
-  function beginMaterialShapePath(ctx, pattern, x, y, cell) {
-    ctx.beginPath();
-    for (let row = 0; row < pattern.height; row += 1) {
-      for (let col = 0; col < pattern.width; col += 1) {
-        if (!pattern.cells[row][col] || pattern.cells[row][col] === "H1") continue;
-        ctx.rect(x + col * cell, y + row * cell, cell, cell);
-      }
+  function cropPatternToContent(pattern) {
+    let minRow = pattern.height, maxRow = -1, minCol = pattern.width, maxCol = -1;
+    for (let row = 0; row < pattern.height; row += 1) for (let col = 0; col < pattern.width; col += 1) {
+      if (!pattern.cells[row] || !pattern.cells[row][col]) continue;
+      minRow = Math.min(minRow, row); maxRow = Math.max(maxRow, row);
+      minCol = Math.min(minCol, col); maxCol = Math.max(maxCol, col);
     }
+    if (maxRow < 0) return pattern;
+    return {
+      width: maxCol - minCol + 1,
+      height: maxRow - minRow + 1,
+      cells: pattern.cells.slice(minRow, maxRow + 1).map((row) => row.slice(minCol, maxCol + 1))
+    };
   }
 
   function drawMaterialPreview() {
-    const pattern = getMaterialPattern();
+    const sourcePattern = getMaterialPattern();
+    const pattern = sourcePattern && cropPatternToContent(sourcePattern);
     if (!pattern || !els.materialPreviewCanvas) return false;
-    const mode = els.materialModeSelect ? els.materialModeSelect.value : "normal";
+    const mode = "normal";
     const frameType = els.materialBaseSelect ? els.materialBaseSelect.value : "none";
     const backgroundType = els.materialBackgroundSelect ? els.materialBackgroundSelect.value : "felt";
     const light = els.materialLightSelect ? els.materialLightSelect.value : "soft";
@@ -10345,30 +10317,11 @@
     const artX = Math.round((canvas.width - artWidth) / 2);
     const artY = Math.round((canvas.height - artHeight) / 2);
 
-    // 真实质感路径：立体豆体 + 程序化纤维 + 物理光照；引擎缺失时回退旧矢量绘制。
-    if (surfaceEngine && !modeIsFlatFallback(mode)) {
-      const style = materialSpriteStyle(mode, intensity);
-      drawSurfaceArt(ctx, pattern, artX, artY, cell, mode, style, intensity);
-    } else {
-      const art = makeSolidPixelArt(pattern, cell, mode);
-      drawStyleShadow(ctx, art, artX, artY, shadowColor, shadowAlpha, shadowBlur, shadowOffsetX, shadowOffsetY);
-      drawStyleThickness(ctx, art, artX, artY, thickness);
-      ctx.drawImage(art, artX, artY);
-      ctx.save();
-      beginMaterialShapePath(ctx, pattern, artX, artY, cell);
-      ctx.clip();
-      applySurfaceMask(ctx, mode, artX, artY, artWidth, artHeight, cell, pattern, intensity);
-      drawMaterialLight(ctx, artX, artY, artWidth, artHeight, light, intensity);
-      ctx.restore();
-    }
-    if (surfaceEngine && !modeIsFlatFallback(mode)) {
-      // 光照贴在豆阵之上、贴纸之下：与实物拍摄的光层一致。
-      ctx.save();
-      beginMaterialShapePath(ctx, pattern, artX, artY, cell);
-      ctx.clip();
-      surfaceEngine.applyLight(ctx, artX, artY, artWidth, artHeight, light, intensity);
-      ctx.restore();
-    }
+    // 展示图只管布景与构图。颜色保持原图，烫法和树脂光学由独立 3D 工作台负责。
+    const art = makeSolidPixelArt(pattern, cell, mode);
+    drawStyleShadow(ctx, art, artX, artY, shadowColor, shadowAlpha, shadowBlur, shadowOffsetX, shadowOffsetY);
+    drawStyleThickness(ctx, art, artX, artY, thickness);
+    ctx.drawImage(art, artX, artY);
     drawMaterialDecor(ctx, canvas.width, canvas.height, decor, intensity);
     drawStyleUserOverlays(ctx);
     applyPreviewZoom(canvas, state.beads.stylePreviewZoom || 1);
@@ -10376,111 +10329,6 @@
   }
 
   // 特殊构图类遮罩继续走旧路径（十字绣/保孔等逐格矢量逻辑更合适）。
-  function modeIsFlatFallback(mode) {
-    return ["cross-stitch", "holes", "bead-3d"].includes(mode);
-  }
-
-  // 遮罩 → 豆体渲染风格映射：熔融度与光泽按材质语义取值；wobble/bleed 提供手工误差与邻色互映。
-  function materialSpriteStyle(mode, intensity) {
-    const profile = {
-      normal: { melt: 0, gloss: .62, noise: .5 },
-      matte: { melt: 0, gloss: .12, noise: .7 },
-      parchment: { melt: .12, gloss: .18, noise: .75 },
-      "coarse-towel": { melt: .55, gloss: .1, noise: .9 },
-      "fine-towel": { melt: .55, gloss: .14, noise: .85 },
-      "felt-mask": { melt: .18, gloss: .08, noise: .95 },
-      linen: { melt: .2, gloss: .12, noise: .85 },
-      canvas: { melt: .2, gloss: .1, noise: .9 },
-      diagonal: { melt: .35, gloss: .3, noise: .5 },
-      wave: { melt: .35, gloss: .34, noise: .5 },
-      ripple: { melt: .4, gloss: .38, noise: .5 },
-      grid: { melt: .3, gloss: .3, noise: .45 },
-      dots: { melt: 0, gloss: .4, noise: .8 },
-      grain: { melt: 0, gloss: .3, noise: 1 },
-      glitter: { melt: 0, gloss: .95, noise: .35 },
-      "black-glitter": { melt: 0, gloss: .95, noise: .3 },
-      "rainbow-glitter": { melt: 0, gloss: .95, noise: .3 },
-      pearl: { melt: 0, gloss: .85, noise: .2 },
-      holographic: { melt: 0, gloss: .9, noise: .2 },
-      plastic: { melt: 0, gloss: .75, noise: .25 },
-      ceramic: { melt: .1, gloss: .8, noise: .3 }
-    }[mode] || { melt: 0, gloss: .6, noise: .5 };
-    // 未烫类保留手工摆放误差；熨烫类按熔融度收敛误差（熨平后更整齐）。
-    const wobble = profile.melt > .3 ? .35 : .55;
-    return {
-      melt: profile.melt * (0.4 + intensity * 0.6),
-      gloss: clamp(profile.gloss * (0.5 + intensity * 0.5), 0, 1),
-      noise: profile.noise,
-      wobble,
-      bleed: clamp(0.2 + intensity * 0.3, 0, 1),
-      seed: (state.beads.stylePreviewSeed | 0) || 7
-    };
-  }
-
-  // 立体豆阵绘制：阴影/厚度用合成路径，豆体走 sprite，纤维/熔融按遮罩叠加。
-  function drawSurfaceArt(ctx, pattern, artX, artY, cell, mode, style, intensity) {
-    const artWidth = pattern.width * cell;
-    const artHeight = pattern.height * cell;
-    const art = document.createElement("canvas");
-    art.width = artWidth;
-    art.height = artHeight;
-    const artCtx = art.getContext("2d");
-    surfaceEngine.beadField(artCtx, pattern, 0, 0, cell, style, (code) => getPaletteColor(code).hex);
-    // 熔融融合：相邻异色豆的渗透与桥接高光。
-    if (style.melt > 0.04) surfaceEngine.meltField(artCtx, pattern, 0, 0, cell, Math.min(1, style.melt * 1.2));
-    // 布纹纤维：毛巾/毛毡/亚麻/帆布用程序化纤维布底叠在豆阵之上（模拟熨烫布压痕）。
-    const fiberType = { "coarse-towel": "towel", "fine-towel": "fine", "felt-mask": "felt", linen: "linen", canvas: "linen" }[mode];
-    if (fiberType) {
-      const fiber = surfaceEngine.fiberTexture(256, fiberType, "#cfc9bb");
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(artX, artY, artWidth, artHeight);
-      ctx.clip();
-      ctx.globalCompositeOperation = "soft-light";
-      ctx.globalAlpha = clamp(0.35 + intensity * 0.5, 0, 1);
-      for (let y = 0; y < artHeight; y += 256) for (let x = 0; x < artWidth; x += 256) ctx.drawImage(fiber, artX + x, artY + y);
-      ctx.restore();
-    }
-    // 闪粉/虹光：金属系高光叠层。
-    if (["glitter", "black-glitter", "rainbow-glitter", "pearl", "holographic"].includes(mode)) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(artX, artY, artWidth, artHeight);
-      ctx.clip();
-      ctx.globalCompositeOperation = mode === "rainbow-glitter" ? "soft-light" : "screen";
-      ctx.globalAlpha = clamp(intensity * 0.5, 0, 1);
-      if (mode === "rainbow-glitter") {
-        const g = ctx.createLinearGradient(artX, artY, artX + artWidth, artY + artHeight);
-        ["rgba(255,0,120,.5)", "rgba(0,180,255,.5)", "rgba(255,230,0,.5)", "rgba(140,80,255,.5)"].forEach((c, i) => g.addColorStop(i / 3, c));
-        ctx.fillStyle = g;
-      } else {
-        ctx.fillStyle = mode === "black-glitter" ? "rgba(210,225,255,.4)" : "rgba(255,255,255,.42)";
-      }
-      for (let i = 0; i < Math.floor(artWidth * artHeight / 4200); i += 1) {
-        const px = artX + (i * 137.5) % artWidth;
-        const py = artY + (i * 89.3) % artHeight;
-        ctx.fillRect(px, py, 1.6, 1.6);
-      }
-      ctx.restore();
-    }
-    // 装饰纹理类遮罩（斜纹/波纹/网格/点）保留几何特征，但改用浮雕叠层而不是纯白线。
-    if (["diagonal", "wave", "ripple", "grid", "dots", "grain", "parchment"].includes(mode)) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(artX, artY, artWidth, artHeight);
-      ctx.clip();
-      surfaceEngine.applyLight(ctx, artX, artY, artWidth, artHeight, "dramatic", intensity * 0.35);
-      ctx.restore();
-    }
-    drawStyleShadow(ctx, art, artX, artY, state.beads.styleShadowColor ? els.styleShadowColorInput.value : "#172033", shadowAlphaForMode(intensity), shadowBlurForCell(cell), Math.max(8, cell * 1.2), Math.max(10, cell * 1.4));
-    drawStyleThickness(ctx, art, artX, artY, Math.min(thicknessForMode(mode), cell * 0.9));
-    ctx.drawImage(art, artX, artY);
-  }
-
-  function shadowAlphaForMode(intensity) { return clamp(0.22 + intensity * 0.18, 0.1, 0.55); }
-  function shadowBlurForCell(cell) { return Math.max(14, cell * 2.2); }
-  function thicknessForMode(mode) { return ["coarse-towel", "fine-towel", "felt-mask", "linen", "canvas"].includes(mode) ? 3 : 6; }
-
   function makeSolidPixelArt(pattern, cell, mode) {
     const art = document.createElement("canvas");
     art.width = pattern.width * cell;
@@ -10489,7 +10337,7 @@
     for (let row = 0; row < pattern.height; row += 1) {
       for (let col = 0; col < pattern.width; col += 1) {
         const code = pattern.cells[row][col];
-        if (!code || code === "H1") continue;
+        if (!code) continue;
         const color = getPaletteColor(code);
         ctx.fillStyle = mode === "black-glitter" && colorBrightness(color.rgb) < 150 ? "#07080b" : color.hex;
         ctx.fillRect(col * cell, row * cell, cell, cell);
@@ -11801,123 +11649,6 @@
     ctx.restore();
   }
 
-  function applySurfaceMask(ctx, mode, x, y, width, height, cell, pattern, intensity) {
-    const alpha = intensity;
-    const drawLines = (stroke, lineWidth, step, diagonal) => {
-      ctx.save();
-      ctx.strokeStyle = stroke;
-      ctx.lineWidth = lineWidth;
-      for (let i = diagonal ? x - height : y; i < (diagonal ? x + width : y + height); i += step) {
-        ctx.beginPath();
-        if (diagonal) {
-          ctx.moveTo(i, y);
-          ctx.lineTo(i + height, y + height);
-        } else {
-          ctx.moveTo(x, i);
-          ctx.lineTo(x + width, i);
-        }
-        ctx.stroke();
-      }
-      ctx.restore();
-    };
-    const drawGloss = (amount) => {
-      const g = ctx.createLinearGradient(x, y, x + width, y + height);
-      g.addColorStop(0, `rgba(255,255,255,${amount * alpha})`);
-      g.addColorStop(0.5, "rgba(255,255,255,0)");
-      g.addColorStop(1, `rgba(0,0,0,${amount * 0.42 * alpha})`);
-      ctx.fillStyle = g;
-      ctx.fillRect(x, y, width, height);
-    };
-    if (mode === "normal") drawGloss(0.2);
-    if (mode === "matte") {
-      ctx.fillStyle = `rgba(255,255,255,${0.12 * alpha})`;
-      ctx.fillRect(x, y, width, height);
-    }
-    if (mode === "parchment") drawLines(`rgba(255,255,255,${0.32 * alpha})`, Math.max(1, cell * 0.08), cell * 1.4, true);
-    if (mode === "coarse-towel") drawLines(`rgba(255,255,255,${0.38 * alpha})`, Math.max(1.4, cell * 0.18), cell * 0.82, true);
-    if (mode === "fine-towel") drawLines(`rgba(255,255,255,${0.30 * alpha})`, Math.max(0.8, cell * 0.09), cell * 0.42, true);
-    if (["felt-mask", "linen", "canvas"].includes(mode)) {
-      drawLines(`rgba(255,255,255,${0.20 * alpha})`, 1.2, mode === "felt-mask" ? 9 : 14, true);
-      drawLines(`rgba(0,0,0,${0.08 * alpha})`, 1, mode === "canvas" ? 18 : 11, false);
-    }
-    if (mode === "diagonal") drawLines(`rgba(255,255,255,${0.34 * alpha})`, Math.max(1, cell * 0.12), cell * 0.7, true);
-    if (mode === "grid") {
-      drawLines(`rgba(255,255,255,${0.22 * alpha})`, 1, cell * 1.2, false);
-      ctx.save();
-      ctx.strokeStyle = `rgba(0,0,0,${0.08 * alpha})`;
-      ctx.lineWidth = 1;
-      for (let xx = x; xx <= x + width; xx += cell * 1.2) {
-        ctx.beginPath();
-        ctx.moveTo(xx, y);
-        ctx.lineTo(xx, y + height);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-    if (mode === "wave" || mode === "ripple") {
-      ctx.strokeStyle = `rgba(255,255,255,${0.34 * alpha})`;
-      ctx.lineWidth = Math.max(1, cell * 0.1);
-      for (let yy = y; yy < y + height; yy += cell * (mode === "wave" ? 0.9 : 0.55)) {
-        ctx.beginPath();
-        ctx.moveTo(x, yy);
-        for (let xx = x; xx <= x + width; xx += cell) ctx.quadraticCurveTo(xx + cell * 0.5, yy - cell * 0.26, xx + cell, yy);
-        ctx.stroke();
-      }
-    }
-    if (["dots", "grain", "glitter", "black-glitter", "rainbow-glitter"].includes(mode)) {
-      const count = Math.max(90, Math.floor(width * height / (mode.includes("glitter") ? 900 : 1500)));
-      for (let i = 0; i < count; i += 1) {
-        const px = x + ((i * 37) % Math.max(1, width));
-        const py = y + ((i * 53) % Math.max(1, height));
-        const size = mode.includes("glitter") ? 1.5 + (i % 5) : 0.8 + (i % 2);
-        ctx.fillStyle = mode === "rainbow-glitter"
-          ? `hsla(${(i * 47) % 360}, 90%, 75%, ${0.62 * alpha})`
-          : mode === "black-glitter"
-            ? `rgba(230,238,255,${0.66 * alpha})`
-            : `rgba(255,255,255,${0.70 * alpha})`;
-        ctx.beginPath();
-        ctx.arc(px, py, size, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-    if (["pearl", "holographic", "plastic", "ceramic", "bead-3d"].includes(mode)) drawGloss(mode === "holographic" ? 0.42 : 0.28);
-    if (mode === "holographic") {
-      const g = ctx.createLinearGradient(x, y, x + width, y);
-      ["rgba(255,0,120,.16)", "rgba(0,180,255,.16)", "rgba(255,230,0,.14)", "rgba(180,80,255,.15)"].forEach((color, index) => g.addColorStop(index / 3, color));
-      ctx.fillStyle = g;
-      ctx.fillRect(x, y, width, height);
-    }
-    if (mode === "cross-stitch") {
-      for (let row = 0; row < pattern.height; row += 1) {
-        for (let col = 0; col < pattern.width; col += 1) {
-          if (!pattern.cells[row][col] || pattern.cells[row][col] === "H1") continue;
-          const px = x + col * cell;
-          const py = y + row * cell;
-          ctx.strokeStyle = `rgba(255,255,255,${0.34 * alpha})`;
-          ctx.lineWidth = Math.max(1, cell * 0.12);
-          ctx.beginPath();
-          ctx.moveTo(px + cell * 0.18, py + cell * 0.18);
-          ctx.lineTo(px + cell * 0.82, py + cell * 0.82);
-          ctx.moveTo(px + cell * 0.82, py + cell * 0.18);
-          ctx.lineTo(px + cell * 0.18, py + cell * 0.82);
-          ctx.stroke();
-        }
-      }
-    }
-    if (mode === "holes") {
-      ctx.globalCompositeOperation = "destination-out";
-      for (let row = 0; row < pattern.height; row += 1) {
-        for (let col = 0; col < pattern.width; col += 1) {
-          if (!pattern.cells[row][col] || pattern.cells[row][col] === "H1") continue;
-          ctx.beginPath();
-          ctx.arc(x + col * cell + cell / 2, y + row * cell + cell / 2, Math.max(1, cell * 0.16), 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      ctx.globalCompositeOperation = "source-over";
-    }
-  }
-
   function openMaterialPreview() {
     if (!getMaterialPattern()) {
       setMessage("请先载入图片或生成图纸。", true);
@@ -11932,6 +11663,7 @@
       return;
     }
     els.materialPreviewModal.classList.remove("hidden");
+    requestAnimationFrame(() => updatePreviewZoom("style", "fit"));
   }
 
   function closeMaterialPreview() {
@@ -12981,10 +12713,17 @@
     const folders = getFolders();
     if (state.homeFolderId && !folders.some((folder) => folder.id === state.homeFolderId)) state.homeFolderId = "";
     const currentFolder = state.homeFolderId ? folders.find((folder) => folder.id === state.homeFolderId) : null;
-    const allProjects = getProjects().filter((project) => !isInternalTestProject(project)).sort(compareProjectsByRecency);
-    const projects = currentFolder
+    const query = String(els.homeProjectSearch && els.homeProjectSearch.value || "").trim().toLocaleLowerCase();
+    const sort = els.homeProjectSort && els.homeProjectSort.value || "recent";
+    const allProjects = getProjects().filter((project) => !isInternalTestProject(project)).sort((a, b) => {
+      if (sort === "name") return String(a.title || "未命名").localeCompare(String(b.title || "未命名"), "zh-CN", { numeric: true });
+      if (sort === "created") return new Date(b.createdAt || b.savedAt || 0) - new Date(a.createdAt || a.savedAt || 0);
+      return compareProjectsByRecency(a, b);
+    });
+    const visibleProjects = currentFolder
       ? allProjects.filter((project) => project.folderId === currentFolder.id)
-      : allProjects.filter((project) => !project.folderId || !folders.some((folder) => folder.id === project.folderId));
+      : query ? allProjects : allProjects.filter((project) => !project.folderId || !folders.some((folder) => folder.id === project.folderId));
+    const projects = query ? visibleProjects.filter((project) => String(project.title || "未命名").toLocaleLowerCase().includes(query)) : visibleProjects;
     els.homeProjectGrid.innerHTML = "";
 
     if (els.homeFolderBar) {
@@ -12996,7 +12735,7 @@
     }
 
     if (!currentFolder) {
-      folders.forEach((folder) => {
+      folders.filter((folder) => !query || folder.name.toLocaleLowerCase().includes(query)).forEach((folder) => {
         const count = allProjects.filter((project) => project.folderId === folder.id).length;
         const tile = document.createElement("article");
         tile.className = "home-folder-tile";
@@ -13035,10 +12774,10 @@
       });
     }
 
-    if (!projects.length && (currentFolder || !folders.length)) {
+    if (!projects.length && (query || currentFolder || !folders.length)) {
       const empty = document.createElement("div");
       empty.className = "home-empty";
-      empty.textContent = currentFolder
+      empty.textContent = query ? "没有匹配的作品；试试其他名称。" : currentFolder
         ? "这个文件夹还没有设计文件。长按任意设计卡片，选「移动到文件夹」即可归档。"
         : "还没有设计文件。点右上角 + 新建，或从上方选择一种开始方式。";
       els.homeProjectGrid.appendChild(empty);
@@ -13090,84 +12829,6 @@
       els.homeProjectGrid.appendChild(card);
     });
 
-    renderHomeProfile(allProjects);
-  }
-
-  function getProjectBeadCount(project) {
-    const cells = project && project.payload && project.payload.pattern && project.payload.pattern.cells;
-    if (!Array.isArray(cells)) return 0;
-    return cells.reduce((rowSum, row) => rowSum + row.filter(Boolean).length, 0);
-  }
-
-  function formatHours(seconds) {
-    const hours = seconds / 3600;
-    if (hours <= 0) return "0";
-    return hours < 10 ? String(Math.round(hours * 10) / 10) : String(Math.round(hours));
-  }
-
-  function renderHomeProfile(projects) {
-    const now = new Date();
-    const viewDate = new Date(now.getFullYear(), now.getMonth() + (state.homeRecordMonthOffset || 0), 1);
-    const year = viewDate.getFullYear();
-    const month = viewDate.getMonth();
-    const monthPrefix = `${year}-${String(month + 1).padStart(2, "0")}`;
-    if (els.homeRecordYear) els.homeRecordYear.textContent = `${year} 年`;
-    if (els.homeRecordMonth) els.homeRecordMonth.textContent = `${month + 1} 月`;
-    if (els.homeRecordNextButton) els.homeRecordNextButton.disabled = (state.homeRecordMonthOffset || 0) >= 0;
-
-    const daySeconds = new Map();
-    projects.forEach((project) => {
-      const dates = project.designDates || {};
-      Object.keys(dates).forEach((key) => {
-        if (!key.startsWith(monthPrefix)) return;
-        daySeconds.set(key, (daySeconds.get(key) || 0) + Math.max(1, Number(dates[key] || 0)));
-      });
-      const fallbackKey = dateKey(project.updatedAt || project.savedAt || project.createdAt);
-      if (fallbackKey.startsWith(monthPrefix) && !daySeconds.has(fallbackKey)) daySeconds.set(fallbackKey, Math.max(1, project.editSeconds || 60));
-    });
-
-    if (els.homeRecordCalendar) {
-      els.homeRecordCalendar.innerHTML = "";
-      const daysInMonth = new Date(year, month + 1, 0).getDate();
-      for (let day = 1; day <= daysInMonth; day += 1) {
-        const key = `${monthPrefix}-${String(day).padStart(2, "0")}`;
-        const seconds = daySeconds.get(key) || 0;
-        const item = document.createElement("span");
-        item.className = `record-day${seconds ? " active" : ""}${seconds >= 7200 ? " hot" : ""}`;
-        item.title = seconds ? `${day} 日 · ${formatHours(seconds)} 小时` : `${day} 日`;
-        els.homeRecordCalendar.appendChild(item);
-      }
-    }
-
-    const totalSeconds = Array.from(daySeconds.values()).reduce((sum, seconds) => sum + seconds, 0);
-    const monthProjects = projects.filter((project) => dateKey(project.updatedAt || project.savedAt || project.createdAt).startsWith(monthPrefix));
-    const totalBeads = monthProjects.reduce((sum, project) => sum + getProjectBeadCount(project), 0);
-    const designDays = daySeconds.size;
-    if (els.homeProjectCount) els.homeProjectCount.textContent = String(monthProjects.length);
-    if (els.homeBeadCount) els.homeBeadCount.textContent = totalBeads > 9999 ? `${Math.round(totalBeads / 1000)}k` : String(totalBeads);
-    if (els.homeDesignDays) els.homeDesignDays.textContent = String(designDays);
-    if (els.homeAvgDayTime) els.homeAvgDayTime.textContent = formatHours(designDays ? totalSeconds / designDays : 0);
-    if (els.homeAvgWorkTime) els.homeAvgWorkTime.textContent = formatHours(projects.length ? totalSeconds / projects.length : 0);
-
-    if (els.homeRecordList) {
-      els.homeRecordList.innerHTML = "";
-      projects.slice(0, 5).forEach((project) => {
-        const row = document.createElement("button");
-        row.type = "button";
-        row.className = "record-item";
-        row.innerHTML = `
-          <img alt="">
-          <span><strong></strong><span></span></span>
-          <em></em>
-        `;
-        row.querySelector("img").src = project.thumbnail || "";
-        row.querySelector("strong").textContent = project.title || "未命名";
-        row.querySelector("span span").textContent = `${formatShortDate(project.updatedAt || project.savedAt)} · ${project.width || "-"} x ${project.height || "-"}`;
-        row.querySelector("em").textContent = `${formatHours(project.editSeconds || 0)}h`;
-        row.addEventListener("click", () => loadProject(project.id));
-        els.homeRecordList.appendChild(row);
-      });
-    }
   }
 
   function openProjectActionModal(id) {
@@ -13961,23 +13622,9 @@
         syncSharedSettingsFromRemote({ manual: true });
       });
     }
-    if (els.homeRecordPrevButton) {
-      els.homeRecordPrevButton.addEventListener("click", () => {
-        state.homeRecordMonthOffset = (state.homeRecordMonthOffset || 0) - 1;
-        renderHomeProjects();
-      });
-    }
-    if (els.homeRecordNextButton) {
-      els.homeRecordNextButton.addEventListener("click", () => {
-        state.homeRecordMonthOffset = Math.min(0, (state.homeRecordMonthOffset || 0) + 1);
-        renderHomeProjects();
-      });
-    }
+    if (els.homeProjectSearch) els.homeProjectSearch.addEventListener("input", renderHomeProjects);
+    if (els.homeProjectSort) els.homeProjectSort.addEventListener("change", renderHomeProjects);
     if (els.homeTrashButton) els.homeTrashButton.addEventListener("click", openTrashModal);
-    els.homeImportImageButton.addEventListener("click", () => {
-      createNewDesign();
-      openFileDialog();
-    });
     els.homeOpenProjectButton.addEventListener("click", () => els.projectFileInput.click());
     if (els.importChoiceCancelButton) els.importChoiceCancelButton.addEventListener("click", cancelImportSession);
     if (els.importTaskCancelButton) els.importTaskCancelButton.addEventListener("click", () => cancelActiveImportTask());
@@ -15694,7 +15341,8 @@
       getProjects,
       setProjects: (projects) => setProjects(projects, { remote: false }),
       nearestBeadColor,
-      paletteSize: beadPalette.length
+      paletteSize: paletteRegistryModule.defaultPalette().colorCount,
+      paletteSpecialSize: paletteRegistryModule.defaultPalette().specialColors.length
     };
   }
 

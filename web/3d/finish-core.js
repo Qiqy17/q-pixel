@@ -7,16 +7,16 @@
 
   // 十类熨烫状态的通用参数化模型；标定完成后由 calibration-manifest 接管参数。
   const PROFILES = Object.freeze([
-    Object.freeze({ id: "raw", label: "未烫", height: 3.2, hole: .34, spread: 0, bridge: 0, roughness: .41 }),
-    Object.freeze({ id: "light", label: "轻烫保孔", height: 2.8, hole: .27, spread: .03, bridge: .025, roughness: .37 }),
-    Object.freeze({ id: "standard", label: "标准融合", height: 2.4, hole: .19, spread: .07, bridge: .075, roughness: .43 }),
-    Object.freeze({ id: "flat", label: "完全平融", height: 1.8, hole: .015, spread: .13, bridge: .15, roughness: .48 }),
-    Object.freeze({ id: "back", label: "背熔混合", height: 2.45, hole: .25, spread: .06, bridge: .08, roughness: .39 }),
-    Object.freeze({ id: "towel", label: "毛巾烫", height: 2.3, hole: .20, spread: .08, bridge: .08, roughness: .69 }),
-    Object.freeze({ id: "bath", label: "澡巾烫", height: 2.28, hole: .18, spread: .09, bridge: .09, roughness: .61 }),
-    Object.freeze({ id: "waffle", label: "华夫格烫", height: 2.25, hole: .17, spread: .10, bridge: .10, roughness: .58 }),
-    Object.freeze({ id: "glitter", label: "闪片烫", height: 2.35, hole: .19, spread: .07, bridge: .07, roughness: .28, glitter: true }),
-    Object.freeze({ id: "laser", label: "镭射烫", height: 2.34, hole: .18, spread: .07, bridge: .07, roughness: .24, iridescence: true })
+    Object.freeze({ id: "raw", label: "未烫", height: 4.35, hole: .35, backHole: .35, spread: 0, bridge: 0, roughness: .42 }),
+    Object.freeze({ id: "light", label: "轻烫保孔", height: 4.05, hole: .28, backHole: .29, spread: .035, bridge: .025, roughness: .4 }),
+    Object.freeze({ id: "standard", label: "标准融合", height: 3.6, hole: .20, backHole: .21, spread: .075, bridge: .085, roughness: .46 }),
+    Object.freeze({ id: "flat", label: "完全平融", height: 2.75, hole: .012, backHole: .12, spread: .17, bridge: .16, roughness: .5 }),
+    Object.freeze({ id: "back", label: "背熔混合", height: 3.85, hole: .33, backHole: .075, spread: .07, bridge: .10, roughness: .42 }),
+    Object.freeze({ id: "towel", label: "毛巾烫", height: 3.45, hole: .17, backHole: .20, spread: .095, bridge: .09, roughness: .72, texture: "towel" }),
+    Object.freeze({ id: "bath", label: "澡巾烫", height: 3.38, hole: .16, backHole: .19, spread: .10, bridge: .10, roughness: .65, texture: "bath" }),
+    Object.freeze({ id: "waffle", label: "华夫格烫", height: 3.36, hole: .15, backHole: .18, spread: .11, bridge: .11, roughness: .61, texture: "waffle" }),
+    Object.freeze({ id: "glitter", label: "闪片烫", height: 3.55, hole: .19, backHole: .21, spread: .075, bridge: .08, roughness: .31, texture: "glitter", glitter: true }),
+    Object.freeze({ id: "laser", label: "镭射烫", height: 3.55, hole: .19, backHole: .21, spread: .075, bridge: .08, roughness: .26, texture: "film", iridescence: true })
   ]);
 
   function profile(id) {
@@ -66,8 +66,8 @@
       version: 1,
       profile: profile(value.profile).id,
       exposure: Math.max(.5, Math.min(2, Number(value.exposure) || 1)),
-      side: ["front", "back"].includes(value.side) ? value.side : "front",
-      background: ["photo", "transparent"].includes(value.background) ? value.background : "photo",
+      side: ["front", "back", "angle"].includes(value.side) ? value.side : "angle",
+      background: ["photo", "dark", "transparent"].includes(value.background) ? value.background : "photo",
       calibrated: isCalibrated()
     };
   }

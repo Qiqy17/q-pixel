@@ -14,7 +14,7 @@
   }
 
   function normalizeColorEntry(entry) {
-    if (Array.isArray(entry) && entry.length >= 3) return { code: String(entry[0]), name: String(entry[1] || entry[0]), hex: String(entry[2]).toUpperCase(), calibrated: false };
+    if (Array.isArray(entry) && entry.length >= 3) return { code: String(entry[0]), name: String(entry[1] || entry[0]), hex: String(entry[2]).toUpperCase(), calibrated: false, opticalClass: "opaque" };
     if (entry && typeof entry === "object" && entry.code) {
       const rgb = entry.rgb || hexToRgb(entry.hex);
       return {
@@ -22,6 +22,7 @@
         name: String(entry.name || entry.code),
         hex: String(entry.hex || "#000000").toUpperCase(),
         calibrated: entry.calibrated === true,
+        opticalClass: ["opaque", "translucent", "clear"].includes(entry.opticalClass) ? entry.opticalClass : "opaque",
         rgb: rgb || undefined
       };
     }
@@ -31,8 +32,9 @@
   function createPalette(spec) {
     const source = spec && typeof spec === "object" ? spec : {};
     const colors = (Array.isArray(source.colors) ? source.colors : []).map(normalizeColorEntry).filter(Boolean);
+    const specials = (Array.isArray(source.specialColors) ? source.specialColors : []).map(normalizeColorEntry).filter(Boolean);
     const byCode = new Map();
-    colors.forEach((color) => {
+    [...colors, ...specials].forEach((color) => {
       if (!byCode.has(color.code)) byCode.set(color.code, Object.assign({ rgb: hexToRgb(color.hex) }, color));
     });
     return Object.freeze({
@@ -47,6 +49,8 @@
       source: String(source.source || ""),
       colorCount: colors.length,
       colors: Object.freeze(colors.slice()),
+      specialColors: Object.freeze(specials.slice()),
+      allColors: Object.freeze([...colors, ...specials]),
       colorOf: (code) => byCode.get(String(code)) || null,
       hasCode: (code) => byCode.has(String(code))
     });
@@ -124,7 +128,8 @@
     ["M15","M15","#747D7A"]
   ];
 
-  register({ id: "mard-221", brand: "MARD", label: "MARD 221 全色", series: "标准拼豆", beadDiameterMm: 5, calibrated: false, source: "Vicold.Pindoudou / data/Mard.txt (Apache-2.0)", paletteVersion: "1", colors: MARD_221_COLORS });
+  // T1 属 291 扩展色，不混入 221 标准色数量；HEX 仅用于屏幕参考，光学类别用于成品预览。
+  register({ id: "mard-221", brand: "MARD", label: "MARD 221 全色", series: "标准拼豆", beadDiameterMm: 5, calibrated: false, source: "Vicold.Pindoudou / data/Mard.txt (Apache-2.0)", paletteVersion: "1", colors: MARD_221_COLORS, specialColors: [{ code: "T1", name: "透明白（扩展色）", hex: "#EAF4F0", opticalClass: "clear", calibrated: false }] });
 
   return Object.freeze({ REGISTRY_VERSION, register, get, list, defaultPalette, createPalette, hexToRgb });
 });

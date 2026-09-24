@@ -12,14 +12,14 @@
     '</div>',
     '<div class="finish-body">',
     '  <aside class="finish-profiles"><strong>烫法预设</strong><div data-role="profiles"></div>',
-    '    <p>当前均为<strong>未标定通用模型</strong>。真实 MARD 5 mm 标定需要实拍样片与尺寸测量。</p></aside>',
+    '    <p data-role="profile-description">当前为<strong>未实物标定参考模型</strong>。可旋转检查孔洞、厚度与表面。</p></aside>',
     '  <main class="finish-stage"><canvas data-role="canvas"></canvas>',
-    '    <span class="finish-watermark" data-role="watermark">UN CALIBRATED · GENERIC MODEL</span>',
+    '    <span class="finish-watermark" data-role="watermark">参考模拟 · 未实物标定</span>',
     '    <div class="finish-compare" data-role="compare" hidden><img alt="保存的对比视角"><button type="button" data-action="hide-compare">关闭对比</button></div></main>',
     '  <aside class="finish-controls"><strong>视角与材质</strong>',
-    '    <div class="finish-view-buttons"><button type="button" data-action="front">正面</button><button type="button" data-action="back">背面</button></div>',
+    '    <div class="finish-view-buttons"><button type="button" data-action="angle">斜侧</button><button type="button" data-action="front">正面</button><button type="button" data-action="back">背面</button></div>',
     '    <label>曝光<input data-role="exposure" type="range" min="50" max="180" value="100"></label>',
-    '    <label>背景<select data-role="background"><option value="photo">摄影背景</option><option value="transparent">透明</option></select></label>',
+    '    <label>背景<select data-role="background"><option value="photo">浅色</option><option value="dark">深色</option><option value="transparent">透明</option></select></label>',
     '    <div class="finish-facts"><span data-role="facts">等待载入</span><span data-role="picked">双击单颗豆查看色号</span></div>',
     '    <button type="button" data-action="snapshot">保存对比快照</button>',
     '    <button type="button" data-action="compare">分屏比较</button>',
@@ -50,9 +50,24 @@
     let viewer = null;
     let settings = core.normalizeSettings({});
     let snapshot = null;
+    const profileDescriptions = {
+      raw: "未烫：完整管状侧壁和开孔。",
+      light: "轻烫：孔仍明显，顶缘略软化。",
+      standard: "标准：孔缩小，相邻豆在接触处融合。",
+      flat: "完全平融：正面近乎闭孔、面连续；背面仍可辨。",
+      back: "背熔：展示面保留高度和孔，背面融合增强。",
+      towel: "毛巾：豆面细密不规则纤维压痕。",
+      bath: "澡巾：更粗的网状颗粒压痕。",
+      waffle: "华夫格：正交格纹压印。",
+      glitter: "闪片：离散高光随光线变化，保留原豆色。",
+      laser: "镭射：角度相关薄膜虹彩，保留原豆色。"
+    };
 
     function syncControls() {
       profiles.querySelectorAll("button").forEach((button) => button.classList.toggle("active", button.dataset.profile === settings.profile));
+      const description = dialog.querySelector('[data-role="profile-description"]');
+      if (description) description.textContent = `${profileDescriptions[settings.profile]} ${core.isCalibrated() ? "当前使用已验收实测模型。" : "当前为未实物标定参考模型。"}`;
+      dialog.querySelectorAll('.finish-view-buttons button').forEach((button) => button.classList.toggle("active", button.dataset.action === settings.side));
       dialog.querySelector('[data-role="exposure"]').value = Math.round(settings.exposure * 100);
       dialog.querySelector('[data-role="background"]').value = settings.background;
     }
@@ -72,7 +87,7 @@
       const watermark = dialog.querySelector('[data-role="watermark"]');
       if (watermark) watermark.hidden = calibrated;
       const profileNote = dialog.querySelector(".finish-profiles p");
-      if (profileNote && calibrated) profileNote.textContent = "当前使用实测标定模型（MARD 5 mm 实拍样片）。";
+      if (profileNote && calibrated) profileNote.textContent = "当前使用已验收的 MARD 5 mm 实测标定模型。";
       settings = core.normalizeSettings(options.getSettings ? options.getSettings() : {});
       syncControls();
       // 空图纸保护：没有豆子时跳过引擎加载，避免空实例网格触发几何计算异常。
@@ -141,9 +156,10 @@
       const action = event.target.closest("[data-action]") ? event.target.closest("[data-action]").dataset.action : null;
       if (!action) return;
       if (action === "close") close();
-      if (action === "front" || action === "back") {
+      if (action === "front" || action === "back" || action === "angle") {
         settings.side = action;
         if (viewer) viewer.view(action);
+        syncControls();
         saveSettings();
       }
       if (action === "snapshot" && viewer) {

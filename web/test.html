@@ -254,6 +254,7 @@
 
         const generated = await window.QPixelTest.generateSyntheticBeadPattern(32, 24);
         if (window.QPixelTest.paletteSize !== 221) throw new Error("Mard palette size mismatch");
+        if (window.QPixelTest.paletteSpecialSize !== 1) throw new Error("extended palette size mismatch");
         if (!generated.pattern || generated.pattern.width !== 32 || generated.pattern.height !== 24) {
           throw new Error("bead pattern size failed");
         }
@@ -278,8 +279,8 @@
         if (!window.QPixelTest.drawMaterialPreview()) throw new Error("style preview draw failed");
         const styleCanvas = document.getElementById("materialPreviewCanvas");
         const sample = styleCanvas.getContext("2d").getImageData(68, 68, 1, 1).data;
-        if (Math.abs(sample[0] - 18) > 8 || Math.abs(sample[1] - 52) > 8 || Math.abs(sample[2] - 86) > 8) {
-          throw new Error(`style preview H1 not transparent: ${sample[0]},${sample[1]},${sample[2]}`);
+        if (sample[0] < 245 || sample[1] < 245 || sample[2] < 245 || sample[3] !== 255) {
+          throw new Error(`style preview H1 not opaque white: ${sample[0]},${sample[1]},${sample[2]},${sample[3]}`);
         }
         await window.QPixelTest.activateSyntheticBeadPattern(30, 28);
         const rectChanged = window.QPixelTest.applyRectEdit({ row: 1, col: 1 }, { row: 3, col: 4 }, "A1");

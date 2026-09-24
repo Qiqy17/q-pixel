@@ -7,6 +7,11 @@ assert.deepEqual(core.analyze([["A1", "A2", null], [null, "A2", "A3"]]), { count
 assert.equal(core.lod(13000, 1200), "medium");
 assert.equal(core.lod(200000, 1200), "low");
 assert.deepEqual(core.normalizeSettings({ profile: "invalid", exposure: 99, side: "back", background: "transparent" }), { version: 1, profile: "raw", exposure: 2, side: "back", background: "transparent", calibrated: false });
+assert.equal(core.normalizeSettings({}).side, "angle");
+assert.equal(core.normalizeSettings({ background: "dark" }).background, "dark");
+assert.ok(core.profile("raw").height > core.profile("standard").height);
+assert.ok(core.profile("standard").height > core.profile("flat").height);
+assert.ok(core.profile("back").hole > core.profile("back").backHole);
 // 孤点：单独一颗没有任何邻接。
 assert.equal(core.analyze([["A1", null], [null, null]]).isolated, 1);
 // 标定状态联动：manifest 就绪时设置带 calibrated=true。
