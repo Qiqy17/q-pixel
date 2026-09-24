@@ -1,4 +1,4 @@
-const CACHE_NAME = "q-pixel-v20260923-logo-8";
+const CACHE_NAME = "q-pixel-v20260924-scenes-finish-1";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -17,6 +17,13 @@ const APP_SHELL = [
   "./studio/background-engine.js",
   "./studio/background-tool.js",
   "./studio/surface-engine.js",
+  "./studio/scene-catalog.js",
+  "./assets/materials/rough_linen_diff_1k.jpg",
+  "./assets/materials/synthetic_wood_diff_4k.jpg",
+  "./assets/materials/white_plaster_02_diff_1k.jpg",
+  "./assets/materials/dark_rock_diff_1k.jpg",
+  "./assets/materials/marble_01_diff_4k.jpg",
+  "./assets/materials/concrete_diff_4k.jpg",
   "./3d/finish-core.js",
   "./3d/calibration-manifest.json",
   "./3d/webgl-support.js",

@@ -1,12 +1,16 @@
 "use strict";
 const assert = require("node:assert/strict");
 const core = require("../web/3d/finish-core.js");
-assert.equal(core.PROFILES.length, 10);
+assert.equal(core.PROFILES.length, 14);
 assert.equal(core.PROFILES.every((item) => item.hole >= 0 && item.height > 0), true);
+assert.equal(core.PROFILES.filter((item) => item.frontTopology === "fused").length, 11);
+assert.equal(core.profile("back").frontTopology, "beads");
+assert.equal(core.profile("back").backTopology, "fused");
 assert.deepEqual(core.analyze([["A1", "A2", null], [null, "A2", "A3"]]), { count: 4, horizontal: 2, vertical: 1, isolated: 0 });
 assert.equal(core.lod(13000, 1200), "medium");
 assert.equal(core.lod(200000, 1200), "low");
-assert.deepEqual(core.normalizeSettings({ profile: "invalid", exposure: 99, side: "back", background: "transparent" }), { version: 1, profile: "raw", exposure: 2, side: "back", background: "transparent", calibrated: false });
+assert.deepEqual(core.normalizeSettings({ profile: "invalid", exposure: 99, side: "back", background: "transparent" }), { version: 1, profile: "raw", exposure: 2, lightIntensity: 1, lightTemperature: "neutral", side: "back", background: "transparent", calibrated: false });
+assert.equal(core.normalizeSettings({}).profile, "standard");
 assert.equal(core.normalizeSettings({}).side, "angle");
 assert.equal(core.normalizeSettings({ background: "dark" }).background, "dark");
 assert.ok(core.profile("raw").height > core.profile("standard").height);

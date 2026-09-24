@@ -18,7 +18,11 @@
     { "id": "bath", "requiresCalibration": ["height", "hole", "spread", "bridge", "roughness", "fabricTexture"], "currentSource": "generic-model" },
     { "id": "waffle", "requiresCalibration": ["height", "hole", "spread", "bridge", "roughness", "fabricTexture", "wafflePattern"], "currentSource": "generic-model" },
     { "id": "glitter", "requiresCalibration": ["height", "hole", "spread", "bridge", "roughness", "clearcoat", "glitterDensity"], "currentSource": "generic-model" },
-    { "id": "laser", "requiresCalibration": ["height", "hole", "spread", "bridge", "roughness", "iridescence", "iridescenceIOR"], "currentSource": "generic-model" }
+    { "id": "laser", "requiresCalibration": ["height", "hole", "spread", "bridge", "roughness", "iridescence", "iridescenceIOR"], "currentSource": "generic-model" },
+    { "id": "glitter-fine", "requiresCalibration": ["height", "roughness", "glitterSize", "glitterDensity"], "currentSource": "visual-reference-model" },
+    { "id": "glitter-coarse", "requiresCalibration": ["height", "roughness", "glitterSize", "glitterDensity"], "currentSource": "visual-reference-model" },
+    { "id": "fabric", "requiresCalibration": ["height", "roughness", "weaveScale", "weaveDirection"], "currentSource": "visual-reference-model" },
+    { "id": "ribbed", "requiresCalibration": ["height", "roughness", "ribSpacing", "ribDepth"], "currentSource": "visual-reference-model" }
   ],
   "colorCalibration": {
     "model": "sRGB 未校正",
@@ -45,7 +49,7 @@
     }
   },
   "captureWorkflow": [
-    "1. 同一底板布 10×10 豆阵，分别按十种烫法处理出 10 块样片",
+    "1. 同一底板布 10×10 豆阵，分别按需要标定的烫法处理样片",
     "2. 每块样片正拍（俯视 90°）+ 侧拍（45°）各一张，D65 光源锁定白平衡与曝光",
     "3. 用游标卡尺测豆高、间距；照片测孔径占比与连接桥",
     "4. 颜色校准：同光源下拍 221 色豆单颗排列，灰卡开帧",
@@ -53,7 +57,8 @@
     "6. 对照同机位实拍完成误差验收，并在渲染器接入资源与状态校验后重新构建；未验收前保持未标定水印"
   ],
   "notes": [
-    "当前 3D 预览使用通用参数化模型，形状趋势正确但未按实物标定，界面已带“未标定”水印如实标注。",
-    "当前程序尚未接入实物纹理与标定验收状态，不能仅修改 manifest 就显示已标定。"
+    "当前 3D 预览使用视觉参考模型，未按受控实物样片标定，界面保留“未标定”水印。",
+    "用户提供的七张拼图仅用于质感方向分析；不能据此给出色差或尺寸数据。",
+    "实物纹理、颜色与几何参数须完成独立验收后才能将状态改为 calibrated。"
   ]
 }

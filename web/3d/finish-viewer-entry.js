@@ -27,6 +27,8 @@ function surfaceMaps(profile) {
     if (profile.texture === "towel") return grain * .42 + Math.sin(y * .88 + Math.sin(x * .22)) * .16;
     if (profile.texture === "bath") return grain * .28 + Math.sin(x * .39 + y * .31) * Math.sin(x * .31 - y * .39) * .38;
     if (profile.texture === "waffle") return Math.cos(x * Math.PI / 12) * .35 + Math.cos(y * Math.PI / 12) * .35;
+    if (profile.texture === "fabric") return Math.sin(x * .73) * Math.sin(y * .73) * .26 + grain * .12;
+    if (profile.texture === "ribbed") return Math.sin(y * .76) * .34 + grain * .06;
     return grain * .08;
   };
   for (let y = 0; y < size; y += 1) for (let x = 0; x < size; x += 1) {
@@ -39,7 +41,9 @@ function surfaceMaps(profile) {
     const noise = ((Math.imul(x + 31, 1103515245) ^ Math.imul(y + 17, 12345)) >>> 8) & 255;
     const r = Math.max(55, Math.min(255, Math.round(profile.roughness * 255 + (noise - 128) * .11)));
     roughness[i] = roughness[i + 1] = roughness[i + 2] = r; roughness[i + 3] = 255;
-    const flake = profile.glitter && noise > 249 ? 255 : 0;
+    const coarseSeed = ((Math.imul(Math.floor(x / 8) + 31, 1103515245) ^ Math.imul(Math.floor(y / 8) + 17, 12345)) >>> 8) & 255;
+    const coarseFlake = coarseSeed > 224 && x % 8 > 1 && x % 8 < 6 && y % 8 > 1 && y % 8 < 6;
+    const flake = profile.texture === "glitter-coarse" ? coarseFlake ? 255 : 0 : profile.glitter && noise > (profile.texture === "glitter-fine" ? 253 : 249) ? 255 : 0;
     flakes[i] = flakes[i + 1] = flakes[i + 2] = flake; flakes[i + 3] = 255;
   }
   const texture = (data) => {
@@ -49,6 +53,51 @@ function surfaceMaps(profile) {
     return map;
   };
   return { normal: texture(normals), roughness: texture(roughness), flakes: texture(flakes) };
+}
+
+// 每个条带生成相接的实心色块与外缘侧壁。正面、背面和侧壁分开，便于保孔/背熔切换。
+function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, opticalClass) {
+  const buckets = {};
+  const colorCache = new Map();
+  const cellAt = (row, col) => cells[row] && cells[row][col];
+  const colorFor = (code) => {
+    if (!colorCache.has(code)) colorCache.set(code, new THREE.Color(colorOf(code) || "#aaaaaa"));
+    return colorCache.get(code);
+  };
+  function quad(face, kind, vertices, normal, code) {
+    const key = `${face}:${kind}`;
+    const bucket = buckets[key] || (buckets[key] = { position: [], normal: [], color: [], uv: [] });
+    const tint = colorFor(code);
+    [0, 1, 2, 0, 2, 3].forEach((index) => {
+      const p = vertices[index];
+      bucket.position.push(p[0], p[1], p[2]);
+      bucket.normal.push(...normal);
+      bucket.color.push(tint.r, tint.g, tint.b);
+      bucket.uv.push(p[0] / 20, p[2] / 20);
+    });
+  }
+  for (let row = firstRow; row < lastRow; row += 1) {
+    for (let col = 0; col < (cells[row] || []).length; col += 1) {
+      const code = cellAt(row, col);
+      if (!code) continue;
+      const kind = opticalClass(code);
+      const x0 = col * 5 - centerX - 2.5, x1 = x0 + 5;
+      const z0 = row * 5 - centerZ - 2.5, z1 = z0 + 5;
+      quad("front", kind, [[x0, 1, z0], [x0, 1, z1], [x1, 1, z1], [x1, 1, z0]], [0, 1, 0], code);
+      quad("back", kind, [[x0, 0, z0], [x1, 0, z0], [x1, 0, z1], [x0, 0, z1]], [0, -1, 0], code);
+      if (!cellAt(row - 1, col)) quad("side", kind, [[x0, 0, z0], [x0, 1, z0], [x1, 1, z0], [x1, 0, z0]], [0, 0, -1], code);
+      if (!cellAt(row + 1, col)) quad("side", kind, [[x1, 0, z1], [x1, 1, z1], [x0, 1, z1], [x0, 0, z1]], [0, 0, 1], code);
+      if (!cellAt(row, col - 1)) quad("side", kind, [[x0, 0, z1], [x0, 1, z1], [x0, 1, z0], [x0, 0, z0]], [-1, 0, 0], code);
+      if (!cellAt(row, col + 1)) quad("side", kind, [[x1, 0, z0], [x1, 1, z0], [x1, 1, z1], [x1, 0, z1]], [1, 0, 0], code);
+    }
+  }
+  return Object.entries(buckets).map(([key, data]) => {
+    const geometry = new THREE.BufferGeometry();
+    for (const [name, values] of Object.entries(data)) geometry.setAttribute(name, new THREE.Float32BufferAttribute(values, name === "uv" ? 2 : 3));
+    geometry.computeBoundingSphere();
+    const [face, kind] = key.split(":");
+    return { face, kind, geometry };
+  });
 }
 
 function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
@@ -63,7 +112,7 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     throw new Error(`当前设备无法启动 3D 渲染：${error && error.message ? error.message : "WebGL 不可用"}`);
   }
   renderer.outputColorSpace = THREE.SRGBColorSpace;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.toneMappingExposure = settings.exposure;
   renderer.shadowMap.enabled = false;
   const environment = new RoomEnvironment();
@@ -76,12 +125,12 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
   controls.dampingFactor = .10;
   controls.minDistance = 10;
   controls.maxDistance = Math.max(pattern.width, pattern.height) * 12 + 80;
-  const ambient = new THREE.HemisphereLight(0xffffff, 0x6e7f78, .62);
+  const ambient = new THREE.HemisphereLight(0xffffff, 0x6e7f78, .52);
   scene.add(ambient);
-  const key = new THREE.DirectionalLight(0xfff4e7, 1.35);
+  const key = new THREE.DirectionalLight(0xffffff, 1);
   key.position.set(-110, 180, 130);
   scene.add(key);
-  const fill = new THREE.DirectionalLight(0xd5e9f6, .38);
+  const fill = new THREE.DirectionalLight(0xffffff, .3);
   fill.position.set(130, 90, -70);
   scene.add(fill);
 
@@ -119,14 +168,42 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     const code = cells[row] && cells[row][col];
     if (code) groups[opticalClass(code)].push({ row, col, code });
   }
-  const beadMeshes = Object.entries(groups).filter(([, positions]) => positions.length).map(([kind, positions]) => {
-    const mesh = new THREE.InstancedMesh(beadGeometry(core.profile(settings.profile), segmentsFor(currentQuality)), beadMaterials[kind], positions.length);
-    mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-    mesh.userData.positions = positions;
-    mesh.castShadow = kind !== "clear";
-    scene.add(mesh);
-    return mesh;
-  });
+  const beadMeshes = [];
+  const dummy = new THREE.Object3D(), tint = new THREE.Color();
+  function ensureBeadMeshes() {
+    if (beadMeshes.length) return;
+    Object.entries(groups).filter(([, positions]) => positions.length).forEach(([kind, positions]) => {
+      const mesh = new THREE.InstancedMesh(beadGeometry(core.profile(settings.profile), segmentsFor(currentQuality)), beadMaterials[kind], positions.length);
+      mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+      mesh.userData.positions = positions;
+      mesh.castShadow = kind !== "clear";
+      positions.forEach(({ row, col, code }, index) => {
+        dummy.position.set(col * 5 - centerX, 0, row * 5 - centerZ);
+        dummy.scale.set(1, 1, 1);
+        dummy.rotation.set(0, 0, 0);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(index, dummy.matrix);
+        mesh.setColorAt(index, tint.set(colorOf(code) || "#aaaaaa"));
+      });
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      scene.add(mesh);
+      beadMeshes.push(mesh);
+    });
+  }
+  const fusedMaterials = Object.fromEntries(Object.entries(beadMaterials).map(([kind, material]) => {
+    const copy = material.clone();
+    copy.vertexColors = true;
+    return [kind, copy];
+  }));
+  const fusedGroups = { front: new THREE.Group(), back: new THREE.Group(), side: new THREE.Group() };
+  Object.values(fusedGroups).forEach((group) => scene.add(group));
+  const fusedMeshes = [];
+  let fusedReady = false;
+  const finishStatus = () => {
+    const current = core.profile(settings.profile);
+    return `${count.toLocaleString()} 颗 · ${current.frontTopology === "fused" ? "连续无孔" : current.backTopology === "fused" ? "正面保孔 / 背面融合" : "逐颗保孔"} · ${currentQuality} 精度 · 未实物标定`;
+  };
   if (count <= 12000) {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -145,19 +222,36 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
   if (bridgeMesh) scene.add(bridgeMesh);
 
   // 逐豆实例布局：5mm 网格，中心对齐原点，颜色写实例缓冲。
-  const dummy = new THREE.Object3D(), tint = new THREE.Color();
-  beadMeshes.forEach((mesh) => {
-    mesh.userData.positions.forEach(({ row, col, code }, index) => {
-      dummy.position.set(col * 5 - centerX, 0, row * 5 - centerZ);
-      dummy.scale.set(1, 1, 1);
-      dummy.rotation.set(0, 0, 0);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(index, dummy.matrix);
-      mesh.setColorAt(index, tint.set(colorOf(code) || "#aaaaaa"));
-    });
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-  });
+  function updateTopology(profile) {
+    const frontFused = profile.frontTopology === "fused";
+    const backFused = profile.backTopology === "fused";
+    if (!frontFused || !backFused) ensureBeadMeshes();
+    beadMeshes.forEach((mesh) => { mesh.visible = !frontFused; });
+    fusedGroups.front.visible = frontFused;
+    fusedGroups.back.visible = backFused;
+    fusedGroups.side.visible = frontFused || backFused;
+    Object.values(fusedGroups).forEach((group) => { group.scale.y = profile.height; });
+  }
+  async function buildFusedSurfaces() {
+    const stripeHeight = currentQuality === "low" ? 24 : 32;
+    for (let row = 0; row < height; row += stripeHeight) {
+      if (disposed) return;
+      fusedStripe(cells, row, Math.min(height, row + stripeHeight), centerX, centerZ, colorOf, opticalClass).forEach(({ face, kind, geometry }) => {
+        const mesh = new THREE.Mesh(geometry, fusedMaterials[kind]);
+        mesh.castShadow = kind !== "clear";
+        fusedGroups[face].add(mesh);
+        fusedMeshes.push(mesh);
+      });
+      invalidate();
+      if (height > stripeHeight) {
+        onStatus(`正在生成无孔表面 ${Math.round(Math.min(height, row + stripeHeight) / height * 100)}% · 参考模拟`);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    fusedReady = true;
+    onStatus(`${finishStatus()} · 表面已就绪`);
+    invalidate();
+  }
 
   // 融合颈：用局部圆润接触替换明显的长方体连杆。
   function updateBridges(profile) {
@@ -207,8 +301,12 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     const rect = canvas.getBoundingClientRect();
     pointer.set((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1);
     raycaster.setFromCamera(pointer, camera);
-    const hit = raycaster.intersectObjects(beadMeshes, false)[0];
-    if (hit && hit.instanceId != null && onPick) onPick(hit.object.userData.positions[hit.instanceId]);
+    const hit = raycaster.intersectObjects([...beadMeshes.filter((mesh) => mesh.visible), ...fusedMeshes.filter((mesh) => mesh.parent && mesh.parent.visible)], false)[0];
+    if (!hit || !onPick) return;
+    if (hit.instanceId != null) return onPick(hit.object.userData.positions[hit.instanceId]);
+    const col = Math.floor((hit.point.x + centerX + 2.5) / 5);
+    const row = Math.floor((hit.point.z + centerZ + 2.5) / 5);
+    if (cells[row] && cells[row][col]) onPick({ row, col, code: cells[row][col] });
   };
   canvas.addEventListener("dblclick", pick);
 
@@ -259,7 +357,7 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
   function applyQuality(level) {
     const next = core.profile(settings.profile);
     beadMeshes.forEach((mesh) => { mesh.geometry.dispose(); mesh.geometry = beadGeometry(next, segmentsFor(level)); });
-    if (bridgeMesh) bridgeMesh.visible = level !== "low" && next.bridge > 0;
+    if (bridgeMesh) bridgeMesh.visible = level !== "low" && next.bridge > 0 && next.frontTopology === "beads";
     invalidate();
   }
 
@@ -278,6 +376,8 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
 
   function setProfile(id) {
     const next = core.profile(id);
+    settings.profile = next.id;
+    updateTopology(next);
     beadMeshes.forEach((mesh) => { mesh.geometry.dispose(); mesh.geometry = beadGeometry(next, segmentsFor(currentQuality)); });
     const previousMaps = maps;
     maps = surfaceMaps(next);
@@ -293,18 +393,43 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     opaque.iridescenceIOR = 1.25;
     opaque.iridescenceThicknessRange = [100, 280];
     opaque.needsUpdate = true;
+    const fusedOpaque = fusedMaterials.opaque;
+    fusedOpaque.normalMap = maps.normal;
+    fusedOpaque.roughnessMap = maps.roughness;
+    fusedOpaque.normalScale.copy(opaque.normalScale);
+    fusedOpaque.roughness = opaque.roughness;
+    fusedOpaque.clearcoat = opaque.clearcoat;
+    fusedOpaque.metalness = opaque.metalness;
+    fusedOpaque.metalnessMap = opaque.metalnessMap;
+    fusedOpaque.iridescence = opaque.iridescence;
+    fusedOpaque.needsUpdate = true;
     for (const kind of ["translucent", "clear"]) {
       const material = beadMaterials[kind];
       material.roughness = kind === "clear" ? Math.max(.10, next.roughness * .45) : Math.max(.22, next.roughness * .72);
       material.iridescence = next.iridescence ? .35 : 0;
       material.needsUpdate = true;
+      const fusedMaterial = fusedMaterials[kind];
+      fusedMaterial.roughness = material.roughness;
+      fusedMaterial.iridescence = material.iridescence;
+      fusedMaterial.needsUpdate = true;
     }
     Object.values(previousMaps).forEach((map) => map.dispose());
     updateBridges(next);
+    if (bridgeMesh) bridgeMesh.visible = next.frontTopology === "beads" && next.bridge > 0;
+    onStatus(finishStatus());
     invalidate();
   }
   function setExposure(value) {
     renderer.toneMappingExposure = value;
+    invalidate();
+  }
+  function setLighting(intensity, temperature) {
+    const level = Math.max(.5, Math.min(1.6, Number(intensity) || 1));
+    key.intensity = 1 * level;
+    fill.intensity = .3 * level;
+    ambient.intensity = .52 * level;
+    key.color.setHex(temperature === "warm" ? 0xffe5c5 : temperature === "cool" ? 0xdceaff : 0xffffff);
+    fill.color.setHex(temperature === "warm" ? 0xfff3df : temperature === "cool" ? 0xe5f1ff : 0xffffff);
     invalidate();
   }
   function setBackground(value) {
@@ -327,6 +452,7 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
   // 4K 分块导出：分块尺寸适配设备纹理上限，输出始终保持请求尺寸。
   async function exportPng({ size = 4096, onProgress } = {}) {
     exportCancelled = false;
+    if (!fusedReady && settings.profile !== "raw" && settings.profile !== "light") await fusedBuildPromise;
     const maxTexture = renderer.capabilities ? renderer.capabilities.maxTextureSize : 4096;
     const targetSize = size;
     const output = document.createElement("canvas");
@@ -372,7 +498,9 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
     canvas.removeEventListener("dblclick", pick);
     controls.dispose();
     beadMeshes.forEach((mesh) => mesh.geometry.dispose());
+    fusedMeshes.forEach((mesh) => mesh.geometry.dispose());
     Object.values(beadMaterials).forEach((material) => material.dispose());
+    Object.values(fusedMaterials).forEach((material) => material.dispose());
     Object.values(maps).forEach((map) => map.dispose());
     if (bridgeMesh) bridgeMesh.geometry.dispose();
     bridgeMaterial.dispose();
@@ -385,10 +513,12 @@ function create({ canvas, pattern, colorOf, settings, onPick, onStatus }) {
   }
 
   setProfile(settings.profile);
+  setLighting(settings.lightIntensity, settings.lightTemperature);
+  const fusedBuildPromise = buildFusedSurfaces();
   setBackground(settings.background);
   view(settings.side);
   onStatus(`${count.toLocaleString()} 颗 · ${currentQuality} 精度 · ${memory.suggestLowDetail ? "弱设备模式 · " : ""}未实物标定参考模型`);
-  return { setProfile, setExposure, setBackground, view, exportPng, cancelExport, dispose, draw, getQuality: () => currentQuality };
+  return { setProfile, setExposure, setLighting, setBackground, view, exportPng, cancelExport, dispose, draw, getQuality: () => currentQuality };
 }
 
 export { create };

@@ -7,7 +7,7 @@
 
   const TEMPLATE = [
     '<div class="finish-top">',
-    '  <div><span class="studio-eyebrow">FINISH LAB / 3D</span><h2>成品材质工作台</h2><p>5 mm 拼豆 · 十种熨烫状态 · 可旋转检查</p></div>',
+    '  <div><span class="studio-eyebrow">FINISH LAB / 3D</span><h2>成品材质工作台</h2><p>5 mm 拼豆 · 多种熨烫状态 · 可旋转检查</p></div>',
     '  <button type="button" data-action="close" aria-label="关闭">×</button>',
     '</div>',
     '<div class="finish-body">',
@@ -19,6 +19,9 @@
     '  <aside class="finish-controls"><strong>视角与材质</strong>',
     '    <div class="finish-view-buttons"><button type="button" data-action="angle">斜侧</button><button type="button" data-action="front">正面</button><button type="button" data-action="back">背面</button></div>',
     '    <label>曝光<input data-role="exposure" type="range" min="50" max="180" value="100"></label>',
+    '    <label>观察光照强度<input data-role="light-intensity" type="range" min="50" max="160" value="100"></label>',
+    '    <label>观察光色<select data-role="light-temperature"><option value="neutral">中性对照光</option><option value="warm">暖光</option><option value="cool">冷光</option></select></label>',
+    '    <p class="finish-light-note">光照只改变预览，不修改图纸色号；当前未做实物色差标定。</p>',
     '    <label>背景<select data-role="background"><option value="photo">浅色</option><option value="dark">深色</option><option value="transparent">透明</option></select></label>',
     '    <div class="finish-facts"><span data-role="facts">等待载入</span><span data-role="picked">双击单颗豆查看色号</span></div>',
     '    <button type="button" data-action="snapshot">保存对比快照</button>',
@@ -53,14 +56,18 @@
     const profileDescriptions = {
       raw: "未烫：完整管状侧壁和开孔。",
       light: "轻烫：孔仍明显，顶缘略软化。",
-      standard: "标准：孔缩小，相邻豆在接触处融合。",
-      flat: "完全平融：正面近乎闭孔、面连续；背面仍可辨。",
+      standard: "标准融合：正反面为连续无孔表面，保留图纸色块。",
+      flat: "完全平融：连续无孔表面，厚度更低。",
       back: "背熔：展示面保留高度和孔，背面融合增强。",
-      towel: "毛巾：豆面细密不规则纤维压痕。",
-      bath: "澡巾：更粗的网状颗粒压痕。",
+      towel: "毛巾：连续表面带细密不规则纤维压痕。",
+      bath: "澡巾：连续表面带更粗的网状颗粒压痕。",
       waffle: "华夫格：正交格纹压印。",
       glitter: "闪片：离散高光随光线变化，保留原豆色。",
-      laser: "镭射：角度相关薄膜虹彩，保留原豆色。"
+      laser: "镭射：角度相关薄膜虹彩，保留原豆色。",
+      "glitter-fine": "细闪：较细、较稀疏的离散亮点。",
+      "glitter-coarse": "粗闪：较大的闪片颗粒与高光。",
+      fabric: "布纹：连续表面上的交织压纹。",
+      ribbed: "横纹：连续表面上的横向压纹。"
     };
 
     function syncControls() {
@@ -69,6 +76,8 @@
       if (description) description.textContent = `${profileDescriptions[settings.profile]} ${core.isCalibrated() ? "当前使用已验收实测模型。" : "当前为未实物标定参考模型。"}`;
       dialog.querySelectorAll('.finish-view-buttons button').forEach((button) => button.classList.toggle("active", button.dataset.action === settings.side));
       dialog.querySelector('[data-role="exposure"]').value = Math.round(settings.exposure * 100);
+      dialog.querySelector('[data-role="light-intensity"]').value = Math.round(settings.lightIntensity * 100);
+      dialog.querySelector('[data-role="light-temperature"]').value = settings.lightTemperature;
       dialog.querySelector('[data-role="background"]').value = settings.background;
     }
     function saveSettings() {
@@ -145,6 +154,16 @@
     dialog.querySelector('[data-role="exposure"]').addEventListener("input", (event) => {
       settings.exposure = Number(event.target.value) / 100;
       if (viewer) viewer.setExposure(settings.exposure);
+      saveSettings();
+    });
+    dialog.querySelector('[data-role="light-intensity"]').addEventListener("input", (event) => {
+      settings.lightIntensity = Number(event.target.value) / 100;
+      if (viewer) viewer.setLighting(settings.lightIntensity, settings.lightTemperature);
+      saveSettings();
+    });
+    dialog.querySelector('[data-role="light-temperature"]').addEventListener("change", (event) => {
+      settings.lightTemperature = event.target.value;
+      if (viewer) viewer.setLighting(settings.lightIntensity, settings.lightTemperature);
       saveSettings();
     });
     dialog.querySelector('[data-role="background"]').addEventListener("change", (event) => {

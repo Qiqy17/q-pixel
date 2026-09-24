@@ -30,6 +30,7 @@ node --check "$RESOURCES_DIR/pattern-rebuild/rebuild-workbench.js"
 node --check "$RESOURCES_DIR/import-engine.js"
 node --check "$RESOURCES_DIR/import-processing.js"
 node --check "$RESOURCES_DIR/import-worker.js"
+node --check "$RESOURCES_DIR/studio/scene-catalog.js"
 for directory in color make studio 3d generated; do
   test -d "$RESOURCES_DIR/$directory"
   diff -qr "$REPO_DIR/web/$directory" "$RESOURCES_DIR/$directory" >/dev/null
@@ -46,6 +47,7 @@ node "$REPO_DIR/tests/background-engine.test.js"
 node "$REPO_DIR/tests/finish-core.test.js"
 node "$REPO_DIR/tests/webgl-support.test.js"
 node "$REPO_DIR/tests/surface-engine.test.js"
+node "$REPO_DIR/tests/scene-catalog.test.js"
 
 for file in index.html styles.css feature-flags.js module-loader.js import-engine.js import-processing.js import-worker.js app.js manifest.webmanifest icon.svg offline.html sw.js qpixel_ipad_https_server.py qpixel_openai.py OPENAI_SETUP.md; do
   case "$file" in

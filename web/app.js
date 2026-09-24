@@ -19,6 +19,7 @@
   const boardPlannerModule = window.QPixelBoardPlanner || null;
   const buildNavigationModule = window.QPixelBuildNavigation || null;
   const surfaceEngine = window.QPixelSurfaceEngine || null;
+  const sceneCatalog = window.QPixelSceneCatalog || null;
 
   if (!projectModelModule || typeof projectModelModule.createContext !== "function") {
     throw new Error("Q像素项目模型加载失败，已停止初始化以保护项目数据。");
@@ -218,19 +219,18 @@
     group.items.map((item) => Object.assign({ group: group.label }, item))
   );
 
-  const styleMaterialBitmapSources = {
+  const styleMaterialBitmapSources = Object.assign({
     "white-plaster": "/assets/materials/white_plaster_02_diff_1k.jpg",
     "rough-linen": "/assets/materials/rough_linen_diff_1k.jpg",
     felt: "/assets/materials/poly_wool_herringbone_diff_4k.jpg",
     "linen-bg": "/assets/materials/poly_wool_herringbone_diff_4k.jpg",
     "fabric-denim": "/assets/materials/poly_wool_herringbone_diff_4k.jpg",
-    "paper-cotton": "/assets/materials/poly_wool_herringbone_diff_4k.jpg",
     wood: "/assets/materials/synthetic_wood_diff_4k.jpg",
     "bamboo-board": "/assets/materials/synthetic_wood_diff_4k.jpg",
     marble: "/assets/materials/marble_01_diff_4k.jpg",
     "concrete-studio": "/assets/materials/concrete_diff_4k.jpg",
     "slate-board": "/assets/materials/dark_rock_diff_1k.jpg"
-  };
+  }, sceneCatalog ? sceneCatalog.bitmaps : {});
 
   const styleMaterialColorPresets = [
     { key: "natural", label: "自然", color: "#f4f0e8" },
@@ -343,6 +343,7 @@
       styleBackgroundImageData: "",
       styleBackgroundImageName: "",
       styleMaterialImages: new Map(),
+      styleMaterialFallbacks: new Set(),
       styleMaterialPickerCategory: "",
       styleMaterialColorPreset: "natural",
       styleStickerLibrary: [],
@@ -584,6 +585,7 @@
       "materialBaseSelect", "materialIntensityRange", "materialIntensityLabel", "materialBackgroundSelect", "materialCategoryList", "materialOptionList", "materialColorPresetList", "materialCustomColorInput", "materialPickerSummary", "materialLightSelect", "materialDecorSelect", "materialQualityCheckButton", "materialQualitySummary", "materialExportButton",
       "styleRatioSelect", "styleBackgroundColorInput", "styleBackgroundAlphaRange", "styleBackgroundAlphaLabel", "styleBackgroundImageInput",
       "styleOrientationSelect", "styleCustomWidthInput", "styleCustomHeightInput", "styleBackgroundImageButton", "styleBackgroundImageName",
+      "styleCustomSizeFields", "styleCoverLayoutSelect", "styleCoverTitleInput", "styleCoverSubtitleInput", "styleBorderOptions", "styleBorderGroupSummary", "styleShadowGroupSummary", "styleLightGroupSummary",
       "styleBorderSizeRange", "styleBorderSizeLabel", "styleBorderColorInput", "styleShadowColorInput", "styleShadowBlurRange",
       "styleShadowBlurLabel", "styleShadowAlphaRange", "styleShadowAlphaLabel", "styleShadowOffsetXRange", "styleShadowOffsetXLabel",
       "styleShadowOffsetYRange", "styleShadowOffsetYLabel", "styleThicknessRange", "styleThicknessLabel",
@@ -3817,16 +3819,23 @@
     return styleMaterialColorPresets.find((item) => item.key === key) || styleMaterialColorPresets[0];
   }
 
+  function getMaterialPickerCategory(value) {
+    const group = sceneCatalog && sceneCatalog.groups.find((item) => item.ids.includes(value));
+    if (group) return group.label;
+    return getStyleBackgroundMaterial(value) ? "旧项目背景" : "自定义";
+  }
+
   function renderMaterialPicker() {
     if (!els.materialCategoryList || !els.materialOptionList || !els.materialColorPresetList) return;
     const selectedValue = els.materialBackgroundSelect ? els.materialBackgroundSelect.value : "felt";
     const selectedMaterial = getStyleBackgroundMaterial(selectedValue);
-    const featured = ["white-plaster", "wood", "rough-linen", "slate-board", "marble", "concrete-studio", "kraft"];
-    const groups = [{ label: "摄影材质", items: featured.map(getStyleBackgroundMaterial).filter(Boolean) }];
+    const catalogGroups = sceneCatalog ? sceneCatalog.groups : [{ label: "精选材质", ids: ["white-plaster", "wood", "rough-linen", "slate-board", "marble", "concrete-studio", "kraft"] }];
+    const featured = catalogGroups.flatMap((group) => group.ids);
+    const groups = catalogGroups.map((group) => ({ label: group.label, items: group.ids.map(getStyleBackgroundMaterial).filter(Boolean) }));
     if (selectedMaterial && !featured.includes(selectedValue)) groups.push({ label: "旧项目背景", items: [selectedMaterial] });
     groups.push({ label: "自定义", items: [{ value: "plain", label: "纯色" }, { value: "custom", label: "自定义图片" }] });
     let category = state.beads.styleMaterialPickerCategory;
-    if (!category || !groups.some((group) => group.label === category)) category = selectedMaterial ? featured.includes(selectedValue) ? "摄影材质" : "旧项目背景" : "自定义";
+    if (!category || !groups.some((group) => group.label === category)) category = getMaterialPickerCategory(selectedValue);
     if (!groups.some((group) => group.label === category)) category = groups[0].label;
     state.beads.styleMaterialPickerCategory = category;
 
@@ -3849,7 +3858,21 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = `material-picker-option${material.value === selectedValue ? " active" : ""}${material.value === "custom" ? " custom-option" : ""}`;
-      button.textContent = material.label;
+      const meta = sceneCatalog && sceneCatalog.metadata[material.value];
+      if (meta) {
+        button.classList.add("has-thumb");
+        const thumb = document.createElement("span");
+        thumb.className = "material-picker-thumb";
+        thumb.style.backgroundColor = material.colors[0];
+        thumb.style.backgroundImage = styleMaterialBitmapSources[material.value]
+          ? `url(${styleMaterialBitmapSources[material.value]})`
+          : `linear-gradient(135deg, ${material.colors[2]}, ${material.colors[0]} 55%, ${material.colors[1]})`;
+        button.appendChild(thumb);
+        button.title = `${meta.use} · ${meta.kind === "bitmap" ? "CC0 照片纹理" : "程序化纹理"}`;
+      }
+      const name = document.createElement("span");
+      name.textContent = material.label;
+      button.appendChild(name);
       button.setAttribute("aria-selected", material.value === selectedValue ? "true" : "false");
       button.addEventListener("click", () => selectMaterialPickerValue(material.value));
       els.materialOptionList.appendChild(button);
@@ -3868,16 +3891,14 @@
     if (els.materialPickerSummary) {
       const materialLabel = selectedMaterial ? selectedMaterial.label : selectedValue === "custom" ? "自定义图片" : "纯色";
       const colorLabel = getMaterialColorPreset(state.beads.styleMaterialColorPreset).label;
-      els.materialPickerSummary.textContent = `${materialLabel} · ${state.beads.styleMaterialColorPreset === "custom" ? "自定义" : colorLabel}`;
+      els.materialPickerSummary.textContent = `${materialLabel} · ${state.beads.styleMaterialColorPreset === "custom" ? "自定义" : colorLabel}${state.beads.styleMaterialFallbacks.has(selectedValue) ? " · 内置回退" : ""}`;
     }
   }
 
   function selectMaterialPickerValue(value) {
     if (!els.materialBackgroundSelect) return;
     els.materialBackgroundSelect.value = value;
-    const material = getStyleBackgroundMaterial(value);
-    if (material) state.beads.styleMaterialPickerCategory = ["white-plaster", "wood", "rough-linen", "slate-board", "marble", "concrete-studio", "kraft"].includes(value) ? "摄影材质" : "旧项目背景";
-    else state.beads.styleMaterialPickerCategory = "自定义";
+    state.beads.styleMaterialPickerCategory = getMaterialPickerCategory(value);
     renderMaterialPicker();
     drawMaterialPreview();
   }
@@ -3892,8 +3913,7 @@
 
   function syncMaterialPickerFromControls() {
     if (!els.materialBackgroundSelect) return;
-    const material = getStyleBackgroundMaterial(els.materialBackgroundSelect.value);
-    state.beads.styleMaterialPickerCategory = material ? material.group : "纯色/自定义";
+    state.beads.styleMaterialPickerCategory = getMaterialPickerCategory(els.materialBackgroundSelect.value);
     renderMaterialPicker();
   }
 
@@ -10044,6 +10064,9 @@
   function collectStyleSettings() {
     return {
       ratio: els.styleRatioSelect && els.styleRatioSelect.value,
+      coverLayout: els.styleCoverLayoutSelect && els.styleCoverLayoutSelect.value,
+      coverTitle: els.styleCoverTitleInput && els.styleCoverTitleInput.value,
+      coverSubtitle: els.styleCoverSubtitleInput && els.styleCoverSubtitleInput.value,
       orientation: els.styleOrientationSelect && els.styleOrientationSelect.value,
       customWidth: els.styleCustomWidthInput && els.styleCustomWidthInput.value,
       customHeight: els.styleCustomHeightInput && els.styleCustomHeightInput.value,
@@ -10078,6 +10101,9 @@
       if (el && value != null) el.value = value;
     };
     setValue(els.styleRatioSelect, settings.ratio);
+    setValue(els.styleCoverLayoutSelect, settings.coverLayout || "center");
+    setValue(els.styleCoverTitleInput, settings.coverTitle || "");
+    setValue(els.styleCoverSubtitleInput, settings.coverSubtitle || "");
     setValue(els.styleOrientationSelect, settings.orientation);
     setValue(els.styleCustomWidthInput, settings.customWidth);
     setValue(els.styleCustomHeightInput, settings.customHeight);
@@ -10286,6 +10312,7 @@
     const light = els.materialLightSelect ? els.materialLightSelect.value : "soft";
     const decor = els.materialDecorSelect ? els.materialDecorSelect.value : "none";
     const ratio = els.styleRatioSelect ? els.styleRatioSelect.value : "1:1";
+    const coverLayout = els.styleCoverLayoutSelect ? els.styleCoverLayoutSelect.value : "center";
     const backgroundColor = els.styleBackgroundColorInput ? els.styleBackgroundColorInput.value : "#f4f0e8";
     const backgroundAlpha = els.styleBackgroundAlphaRange ? clamp(els.styleBackgroundAlphaRange.value, 0, 100) / 100 : 1;
     const borderSize = els.styleBorderSizeRange ? clamp(els.styleBorderSizeRange.value, 0, 90) : 28;
@@ -10309,19 +10336,39 @@
     drawStyleFrame(ctx, canvas.width, canvas.height, frameType, borderSize, borderColor);
 
     const innerPad = Math.max(38, borderSize + 36);
-    const availableWidth = Math.max(80, canvas.width - innerPad * 2);
+    const availableWidth = Math.max(80, (coverLayout === "info" ? canvas.width * .65 : coverLayout === "collage" ? canvas.width * .73 : canvas.width) - innerPad * 2);
     const availableHeight = Math.max(80, canvas.height - innerPad * 2);
     const cell = Math.max(2, Math.floor(Math.min(availableWidth / pattern.width, availableHeight / pattern.height)));
     const artWidth = pattern.width * cell;
     const artHeight = pattern.height * cell;
-    const artX = Math.round((canvas.width - artWidth) / 2);
+    const artX = Math.round((canvas.width * (coverLayout === "info" ? .65 : coverLayout === "collage" ? .78 : 1) - artWidth) / 2);
     const artY = Math.round((canvas.height - artHeight) / 2);
 
     // 展示图只管布景与构图。颜色保持原图，烫法和树脂光学由独立 3D 工作台负责。
     const art = makeSolidPixelArt(pattern, cell, mode);
+    ctx.save();
+    if (coverLayout === "desk") {
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate(-Math.PI / 90);
+      ctx.translate(-canvas.width / 2, -canvas.height / 2);
+      ctx.save();
+      ctx.shadowColor = "rgba(24,31,35,.18)";
+      ctx.shadowBlur = 28;
+      ctx.shadowOffsetY = 12;
+      ctx.fillStyle = "rgba(255,251,241,.96)";
+      ctx.fillRect(artX - 22, artY - 22, art.width + 44, art.height + 44);
+      ctx.restore();
+    }
     drawStyleShadow(ctx, art, artX, artY, shadowColor, shadowAlpha, shadowBlur, shadowOffsetX, shadowOffsetY);
     drawStyleThickness(ctx, art, artX, artY, thickness);
     ctx.drawImage(art, artX, artY);
+    if (coverLayout === "desk") {
+      ctx.fillStyle = "rgba(244,225,170,.58)";
+      ctx.fillRect(artX + art.width * .12, artY - 32, art.width * .2, 28);
+      ctx.fillRect(artX + art.width * .72, artY + art.height + 4, art.width * .17, 28);
+    }
+    ctx.restore();
+    drawStyleCoverLayout(ctx, canvas, art, coverLayout, borderSize);
     drawMaterialDecor(ctx, canvas.width, canvas.height, decor, intensity);
     drawStyleUserOverlays(ctx);
     applyPreviewZoom(canvas, state.beads.stylePreviewZoom || 1);
@@ -10346,7 +10393,54 @@
     return art;
   }
 
+  function drawStyleCoverLayout(ctx, canvas, art, layout, borderSize) {
+    const title = els.styleCoverTitleInput ? els.styleCoverTitleInput.value.trim() : "";
+    const subtitle = els.styleCoverSubtitleInput ? els.styleCoverSubtitleInput.value.trim() : "";
+    const pad = Math.max(30, borderSize + 28);
+    if (layout === "collage") {
+      const side = Math.min(canvas.width * .28, canvas.height * .36);
+      const x = canvas.width - side - pad;
+      const y = canvas.height - side - pad;
+      ctx.save();
+      ctx.shadowColor = "rgba(18,25,32,.22)";
+      ctx.shadowBlur = 22;
+      ctx.fillStyle = "rgba(255,255,255,.94)";
+      ctx.fillRect(x - 9, y - 9, side + 18, side + 18);
+      ctx.shadowColor = "transparent";
+      const crop = Math.min(art.width, art.height) * .4;
+      ctx.drawImage(art, (art.width - crop) / 2, (art.height - crop) / 2, crop, crop, x, y, side, side);
+      ctx.restore();
+    }
+    if (!title && !subtitle) return;
+    const info = layout === "info";
+    const x = info ? canvas.width * .68 : pad;
+    const maxWidth = info ? canvas.width * .28 : canvas.width - pad * 2;
+    const y = info ? canvas.height * .42 : canvas.height - pad - (subtitle ? 62 : 30);
+    ctx.save();
+    if (info) {
+      ctx.fillStyle = "rgba(255,255,255,.68)";
+      ctx.fillRect(x - 18, y - 22, maxWidth + 36, Math.max(100, canvas.height * .2));
+    }
+    ctx.fillStyle = "#273b3a";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    if (title) {
+      ctx.font = `700 ${Math.max(22, Math.round(canvas.width * .029))}px system-ui, sans-serif`;
+      ctx.fillText(title, x, y, maxWidth);
+    }
+    if (subtitle) {
+      ctx.font = `${Math.max(16, Math.round(canvas.width * .016))}px system-ui, sans-serif`;
+      ctx.fillText(subtitle, x, y + (title ? 43 : 0), maxWidth);
+    }
+    ctx.restore();
+  }
+
   function updateStylePreviewLabels(values) {
+    if (els.styleCustomSizeFields) els.styleCustomSizeFields.hidden = els.styleRatioSelect.value !== "custom";
+    if (els.styleBorderOptions) els.styleBorderOptions.hidden = els.materialBaseSelect.value === "none";
+    if (els.styleBorderGroupSummary) els.styleBorderGroupSummary.textContent = els.materialBaseSelect.selectedOptions[0].textContent;
+    if (els.styleShadowGroupSummary) els.styleShadowGroupSummary.textContent = values.shadowAlpha < .01 ? "关闭" : values.shadowBlur > 35 ? "柔和" : "清晰";
+    if (els.styleLightGroupSummary) els.styleLightGroupSummary.textContent = els.materialLightSelect.selectedOptions[0].textContent;
     if (els.styleBackgroundAlphaLabel) els.styleBackgroundAlphaLabel.textContent = Math.round(values.backgroundAlpha * 100);
     if (els.styleBorderSizeLabel) els.styleBorderSizeLabel.textContent = String(values.borderSize);
     if (els.styleShadowBlurLabel) els.styleShadowBlurLabel.textContent = String(values.shadowBlur);
@@ -10579,11 +10673,18 @@
     state.beads.styleMaterialImages.set(type, pending);
     image.onload = () => {
       pending.loading = false;
+      state.beads.styleMaterialFallbacks.delete(type);
       pending.relief = buildMaterialReliefMap(image);
       if (els.materialBackgroundSelect && els.materialBackgroundSelect.value === type) drawMaterialPreview();
     };
     image.onerror = () => {
-      state.beads.styleMaterialImages.delete(type);
+      pending.loading = false;
+      pending.failed = true;
+      state.beads.styleMaterialFallbacks.add(type);
+      if (els.materialBackgroundSelect && els.materialBackgroundSelect.value === type) {
+        renderMaterialPicker();
+        drawMaterialPreview();
+      }
     };
     image.src = source;
     return null;
@@ -13788,6 +13889,9 @@
     if (els.stylePreviewZoomInButton) els.stylePreviewZoomInButton.addEventListener("click", () => updatePreviewZoom("style", "in"));
     [
       els.styleRatioSelect,
+      els.styleCoverLayoutSelect,
+      els.styleCoverTitleInput,
+      els.styleCoverSubtitleInput,
       els.styleOrientationSelect,
       els.styleCustomWidthInput,
       els.styleCustomHeightInput,
@@ -13803,7 +13907,7 @@
       els.styleThicknessRange
     ].forEach((input) => {
       if (!input) return;
-      input.addEventListener(input.type === "range" || input.type === "color" ? "input" : "change", drawMaterialPreview);
+      input.addEventListener(input.type === "range" || input.type === "color" || input.type === "text" ? "input" : "change", drawMaterialPreview);
     });
     if (els.styleBackgroundImageButton && els.styleBackgroundImageInput) {
       els.styleBackgroundImageButton.addEventListener("click", () => els.styleBackgroundImageInput.click());

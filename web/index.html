@@ -711,7 +711,7 @@
               <option value="portrait">竖版</option>
             </select>
           </label>
-          <div class="style-inline">
+          <div class="style-inline style-custom-size" id="styleCustomSizeFields" hidden>
             <label>宽
               <input id="styleCustomWidthInput" type="number" min="320" max="2400" value="1080">
             </label>
@@ -719,6 +719,19 @@
               <input id="styleCustomHeightInput" type="number" min="320" max="2400" value="1080">
             </label>
           </div>
+          <label>封面版式
+            <select id="styleCoverLayoutSelect">
+              <option value="center">干净居中</option>
+              <option value="desk">手作桌面</option>
+              <option value="info">信息卡</option>
+              <option value="collage">拼贴展示</option>
+            </select>
+          </label>
+          <details class="style-control-group" id="styleCoverTextGroup">
+            <summary>封面文字 <span>可选</span></summary>
+            <label>标题<input id="styleCoverTitleInput" type="text" maxlength="60" placeholder="不填写则不显示"></label>
+            <label>说明<input id="styleCoverSubtitleInput" type="text" maxlength="100" placeholder="可填写色号或作品说明"></label>
+          </details>
           <div class="material-color-legacy" aria-hidden="true">
             <label>背景颜色
               <input id="styleBackgroundColorInput" type="color" value="#f4f0e8">
@@ -764,12 +777,17 @@
               <option value="custom">自定义图片</option>
             </select>
           </div>
+          <details class="style-control-group" id="styleCustomBackgroundGroup">
+            <summary>自定义背景 <span>上传图片</span></summary>
           <div class="style-file-row">
             <button class="mini-button" id="styleBackgroundImageButton" type="button">选择背景图</button>
             <span id="styleBackgroundImageName">未选择</span>
             <input id="styleBackgroundImageInput" type="file" accept="image/*" hidden>
           </div>
+          </details>
           <p class="material-true-color-note">展示图保留图纸原色。豆体、烫法与透明材质请在「成品质感 3D」中查看。</p>
+          <details class="style-control-group" id="styleBorderGroup">
+            <summary>边框 <span id="styleBorderGroupSummary">无边框</span></summary>
           <label>边框类型
             <select id="materialBaseSelect">
               <option value="none">无边框</option>
@@ -796,12 +814,17 @@
               <option value="carved-wood-frame">木雕纹理框</option>
             </select>
           </label>
+          <div id="styleBorderOptions">
           <label>边框大小 <strong id="styleBorderSizeLabel">28</strong>
             <input id="styleBorderSizeRange" type="range" min="0" max="90" value="28">
           </label>
           <label>边框颜色
             <input id="styleBorderColorInput" type="color" value="#d8c7aa">
           </label>
+          </div>
+          </details>
+          <details class="style-control-group" id="styleShadowGroup">
+            <summary>阴影与厚度 <span id="styleShadowGroupSummary">柔和</span></summary>
           <label>阴影颜色
             <input id="styleShadowColorInput" type="color" value="#172033">
           </label>
@@ -820,6 +843,9 @@
           <label>像素厚度 <strong id="styleThicknessLabel">8</strong>
             <input id="styleThicknessRange" type="range" min="0" max="28" value="8">
           </label>
+          </details>
+          <details class="style-control-group" id="styleLightGroup">
+            <summary>光线与装饰 <span id="styleLightGroupSummary">柔光</span></summary>
           <label>遮罩强度 <strong id="materialIntensityLabel">70</strong>
             <input id="materialIntensityRange" type="range" min="0" max="100" value="70">
           </label>
@@ -846,6 +872,7 @@
               <option value="grain">胶片颗粒</option>
             </select>
           </label>
+          </details>
           <div class="material-quality-check">
             <button class="mini-button" id="materialQualityCheckButton" type="button">检查样式有效性</button>
             <div id="materialQualitySummary" class="material-quality-summary">检查背景、材质、边框、灯光和装饰是否都实际参与渲染。</div>
@@ -922,7 +949,7 @@
           </div>
           <div class="material-note">
             <strong>样式说明</strong>
-            <p>预览图不添加标题文字；背景和表面遮罩均为离线内置程序化纹理。</p>
+            <p>标题与说明仅在填写后显示；精选背景包含离线内置照片纹理和程序化材质。</p>
           </div>
           <button class="text-button" id="materialExportButton" type="button">导出样式预览</button>
         </aside>
@@ -1514,6 +1541,7 @@
   <script src="./studio/background-engine.js"></script>
   <script src="./studio/background-tool.js"></script>
   <script src="./studio/surface-engine.js"></script>
+  <script src="./studio/scene-catalog.js"></script>
   <script src="./3d/finish-core.js"></script>
   <script src="./3d/webgl-support.js"></script>
   <script src="./3d/finish-workbench.js"></script>
