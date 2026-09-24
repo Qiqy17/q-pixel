@@ -17,12 +17,12 @@
     { id: "collage", label: "拼贴展示" }
   ]);
   const bitmaps = Object.freeze({
-    "rough-linen": "/assets/materials/rough_linen_diff_1k.jpg",
-    wood: "/assets/materials/synthetic_wood_diff_4k.jpg",
-    "white-plaster": "/assets/materials/white_plaster_02_diff_1k.jpg",
-    "slate-board": "/assets/materials/dark_rock_diff_1k.jpg",
-    marble: "/assets/materials/marble_01_diff_4k.jpg",
-    "concrete-studio": "/assets/materials/concrete_diff_4k.jpg"
+    "rough-linen": "./assets/materials/rough_linen_diff_1k.jpg",
+    wood: "./assets/materials/synthetic_wood_diff_4k.jpg",
+    "white-plaster": "./assets/materials/white_plaster_02_diff_1k.jpg",
+    "slate-board": "./assets/materials/dark_rock_diff_1k.jpg",
+    marble: "./assets/materials/marble_01_diff_4k.jpg",
+    "concrete-studio": "./assets/materials/concrete_diff_4k.jpg"
   });
   const metadata = Object.freeze({
     "paper-cotton": { kind: "procedural", scaleHint: "fine", use: "浅色图案", light: "soft" },

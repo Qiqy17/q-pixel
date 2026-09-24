@@ -14,6 +14,7 @@ ids.forEach((id) => {
   if (item.kind === "bitmap") {
     assert.equal(item.license, "CC0");
     assert.ok(item.source.startsWith("https://polyhaven.com/a/"));
+    assert.ok(catalog.bitmaps[id].startsWith("./assets/"), `bitmap must work in bundled file view: ${id}`);
     assert.ok(fs.existsSync(path.join(__dirname, "../web", catalog.bitmaps[id])), `missing local texture: ${id}`);
   }
 });
