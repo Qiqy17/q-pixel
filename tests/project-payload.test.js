@@ -55,6 +55,7 @@ const withHistory = model.withProjectHistory({
 }, normalized);
 assert.equal(withHistory.history.length, 1, "覆盖保存前应保留一版历史");
 assert.equal(withHistory.history[0].fingerprint, projectModel.payloadFingerprint(payload));
+assert.equal(withHistory.history[0].source, "manual");
 
 const restoredAt = "2026-09-22T13:00:00.000Z";
 const restored = model.restoreProjectHistoryVersion(withHistory, withHistory.history[0].id, restoredAt);
@@ -62,6 +63,12 @@ assert.ok(restored, "历史版本应可恢复");
 assert.equal(restored.payload.id, payload.id);
 assert.equal(restored.payload.savedAt, restoredAt);
 assert.equal(restored.history.length, 2, "恢复前的当前版本也应进入历史");
+assert.equal(restored.versionSource, "restore");
+assert.equal(restored.history[0].source, "manual");
+const afterRestoreEdit = JSON.parse(JSON.stringify(restored.payload));
+afterRestoreEdit.pattern.cells[0][1] = "A2";
+const savedAfterRestore = model.withProjectHistory({ id: payload.id, title: payload.title, payload: afterRestoreEdit }, restored);
+assert.equal(savedAfterRestore.history[0].source, "restore", "恢复形成的正式版本应标明来源");
 
 const baseFingerprint = projectModel.payloadFingerprint(payload);
 const localPayload = JSON.parse(JSON.stringify(payload));

@@ -13008,6 +13008,7 @@
       const pattern = version.payload && version.payload.pattern;
       const size = pattern && pattern.width && pattern.height ? `${pattern.width} x ${pattern.height}` : "尺寸未知";
       row.innerHTML = `
+        <img class="project-history-thumb" alt="" hidden>
         <div class="project-history-info">
           <strong></strong>
           <span></span>
@@ -13018,9 +13019,15 @@
           <button class="mini-button primary" type="button" data-action="restore">恢复</button>
         </div>
       `;
+      if (version.thumbnail) {
+        const thumbnail = row.querySelector(".project-history-thumb");
+        thumbnail.src = version.thumbnail;
+        thumbnail.hidden = false;
+        row.classList.add("has-thumbnail");
+      }
       row.querySelector("strong").textContent = version.title || "未命名";
       row.querySelector("span").textContent = formatDateTime(version.savedAt);
-      row.querySelector("em").textContent = `${size}${index === 0 ? " · 最近版本" : ""}`;
+      row.querySelector("em").textContent = `${size} · ${version.source === "restore" ? "恢复保存" : "手动保存"}${index === 0 ? " · 最近版本" : ""}`;
       row.querySelector('[data-action="preview"]').addEventListener("click", () => previewProjectHistoryVersion(state.activeHistoryProjectId, version.id));
       row.querySelector('[data-action="restore"]').addEventListener("click", () => restoreProjectHistoryVersionFromUi(state.activeHistoryProjectId, version.id));
       els.projectHistoryList.appendChild(row);
@@ -13091,6 +13098,7 @@
       setMessage("历史版本内容不存在，当前设计没有变化。", true);
       return;
     }
+    restored.thumbnail = makeProjectThumbnail(restored.payload.pattern);
     const projects = [restored, ...getProjects().filter((item) => item.id !== projectId)];
     const localResult = storeProjectsLocally(projects);
     let historySaved = false;
@@ -13477,6 +13485,7 @@
       width: payload.pattern.width,
       height: payload.pattern.height,
       thumbnail: makeProjectThumbnail(state.beads.pattern),
+      versionSource: "manual",
       editSeconds: Math.max(0, Number(previousProject && previousProject.editSeconds || 0)) + Math.max(1, sessionSeconds),
       openCount: Math.max(0, Number(previousProject && previousProject.openCount || 0)),
       designDates,
@@ -15572,7 +15581,7 @@
         setTool: (tool) => document.querySelector(`.canvas-tool-rail .tool-button[data-tool="${tool}"]`)?.click(),
         onEdit: forward3dEdit,
         onHistory: (action) => action === "undo" ? undoEdit() : redoEdit(),
-        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js?v=20260924-finish-edit-8"),
+        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js?v=20260924-finish-edit-9"),
         onSettings: (settings) => { state.beads.finish3d = settings; markUnsavedChanges(); },
         onExport: (blob) => saveBlobFile(blob, `Q像素-成品3D-${formatStamp(new Date())}.png`, "image/png", "3D 成品预览已导出。")
       });

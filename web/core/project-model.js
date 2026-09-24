@@ -68,6 +68,8 @@
             id: item.id || makeId(),
             title: item.title || "未命名",
             savedAt: item.savedAt || now(),
+            source: item.source === "restore" ? "restore" : "manual",
+            thumbnail: typeof item.thumbnail === "string" ? item.thumbnail : "",
             fingerprint: item.fingerprint,
             payload: item.payload
           }))
@@ -113,6 +115,8 @@
         id: makeId(),
         title: project.title || project.payload.title || "未命名",
         savedAt: project.savedAt || project.payload.savedAt || now(),
+        source: project.versionSource === "restore" ? "restore" : "manual",
+        thumbnail: project.thumbnail || "",
         fingerprint: payloadFingerprint(project.payload),
         payload: clone(project.payload)
       };
@@ -155,6 +159,7 @@
         width: payload.pattern && payload.pattern.width,
         height: payload.pattern && payload.pattern.height,
         thumbnail: current.thumbnail || "",
+        versionSource: "restore",
         editSeconds: current.editSeconds,
         openCount: current.openCount,
         designDates: current.designDates,
