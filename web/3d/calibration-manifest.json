@@ -2,6 +2,11 @@
   "version": 1,
   "assetSchema": "mard-5mm-calibration-v1",
   "status": "uncalibrated",
+  "validation": {
+    "measurementsVerified": false,
+    "assetsVerified": false,
+    "comparisonAccepted": false
+  },
   "beadSystem": {
     "brand": "MARD",
     "series": "5mm 标准拼豆",

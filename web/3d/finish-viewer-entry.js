@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { visibleCellBounds } from "./overlay-viewport.mjs";
 
 // 参数化豆体：车削轮廓由烫法档案驱动（外径=豆径+摊开量，内径=孔径占比）。
 function beadGeometry(profile, segments) {
@@ -558,7 +559,9 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
       ctx.fillStyle = "rgba(52,175,159,.42)";
       ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(3, density * .38), 0, Math.PI * 2); ctx.fill();
     });
-    for (let row = 0; row < height; row += 1) for (let col = 0; col < width; col += 1) {
+    const surfaceY = camera.position.y < 0 ? -.15 : core.profile(settings.profile).height + .15;
+    const bounds = visibleCellBounds(camera, surfaceY, width, height, centerX, centerZ);
+    for (let row = bounds.firstRow; row < bounds.lastRow; row += 1) for (let col = bounds.firstCol; col < bounds.lastCol; col += 1) {
       const code = cells[row] && cells[row][col];
       if (!code && !showGrid) continue;
       const x = col * 5 - centerX, z = row * 5 - centerZ;

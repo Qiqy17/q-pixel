@@ -37,7 +37,24 @@
   }
 
   function isCalibrated() {
-    return readManifestSync().status === "calibrated";
+    const manifest = readManifestSync();
+    const colors = manifest.colorCalibration && manifest.colorCalibration.progress;
+    const validation = manifest.validation;
+    return manifest.status === "calibrated"
+      && manifest.assetSchema === "mard-5mm-calibration-v1"
+      && manifest.beadSystem && manifest.beadSystem.brand === "MARD" && manifest.beadSystem.diameterMm === 5
+      && colors && colors.totalColors === 221 && colors.calibratedColors === 221
+      && validation && validation.measurementsVerified === true
+      && validation.assetsVerified === true && validation.comparisonAccepted === true
+      && Array.isArray(manifest.profiles) && PROFILES.every((profile) => {
+        const record = manifest.profiles.find((item) => item && item.id === profile.id);
+        return record && record.currentSource === "measured" && record.verified === true
+          && Array.isArray(record.requiresCalibration) && record.requiresCalibration.length > 0
+          && record.measurements && record.requiresCalibration.every((key) => {
+            const value = record.measurements[key];
+            return value !== null && value !== undefined && value !== "";
+          });
+      });
   }
 
   // 图纸结构分析：豆数、邻接对（渲染连接桥用）、孤点数。

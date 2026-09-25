@@ -14,7 +14,7 @@
     '  <aside class="finish-profiles"><strong>烫法预设</strong><div data-role="profiles"></div>',
     '    <p data-role="profile-description">当前为<strong>未实物标定参考模型</strong>。可旋转检查孔洞、厚度与表面。</p></aside>',
     '  <main class="finish-stage"><canvas data-role="canvas" aria-label="3D 成品画布"></canvas><canvas data-role="overlay" aria-hidden="true"></canvas>',
-    '    <div class="finish-stage-toolbar" role="group" aria-label="3D 画布操作"><button type="button" data-action="mode-view" aria-pressed="true">观察视角</button><button type="button" data-action="mode-edit" aria-pressed="false">编辑图纸</button><button type="button" data-action="reset-view">重置视角</button><span data-role="mode-hint">拖动旋转 · 滚轮或双指缩放</span></div>',
+    '    <div class="finish-stage-toolbar" role="group" aria-label="3D 画布操作"><button type="button" data-action="mode-view" aria-pressed="true">观察视角</button><button type="button" data-action="mode-edit" aria-pressed="false">编辑图纸</button><button type="button" data-action="reset-view">重置视角</button><div class="finish-stage-tools" data-role="quick-tools" hidden><button type="button" data-tool="brush">画笔</button><button type="button" data-tool="eraser">橡皮</button><button type="button" data-tool="picker">取色</button></div><span data-role="mode-hint">拖动旋转 · 滚轮或双指缩放</span></div>',
     '    <span class="finish-watermark" data-role="watermark">参考模拟 · 未实物标定</span>',
     '    <div class="finish-compare" data-role="compare" hidden><img alt="保存的对比视角"><button type="button" data-action="hide-compare">关闭对比</button></div></main>',
     '  <aside class="finish-controls"><strong>视角与材质</strong>',
@@ -61,9 +61,10 @@
     let viewer = null;
     let refreshTimer = 0;
     let interactionMode = "view";
+    let chosenToolIn3d = false;
     function setInteractionMode(mode) {
       interactionMode = mode === "edit" ? "edit" : "view";
-      if (interactionMode === "edit" && options.getTool && options.getTool() === "pan" && options.setTool) options.setTool("brush");
+      if (interactionMode === "edit" && options.setTool && (!chosenToolIn3d || (options.getTool && options.getTool() === "pan"))) options.setTool("brush");
       if (viewer) viewer.setInteractionMode(interactionMode);
       dialog.querySelectorAll('[data-action^="mode-"]').forEach((button) => {
         button.setAttribute("aria-pressed", String(button.dataset.action === `mode-${interactionMode}`));
@@ -71,6 +72,7 @@
       dialog.querySelector('[data-role="mode-hint"]').textContent = interactionMode === "view"
         ? "拖动旋转 · 滚轮或双指缩放"
         : "单击落笔 · 拖动连续绘制";
+      dialog.querySelector('[data-role="quick-tools"]').hidden = interactionMode !== "edit";
       dialog.querySelector('[data-role="picked"]').textContent = interactionMode === "view"
         ? "观察中 · 切换编辑后可落笔"
         : "编辑中 · 单击或拖动画布";
@@ -152,7 +154,11 @@
         dialog.querySelector(`[data-role="${role}"]`).value = settings[name];
         dialog.querySelector(`[data-value="${name}"]`).textContent = `${settings[name]}%`;
       }
-      dialog.querySelectorAll('[data-tool]').forEach((button) => button.classList.toggle("active", button.dataset.tool === (options.getTool && options.getTool())));
+      dialog.querySelectorAll('[data-tool]').forEach((button) => {
+        const active = button.dataset.tool === (options.getTool && options.getTool());
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
     }
     function saveSettings() {
       if (options.onSettings) options.onSettings(Object.assign({}, settings));
@@ -172,6 +178,7 @@
       const profileNote = dialog.querySelector(".finish-profiles p");
       if (profileNote && calibrated) profileNote.textContent = "当前使用已验收的 MARD 5 mm 实测标定模型。";
       settings = core.normalizeSettings(options.getSettings ? options.getSettings() : {});
+      chosenToolIn3d = false;
       setInteractionMode("view");
       syncControls();
       movePanel("toolOptionsPanel", "tool-options");
@@ -254,14 +261,17 @@
         syncControls(); saveSettings();
       });
     });
-    dialog.querySelector('[data-role="tools"]').addEventListener("click", (event) => {
+    function chooseTool(event) {
       const button = event.target.closest('[data-tool]');
       if (!button || !options.setTool) return;
+      chosenToolIn3d = true;
       options.setTool(button.dataset.tool);
       setInteractionMode("edit");
       syncControls();
       if (button.dataset.tool === "clear-layer") refreshViewer();
-    });
+    }
+    dialog.querySelector('[data-role="tools"]').addEventListener("click", chooseTool);
+    dialog.querySelector('[data-role="quick-tools"]').addEventListener("click", chooseTool);
     dialog.querySelector('[data-role="tool-options"]').addEventListener("click", () => {
       clearTimeout(refreshTimer); refreshTimer = setTimeout(refreshViewer, 0);
     });

@@ -20,12 +20,26 @@ assert.ok(core.profile("standard").height > core.profile("flat").height);
 assert.ok(core.profile("back").hole > core.profile("back").backHole);
 // 孤点：单独一颗没有任何邻接。
 assert.equal(core.analyze([["A1", null], [null, null]]).isolated, 1);
-// 标定状态联动：manifest 就绪时设置带 calibrated=true。
+// 单改状态字段不能解除未标定提示；所有样片、色卡和资产都须验收。
 assert.equal(core.isCalibrated(), false);
 globalThis.__QPIXEL_CALIBRATION_MANIFEST__ = { status: "calibrated", profiles: [] };
 assert.equal(core.readManifestSync().status, "calibrated");
+assert.equal(core.isCalibrated(), false);
+assert.equal(core.normalizeSettings({}).calibrated, false);
+const completeProfiles = core.PROFILES.map((item) => ({
+  id: item.id, currentSource: "measured", verified: true,
+  requiresCalibration: ["height"], measurements: { height: item.height }
+}));
+globalThis.__QPIXEL_CALIBRATION_MANIFEST__ = {
+  status: "calibrated", assetSchema: "mard-5mm-calibration-v1",
+  beadSystem: { brand: "MARD", diameterMm: 5 },
+  colorCalibration: { progress: { calibratedColors: 221, totalColors: 221 } },
+  validation: { measurementsVerified: true, assetsVerified: true, comparisonAccepted: true },
+  profiles: completeProfiles
+};
 assert.equal(core.isCalibrated(), true);
-assert.equal(core.normalizeSettings({}).calibrated, true);
+completeProfiles[0].verified = false;
+assert.equal(core.isCalibrated(), false);
 delete globalThis.__QPIXEL_CALIBRATION_MANIFEST__;
 assert.equal(core.isCalibrated(), false);
 console.log("finish-core tests: PASS");
