@@ -576,7 +576,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   function draw() {
     if (disposed || contextLost) return;
     controls.update();
-    board.visible = camera.position.y >= 0;
+    board.visible = settings.boardMode !== "transparent" && boardMaterial.opacity > 0 && viewSide !== "back" && camera.position.y >= 0;
     renderer.render(scene, camera);
     drawOverlay();
   }
