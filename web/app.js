@@ -9533,11 +9533,18 @@
       setMessage("请先载入图片或生成图纸。", true);
       return;
     }
+    els.exportPreviewCanvas.style.visibility = "hidden";
     if (!drawExportPreview()) {
       setMessage("导出预览生成失败，请重试。", true);
       return;
     }
     els.exportPreviewModal.classList.remove("hidden");
+    state.beads.exportPreviewAutoFit = true;
+    requestAnimationFrame(() => {
+      if (els.exportPreviewModal.classList.contains("hidden")) return;
+      updatePreviewZoom("export", "fit");
+      els.exportPreviewCanvas.style.visibility = "visible";
+    });
   }
 
   function closeExportPreview() {
@@ -10533,7 +10540,7 @@
 
   function applyPreviewZoom(canvas, zoom) {
     if (!canvas) return;
-    canvas.style.width = `${Math.max(80, Math.round(canvas.width * zoom))}px`;
+    canvas.style.width = `${Math.max(1, Math.round(canvas.width * zoom))}px`;
     canvas.style.height = "auto";
   }
 
@@ -10542,15 +10549,22 @@
     const canvas = kind === "export" ? els.exportPreviewCanvas : els.materialPreviewCanvas;
     if (action === "fit" && canvas && canvas.parentElement) {
       const wrap = canvas.parentElement;
+      const toolbar = kind === "export" ? wrap.querySelector(".preview-zoom-bar") : null;
+      const style = getComputedStyle(wrap);
+      const availableWidth = wrap.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const availableHeight = wrap.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) - (toolbar ? toolbar.offsetHeight : 0) - (toolbar ? parseFloat(style.rowGap) || 0 : 0);
       const fit = Math.min(
-        (wrap.clientWidth - 36) / Math.max(1, canvas.width),
-        (wrap.clientHeight - 74) / Math.max(1, canvas.height)
+        Math.max(1, availableWidth - 12) / Math.max(1, canvas.width),
+        Math.max(1, availableHeight - 12) / Math.max(1, canvas.height)
       );
-      state.beads[key] = Math.max(0.2, Math.min(4, fit));
+      state.beads[key] = Math.max(0.00001, Math.min(4, fit));
+      if (kind === "export") state.beads.exportPreviewAutoFit = true;
     } else {
-      state.beads[key] = Math.max(0.2, Math.min(5, state.beads[key] * (action === "in" ? 1.2 : 1 / 1.2)));
+      state.beads[key] = Math.max(0.00001, Math.min(5, state.beads[key] * (action === "in" ? 1.2 : 1 / 1.2)));
+      if (kind === "export") state.beads.exportPreviewAutoFit = false;
     }
     applyPreviewZoom(canvas, state.beads[key]);
+    if (action === "fit") { canvas.parentElement.scrollLeft = 0; canvas.parentElement.scrollTop = 0; }
   }
 
   function drawStyleBackground(ctx, width, height, type, color, alpha) {
@@ -14012,6 +14026,9 @@
     if (els.exportPreviewZoomOutButton) els.exportPreviewZoomOutButton.addEventListener("click", () => updatePreviewZoom("export", "out"));
     if (els.exportPreviewZoomFitButton) els.exportPreviewZoomFitButton.addEventListener("click", () => updatePreviewZoom("export", "fit"));
     if (els.exportPreviewZoomInButton) els.exportPreviewZoomInButton.addEventListener("click", () => updatePreviewZoom("export", "in"));
+    window.addEventListener("resize", () => {
+      if (state.beads.exportPreviewAutoFit && els.exportPreviewModal && !els.exportPreviewModal.classList.contains("hidden")) updatePreviewZoom("export", "fit");
+    });
     if (els.stylePreviewZoomOutButton) els.stylePreviewZoomOutButton.addEventListener("click", () => updatePreviewZoom("style", "out"));
     if (els.stylePreviewZoomFitButton) els.stylePreviewZoomFitButton.addEventListener("click", () => updatePreviewZoom("style", "fit"));
     if (els.stylePreviewZoomInButton) els.stylePreviewZoomInButton.addEventListener("click", () => updatePreviewZoom("style", "in"));

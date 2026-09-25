@@ -75,7 +75,7 @@ function surfaceMaps(profile, opacity = .75) {
 }
 
 // 每个条带生成相接的实心色块与外缘侧壁。正面、背面和侧壁分开，便于保孔/背熔切换。
-function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, opticalClass, meltEdge = 0) {
+function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, opticalClass, meltEdge = 0, sideRoundness = .28) {
   const buckets = {};
   const colorCache = new Map();
   const cellAt = (row, col) => cells[row] && cells[row][col];
@@ -170,7 +170,19 @@ function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, optica
           || (!left && a[0] === x0 && b[0] === x0) || (!right && a[0] === x1 && b[0] === x1);
         if (interior) continue;
         const dx = b[0] - a[0], dz = b[1] - a[1], length = Math.hypot(dx, dz) || 1;
-        quad("side", kind, [[a[0], 0, a[1]], [a[0], 1, a[1]], [b[0], 1, b[1]], [b[0], 0, b[1]]], [-dz / length, 0, dx / length], code);
+        const outwardX = -dz / length, outwardZ = dx / length;
+        const rings = [[0, 0], [.18, sideRoundness], [.82, sideRoundness], [1, 0]];
+        for (let ring = 0; ring < rings.length - 1; ring += 1) {
+          const [lowY, lowOffset] = rings[ring], [highY, highOffset] = rings[ring + 1];
+          const slope = (highOffset - lowOffset) / (highY - lowY);
+          const normal = new THREE.Vector3(outwardX, -slope, outwardZ).normalize().toArray();
+          quad("side", kind, [
+            [a[0] + outwardX * lowOffset, lowY, a[1] + outwardZ * lowOffset],
+            [a[0] + outwardX * highOffset, highY, a[1] + outwardZ * highOffset],
+            [b[0] + outwardX * highOffset, highY, b[1] + outwardZ * highOffset],
+            [b[0] + outwardX * lowOffset, lowY, b[1] + outwardZ * lowOffset]
+          ], normal, code);
+        }
       }
     }
     flushFaceRun();
@@ -327,7 +339,9 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
     const stripeHeight = currentQuality === "low" ? 24 : 32;
     for (let row = 0; row < height; row += stripeHeight) {
       if (disposed || generation !== fusedGeneration) return;
-      fusedStripe(cells, row, Math.min(height, row + stripeHeight), centerX, centerZ, colorOf, opticalClass, core.tuningFor(settings, settings.profile).meltEdge).forEach(({ face, kind, geometry }) => {
+      const profile = core.profile(settings.profile);
+      const sideRoundness = profile.id === "flat" ? .09 : profile.texture === "towel" ? .42 : .28;
+      fusedStripe(cells, row, Math.min(height, row + stripeHeight), centerX, centerZ, colorOf, opticalClass, core.tuningFor(settings, settings.profile).meltEdge, sideRoundness).forEach(({ face, kind, geometry }) => {
         const mesh = new THREE.Mesh(geometry, fusedMaterials[kind]);
         mesh.castShadow = kind !== "clear";
         fusedGroups[face].add(mesh);
@@ -392,12 +406,44 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
     bridgeMesh.visible = profile.bridge > 0;
   }
 
-  const boardGeometry = new THREE.BoxGeometry(occupiedWidth * 5 + 8, .8, occupiedHeight * 5 + 8);
-  const boardMaterial = new THREE.MeshPhysicalMaterial({ color: 0x8e9b94, roughness: .86, metalness: 0 });
+  const boardGeometry = new THREE.PlaneGeometry(occupiedWidth * 5 + 8, occupiedHeight * 5 + 8);
+  const boardMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, side: THREE.DoubleSide, depthWrite: false });
   const board = new THREE.Mesh(boardGeometry, boardMaterial);
-  board.position.y = -.8;
-  board.receiveShadow = true;
+  board.rotation.x = -Math.PI / 2;
+  board.position.y = -.4;
   scene.add(board);
+  let boardTexture = null, boardImageRequest = 0, boardImageSource = "", viewSide = settings.side;
+  function setBoardBackground(next) {
+    Object.assign(settings, next);
+    const imageSource = settings.boardMode === "image" ? settings.boardImageData : "";
+    const imageChanged = imageSource !== boardImageSource;
+    if (imageChanged) {
+      boardImageSource = imageSource;
+      boardImageRequest += 1;
+      if (boardTexture) { boardTexture.dispose(); boardTexture = null; }
+      boardMaterial.map = null;
+    }
+    const request = boardImageRequest;
+    boardMaterial.color.set(settings.boardMode === "color" ? settings.boardColor : "#ffffff");
+    boardMaterial.opacity = settings.boardAlpha / 100;
+    board.visible = settings.boardMode !== "transparent" && viewSide !== "back" && boardMaterial.opacity > 0;
+    boardMaterial.needsUpdate = true;
+    invalidate();
+    if (imageChanged && imageSource) {
+      const image = new Image();
+      image.onload = () => {
+        if (disposed || request !== boardImageRequest) return;
+        boardTexture = new THREE.Texture(image);
+        boardTexture.colorSpace = THREE.SRGBColorSpace;
+        boardTexture.needsUpdate = true;
+        boardMaterial.map = boardTexture;
+        boardMaterial.needsUpdate = true;
+        invalidate();
+      };
+      image.onerror = () => { if (request === boardImageRequest) onStatus("背板图片无法读取，请重新选择。"); };
+      image.src = imageSource;
+    }
+  }
   const focusX = (minCol + maxCol) * 2.5 - centerX, focusZ = (minRow + maxRow) * 2.5 - centerZ;
   camera.position.set(focusX + focusWidth * 4, Math.max(focusWidth, focusHeight) * 5, focusZ + focusHeight * 4);
   controls.target.set(focusX, 0, focusZ);
@@ -794,11 +840,11 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   }
   function setBackground(value) {
     scene.background = value === "transparent" ? null : new THREE.Color(value === "dark" ? 0x1d2626 : 0xe6e9e5);
-    boardMaterial.color.setHex(value === "dark" ? 0x303c39 : 0x8e9b94);
     invalidate();
   }
   function view(side) {
-    board.visible = side !== "back";
+    viewSide = side;
+    board.visible = settings.boardMode !== "transparent" && side !== "back" && boardMaterial.opacity > 0;
     const reach = Math.max(focusWidth, focusHeight) * 11.5;
     camera.position.set(controls.target.x + (side === "angle" ? reach * .75 : 0), side === "back" ? -reach : side === "angle" ? reach * .85 : reach, controls.target.z + (side === "angle" ? reach * .7 : 1));
     camera.lookAt(controls.target);
@@ -873,6 +919,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
     if (bridgeMesh) bridgeMesh.geometry.dispose();
     bridgeMaterial.dispose();
     boardGeometry.dispose();
+    if (boardTexture) boardTexture.dispose();
     boardMaterial.dispose();
     envMap.dispose();
     pmrem.dispose();
@@ -884,9 +931,10 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   setLighting(settings.lightIntensity, settings.lightTemperature);
   rebuildSurfaces();
   setBackground(settings.background);
+  setBoardBackground(settings);
   view(settings.side);
   onStatus(`${count.toLocaleString()} 颗 · ${currentQuality} 精度 · ${memory.suggestLowDetail ? "弱设备模式 · " : ""}未实物标定参考模型`);
-  return { setProfile, setTuning, setOverlay, setInteractionMode, moveCamera, updatePattern, snapshot, setExposure, setLighting, setLightEffect, setBackground, view, exportPng, cancelExport, dispose, draw, getQuality: () => currentQuality };
+  return { setProfile, setTuning, setOverlay, setInteractionMode, moveCamera, updatePattern, snapshot, setExposure, setLighting, setLightEffect, setBackground, setBoardBackground, view, exportPng, cancelExport, dispose, draw, getQuality: () => currentQuality };
 }
 
 export { create };
