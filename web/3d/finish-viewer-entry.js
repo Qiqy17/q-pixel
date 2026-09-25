@@ -204,7 +204,8 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   scene.environment = envMap;
   scene.background = settings.background === "transparent" ? null : new THREE.Color(0xe6e9e5);
   const controls = new OrbitControls(camera, canvas);
-  controls.enabled = false;
+  controls.enabled = true;
+  canvas.style.cursor = "grab";
   controls.enableDamping = true;
   controls.dampingFactor = .10;
   controls.minDistance = 10;
@@ -416,6 +417,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
     return row >= 0 && row < height && col >= 0 && col < width ? { row, col, code: cells[row] && cells[row][col] || null } : null;
   };
   let activePointer = null, longPressTimer = 0, highlightedCode = null;
+  let interactionMode = "view";
   function clearPress() {
     clearTimeout(longPressTimer);
     activePointer = null;
@@ -423,6 +425,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
     invalidate();
   }
   function pointerDown(event) {
+    if (interactionMode !== "edit") return;
     if (event.button != null && event.button !== 0) return;
     const cell = pick(event);
     if (!cell) return;
@@ -442,6 +445,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
     if (onEdit && cell) onEdit(phase, cell);
   }
   function pointerMove(event) {
+    if (interactionMode !== "edit") return;
     if (!activePointer || activePointer.id !== event.pointerId || activePointer.held) return;
     const moved = Math.hypot(event.clientX - activePointer.x, event.clientY - activePointer.y);
     if (moved < 5 && !activePointer.drawing) return;
@@ -473,10 +477,25 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
     }
     clearPress();
   }
+  function pointerCancel(event) {
+    if (!activePointer || activePointer.id !== event.pointerId) return;
+    if (activePointer.drawing) editStroke("end", activePointer.last);
+    clearPress();
+  }
+  function setInteractionMode(mode) {
+    const next = mode === "edit" ? "edit" : "view";
+    if (next === interactionMode) return;
+    if (activePointer && activePointer.drawing) editStroke("end", activePointer.last);
+    clearPress();
+    interactionMode = next;
+    controls.enabled = next === "view";
+    if (!controls.enabled) controls.update();
+    canvas.style.cursor = next === "edit" ? "crosshair" : "grab";
+  }
   canvas.addEventListener("pointerdown", pointerDown);
   canvas.addEventListener("pointermove", pointerMove);
   canvas.addEventListener("pointerup", pointerUp);
-  canvas.addEventListener("pointercancel", clearPress);
+  canvas.addEventListener("pointercancel", pointerCancel);
 
   let disposed = false, frame = 0, exportCancelled = false;
 
@@ -490,6 +509,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   function draw() {
     if (disposed || contextLost) return;
     controls.update();
+    board.visible = camera.position.y >= 0;
     renderer.render(scene, camera);
     drawOverlay();
   }
@@ -703,12 +723,12 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   function updatePattern(next) {
     if (!next || next.width !== width || next.height !== height) return;
     cells = next.cells;
-    count = core.analyze(cells).count;
+    const adjacent = core.analyze(cells);
+    count = adjacent.count;
     beadMeshes.splice(0).forEach((mesh) => { scene.remove(mesh); mesh.geometry.dispose(); });
     regroup();
     updateTopology(core.profile(settings.profile));
     if (bridgeMesh) { scene.remove(bridgeMesh); bridgeMesh.geometry.dispose(); bridgeMesh = null; }
-    const adjacent = core.analyze(cells);
     const totalBridges = adjacent.horizontal + adjacent.vertical;
     if (totalBridges && count <= 12000 && currentQuality !== "low") {
       bridgeMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 6), bridgeMaterial, totalBridges);
@@ -717,9 +737,30 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
     }
     rebuildSurfaces();
     invalidate();
+    return adjacent;
   }
   function setTuning(tuning) {
+    const previous = core.tuningFor(settings, settings.profile);
     settings.profileTuning = { ...(settings.profileTuning || {}), [settings.profile]: { ...tuning } };
+    const next = core.tuningFor(settings, settings.profile);
+    const changed = Object.keys(next).filter((key) => next[key] !== previous[key]);
+    if (!changed.length) return;
+    if (changed.length === 1 && changed[0] === "meltEdge") {
+      rebuildSurfaces();
+      return;
+    }
+    if (changed.length === 1 && changed[0] === "textureRoughness") {
+      const selected = core.profile(settings.profile);
+      const textureStrength = { towel: .82, bath: .72, waffle: .65, fabric: .58, ribbed: .55 }[selected.texture] || (selected.texture ? .28 : .07);
+      const normalStrength = textureStrength * next.textureOpacity / 75 * (.55 + next.textureRoughness / 100);
+      beadMaterials.opaque.normalScale.set(normalStrength, normalStrength);
+      fusedMaterials.opaque.normalScale.copy(beadMaterials.opaque.normalScale);
+      const roughness = Math.max(.08, Math.min(.98, selected.roughness + (next.textureRoughness - 50) / 170));
+      beadMaterials.opaque.roughness = roughness;
+      fusedMaterials.opaque.roughness = roughness;
+      invalidate();
+      return;
+    }
     setProfile(settings.profile);
   }
   function setExposure(value) {
@@ -804,7 +845,8 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
     canvas.removeEventListener("pointerdown", pointerDown);
     canvas.removeEventListener("pointermove", pointerMove);
     canvas.removeEventListener("pointerup", pointerUp);
-    canvas.removeEventListener("pointercancel", clearPress);
+    canvas.removeEventListener("pointercancel", pointerCancel);
+    if (activePointer && activePointer.drawing) editStroke("end", activePointer.last);
     clearPress();
     controls.dispose();
     beadMeshes.forEach((mesh) => mesh.geometry.dispose());
@@ -828,7 +870,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   setBackground(settings.background);
   view(settings.side);
   onStatus(`${count.toLocaleString()} 颗 · ${currentQuality} 精度 · ${memory.suggestLowDetail ? "弱设备模式 · " : ""}未实物标定参考模型`);
-  return { setProfile, setTuning, setOverlay, moveCamera, updatePattern, snapshot, setExposure, setLighting, setBackground, view, exportPng, cancelExport, dispose, draw, getQuality: () => currentQuality };
+  return { setProfile, setTuning, setOverlay, setInteractionMode, moveCamera, updatePattern, snapshot, setExposure, setLighting, setBackground, view, exportPng, cancelExport, dispose, draw, getQuality: () => currentQuality };
 }
 
 export { create };
