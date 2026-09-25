@@ -100,9 +100,20 @@ function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, optica
     const key = `${face}:${kind}`;
     const bucket = buckets[key] || (buckets[key] = { position: [], normal: [], color: [], uv: [] });
     const tint = colorFor(code);
+    const normal = face === "front" ? [0, 1, 0] : [0, -1, 0];
+    if (outline.length === 4) {
+      const order = face === "front" ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2];
+      for (const index of order) {
+        const point = outline[index];
+        bucket.position.push(point[0], elevation, point[1]);
+        bucket.normal.push(...normal);
+        bucket.color.push(tint.r, tint.g, tint.b);
+        bucket.uv.push(point[0] / 80, point[1] / 80);
+      }
+      return;
+    }
     const cx = outline.reduce((sum, point) => sum + point[0], 0) / outline.length;
     const cz = outline.reduce((sum, point) => sum + point[1], 0) / outline.length;
-    const normal = face === "front" ? [0, 1, 0] : [0, -1, 0];
     for (let index = 0; index < outline.length; index += 1) {
       const a = outline[index], b = outline[(index + 1) % outline.length];
       const triangle = face === "front" ? [[cx, cz], a, b] : [[cx, cz], b, a];
@@ -115,9 +126,17 @@ function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, optica
     }
   }
   for (let row = firstRow; row < lastRow; row += 1) {
+    let faceRun = null;
+    const flushFaceRun = () => {
+      if (!faceRun) return;
+      const outline = [[faceRun.x0, faceRun.z0], [faceRun.x0, faceRun.z1], [faceRun.x1, faceRun.z1], [faceRun.x1, faceRun.z0]];
+      surface("front", faceRun.kind, outline, 1, faceRun.code);
+      surface("back", faceRun.kind, outline, 0, faceRun.code);
+      faceRun = null;
+    };
     for (let col = 0; col < (cells[row] || []).length; col += 1) {
       const code = cellAt(row, col);
-      if (!code) continue;
+      if (!code) { flushFaceRun(); continue; }
       const kind = opticalClass(code);
       const x0 = col * 5 - centerX - 2.5, x1 = x0 + 5;
       const z0 = row * 5 - centerZ - 2.5, z1 = z0 + 5;
@@ -134,8 +153,16 @@ function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, optica
       else outline.push([x1, z1]);
       if (top && right && radius) outline.push([x1, z0 + radius], [x1 - radius * .3, z0 + radius * .3], [x1 - radius, z0]);
       else outline.push([x1, z0]);
-      surface("front", kind, outline, 1, code);
-      surface("back", kind, outline, 0, code);
+      if (outline.length > 4) {
+        flushFaceRun();
+        surface("front", kind, outline, 1, code);
+        surface("back", kind, outline, 0, code);
+      } else if (faceRun && faceRun.code === code && faceRun.kind === kind) {
+        faceRun.x1 = x1;
+      } else {
+        flushFaceRun();
+        faceRun = { x0, x1, z0, z1, code, kind };
+      }
       for (let index = 0; index < outline.length; index += 1) {
         const a = outline[index], b = outline[(index + 1) % outline.length];
         const interior = (!top && a[1] === z0 && b[1] === z0) || (!bottom && a[1] === z1 && b[1] === z1)
@@ -145,6 +172,7 @@ function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, optica
         quad("side", kind, [[a[0], 0, a[1]], [a[0], 1, a[1]], [b[0], 1, b[1]], [b[0], 0, b[1]]], [-dz / length, 0, dx / length], code);
       }
     }
+    flushFaceRun();
   }
   return Object.entries(buckets).map(([key, data]) => {
     const geometry = new THREE.BufferGeometry();
@@ -318,6 +346,13 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
     fusedGeneration += 1;
     fusedReady = false;
     fusedMeshes.splice(0).forEach((mesh) => { mesh.parent.remove(mesh); mesh.geometry.dispose(); });
+    const profile = core.profile(settings.profile);
+    if (profile.frontTopology !== "fused" && profile.backTopology !== "fused") {
+      fusedReady = true;
+      invalidate();
+      fusedBuildPromise = Promise.resolve();
+      return fusedBuildPromise;
+    }
     fusedBuildPromise = buildFusedSurfaces(fusedGeneration);
     invalidate();
     return fusedBuildPromise;

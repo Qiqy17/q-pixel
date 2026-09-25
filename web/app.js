@@ -15581,7 +15581,7 @@
         setTool: (tool) => document.querySelector(`.canvas-tool-rail .tool-button[data-tool="${tool}"]`)?.click(),
         onEdit: forward3dEdit,
         onHistory: (action) => action === "undo" ? undoEdit() : redoEdit(),
-        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js?v=20260924-finish-edit-9"),
+        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js?v=20260924-finish-edit-10"),
         onSettings: (settings) => { state.beads.finish3d = settings; markUnsavedChanges(); },
         onExport: (blob) => saveBlobFile(blob, `Q像素-成品3D-${formatStamp(new Date())}.png`, "image/png", "3D 成品预览已导出。")
       });
