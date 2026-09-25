@@ -11,6 +11,7 @@ assert.equal(core.lod(13000, 1200), "medium");
 assert.equal(core.lod(200000, 1200), "low");
 assert.deepEqual(core.normalizeSettings({ profile: "invalid", exposure: 99, side: "back", background: "transparent" }), { version: 1, profile: "raw", exposure: 2, lightIntensity: 1, lightTemperature: "neutral", side: "back", background: "transparent", boardMode: "transparent", boardColor: "#8e9b94", boardAlpha: 100, boardImageData: "", boardImageName: "", showCodes: false, showGrid: true, codeOpacity: 90, codeSize: 50, profileTuning: {}, calibrated: false });
 assert.deepEqual(((settings) => [settings.boardMode, settings.boardColor, settings.boardAlpha, settings.boardImageData])(core.normalizeSettings({ boardMode: "image", boardColor: "unsafe", boardAlpha: 150, boardImageData: "https://example.com/image.png" })), ["image", "#8e9b94", 100, ""]);
+assert.deepEqual(((settings) => [settings.boardMode, settings.boardColor, settings.boardAlpha, settings.boardImageData])(core.normalizeSettings({ boardMode: "image", boardColor: "#123456", boardAlpha: 37, boardImageData: "data:image/png;base64,AA==" })), ["image", "#123456", 37, "data:image/png;base64,AA=="]);
 assert.deepEqual(core.tuningFor(core.normalizeSettings({}), "standard"), { textureRoughness: 50, textureOpacity: 75, meltEdge: 58 });
 assert.deepEqual(core.normalizeSettings({ profileTuning: { standard: { meltEdge: 130 } } }).profileTuning.standard, { textureRoughness: 50, textureOpacity: 75, meltEdge: 100 });
 assert.equal(core.normalizeSettings({}).profile, "standard");

@@ -587,7 +587,7 @@
       "exportPreviewModal", "exportPreviewCanvas", "exportPreviewCloseButton",
       "exportPreviewRefreshButton", "exportPreviewPngButton", "exportPreviewAlbumButton",
       "exportPreviewPdfButton", "exportPreviewMirrorButton", "exportPreviewOpenButton", "materialPreviewButton",
-      "exportPreviewZoomOutButton", "exportPreviewZoomFitButton", "exportPreviewZoomInButton",
+      "exportPreviewZoomOutButton", "exportPreviewZoomFitButton", "exportPreviewZoomInButton", "exportPreviewZoomLabel",
       "materialPreviewModal", "materialPreviewCloseButton", "materialPreviewCanvas", "materialModeSelect",
       "materialBaseSelect", "materialIntensityRange", "materialIntensityLabel", "materialBackgroundSelect", "materialCategoryList", "materialOptionList", "materialColorPresetList", "materialCustomColorInput", "materialPickerSummary", "materialLightSelect", "materialDecorSelect", "materialQualityCheckButton", "materialQualitySummary", "materialExportButton",
       "styleRatioSelect", "styleBackgroundColorInput", "styleBackgroundAlphaRange", "styleBackgroundAlphaLabel", "styleBackgroundImageInput",
@@ -10564,6 +10564,7 @@
       if (kind === "export") state.beads.exportPreviewAutoFit = false;
     }
     applyPreviewZoom(canvas, state.beads[key]);
+    if (kind === "export" && els.exportPreviewZoomLabel) els.exportPreviewZoomLabel.textContent = `${Math.max(0.01, Math.round(state.beads[key] * 10000) / 100)}%`;
     if (action === "fit") { canvas.parentElement.scrollLeft = 0; canvas.parentElement.scrollTop = 0; }
   }
 

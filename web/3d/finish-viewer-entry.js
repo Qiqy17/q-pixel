@@ -75,7 +75,7 @@ function surfaceMaps(profile, opacity = .75) {
 }
 
 // 每个条带生成相接的实心色块与外缘侧壁。正面、背面和侧壁分开，便于保孔/背熔切换。
-function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, opticalClass, meltEdge = 0, sideRoundness = .28) {
+function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, opticalClass, meltEdge = 0, sideRoundness = .28, quality = "high") {
   const buckets = {};
   const colorCache = new Map();
   const cellAt = (row, col) => cells[row] && cells[row][col];
@@ -171,7 +171,9 @@ function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, optica
         if (interior) continue;
         const dx = b[0] - a[0], dz = b[1] - a[1], length = Math.hypot(dx, dz) || 1;
         const outwardX = -dz / length, outwardZ = dx / length;
-        const rings = [[0, 0], [.18, sideRoundness], [.82, sideRoundness], [1, 0]];
+        const rings = quality === "low"
+          ? [[0, 0], [.5, sideRoundness], [1, 0]]
+          : [[0, 0], [.18, sideRoundness], [.82, sideRoundness], [1, 0]];
         for (let ring = 0; ring < rings.length - 1; ring += 1) {
           const [lowY, lowOffset] = rings[ring], [highY, highOffset] = rings[ring + 1];
           const slope = (highOffset - lowOffset) / (highY - lowY);
@@ -341,7 +343,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
       if (disposed || generation !== fusedGeneration) return;
       const profile = core.profile(settings.profile);
       const sideRoundness = profile.id === "flat" ? .09 : profile.texture === "towel" ? .42 : .28;
-      fusedStripe(cells, row, Math.min(height, row + stripeHeight), centerX, centerZ, colorOf, opticalClass, core.tuningFor(settings, settings.profile).meltEdge, sideRoundness).forEach(({ face, kind, geometry }) => {
+      fusedStripe(cells, row, Math.min(height, row + stripeHeight), centerX, centerZ, colorOf, opticalClass, core.tuningFor(settings, settings.profile).meltEdge, sideRoundness, currentQuality).forEach(({ face, kind, geometry }) => {
         const mesh = new THREE.Mesh(geometry, fusedMaterials[kind]);
         mesh.castShadow = kind !== "clear";
         fusedGroups[face].add(mesh);
