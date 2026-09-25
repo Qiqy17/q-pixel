@@ -164,13 +164,31 @@ function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, optica
         flushFaceRun();
         faceRun = { x0, x1, z0, z1, code, kind };
       }
-      for (let index = 0; index < outline.length; index += 1) {
-        const a = outline[index], b = outline[(index + 1) % outline.length];
+      if (!top && !bottom && !left && !right) continue;
+      const edges = outline.map((a, index) => {
+        const b = outline[(index + 1) % outline.length];
         const interior = (!top && a[1] === z0 && b[1] === z0) || (!bottom && a[1] === z1 && b[1] === z1)
           || (!left && a[0] === x0 && b[0] === x0) || (!right && a[0] === x1 && b[0] === x1);
-        if (interior) continue;
         const dx = b[0] - a[0], dz = b[1] - a[1], length = Math.hypot(dx, dz) || 1;
-        const outwardX = -dz / length, outwardZ = dx / length;
+        return { exposed: !interior, outwardX: -dz / length, outwardZ: dx / length };
+      });
+      const miterAt = (index) => {
+        const before = edges[(index + edges.length - 1) % edges.length];
+        const after = edges[index];
+        const first = before.exposed ? before : after;
+        const second = after.exposed ? after : before;
+        const x = first.outwardX + second.outwardX, z = first.outwardZ + second.outwardZ;
+        const magnitude = Math.hypot(x, z) || 1;
+        const nx = x / magnitude, nz = z / magnitude;
+        const divisor = Math.max(.5, nx * second.outwardX + nz * second.outwardZ);
+        return [nx / divisor, nz / divisor];
+      };
+      for (let index = 0; index < outline.length; index += 1) {
+        const edge = edges[index];
+        if (!edge.exposed) continue;
+        const a = outline[index], b = outline[(index + 1) % outline.length];
+        const offsetA = miterAt(index), offsetB = miterAt((index + 1) % outline.length);
+        const outwardX = edge.outwardX, outwardZ = edge.outwardZ;
         const rings = quality === "low"
           ? [[0, 0], [.5, sideRoundness], [1, 0]]
           : [[0, 0], [.18, sideRoundness], [.82, sideRoundness], [1, 0]];
@@ -179,10 +197,10 @@ function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, optica
           const slope = (highOffset - lowOffset) / (highY - lowY);
           const normal = new THREE.Vector3(outwardX, -slope, outwardZ).normalize().toArray();
           quad("side", kind, [
-            [a[0] + outwardX * lowOffset, lowY, a[1] + outwardZ * lowOffset],
-            [a[0] + outwardX * highOffset, highY, a[1] + outwardZ * highOffset],
-            [b[0] + outwardX * highOffset, highY, b[1] + outwardZ * highOffset],
-            [b[0] + outwardX * lowOffset, lowY, b[1] + outwardZ * lowOffset]
+            [a[0] + offsetA[0] * lowOffset, lowY, a[1] + offsetA[1] * lowOffset],
+            [a[0] + offsetA[0] * highOffset, highY, a[1] + offsetA[1] * highOffset],
+            [b[0] + offsetB[0] * highOffset, highY, b[1] + offsetB[1] * highOffset],
+            [b[0] + offsetB[0] * lowOffset, lowY, b[1] + offsetB[1] * lowOffset]
           ], normal, code);
         }
       }
