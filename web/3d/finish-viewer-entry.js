@@ -90,7 +90,7 @@ function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, optica
     [0, 1, 2, 0, 2, 3].forEach((index) => {
       const p = vertices[index];
       bucket.position.push(p[0], p[1], p[2]);
-      bucket.normal.push(...normal);
+      bucket.normal.push(...(Array.isArray(normal[0]) ? normal[index] : normal));
       bucket.color.push(tint.r, tint.g, tint.b);
       bucket.uv.push(p[0] / 80, p[2] / 80);
     });
@@ -181,7 +181,8 @@ function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, optica
         const magnitude = Math.hypot(x, z) || 1;
         const nx = x / magnitude, nz = z / magnitude;
         const divisor = Math.max(.5, nx * second.outwardX + nz * second.outwardZ);
-        return [nx / divisor, nz / divisor];
+        const reach = Math.min(1.45, 1 / divisor);
+        return [nx * reach, nz * reach];
       };
       for (let index = 0; index < outline.length; index += 1) {
         const edge = edges[index];
@@ -192,10 +193,12 @@ function fusedStripe(cells, firstRow, lastRow, centerX, centerZ, colorOf, optica
         const rings = quality === "low"
           ? [[0, 0], [.5, sideRoundness], [1, 0]]
           : [[0, 0], [.18, sideRoundness], [.82, sideRoundness], [1, 0]];
+        const ringNormals = quality === "low"
+          ? [[0, -1, 0], [outwardX, 0, outwardZ], [0, 1, 0]]
+          : [[0, -1, 0], [outwardX * .94, -.34, outwardZ * .94], [outwardX * .94, .34, outwardZ * .94], [0, 1, 0]];
         for (let ring = 0; ring < rings.length - 1; ring += 1) {
           const [lowY, lowOffset] = rings[ring], [highY, highOffset] = rings[ring + 1];
-          const slope = (highOffset - lowOffset) / (highY - lowY);
-          const normal = new THREE.Vector3(outwardX, -slope, outwardZ).normalize().toArray();
+          const normal = [ringNormals[ring], ringNormals[ring + 1], ringNormals[ring + 1], ringNormals[ring]];
           quad("side", kind, [
             [a[0] + offsetA[0] * lowOffset, lowY, a[1] + offsetA[1] * lowOffset],
             [a[0] + offsetA[0] * highOffset, highY, a[1] + offsetA[1] * highOffset],
