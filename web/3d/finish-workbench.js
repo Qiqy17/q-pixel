@@ -29,7 +29,7 @@
     '    <label>观察光色<select data-role="light-temperature"><option value="neutral">中性对照光</option><option value="warm">暖光</option><option value="cool">冷光</option></select></label>',
     '    <p class="finish-light-note">光照只改变预览，不修改图纸色号；当前未做实物色差标定。</p>',
     '    <details class="finish-control-group" open><summary>布景与光影</summary><label>光影效果<select data-role="light-effect"></select></label><label>背景材质<select data-role="background-material"></select></label><label>背景颜色<input data-role="background-color" type="color"></label><label>背景透明度 <output data-role="background-alpha-label">100%</output><input data-role="background-alpha" type="range" min="0" max="100"></label><button type="button" data-action="background-image">选择背景图</button><p>两种预览共用背景与光影效果；3D 曝光和光照强度可单独微调。</p></details>',
-    '    <details class="finish-control-group"><summary>3D 图纸背板</summary><label>背板样式<select data-role="board-mode"><option value="transparent">透明</option><option value="color">纯色</option><option value="image">背景图</option></select></label><label>背板颜色<input data-role="board-color" type="color"></label><label>背板透明度 <output data-role="board-alpha-label">100%</output><input data-role="board-alpha" type="range" min="0" max="100"></label><button type="button" data-action="board-image">选择背板图</button><span data-role="board-image-name">未选择</span><input data-role="board-image-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden><p>只作用于图纸矩形区域；透明时透出外层布景。</p></details>',
+    '    <details class="finish-control-group"><summary>3D 图纸背板</summary><label>背板样式<select data-role="board-mode"><option value="transparent">透明</option><option value="color">纯色</option><option value="image">背景图</option></select></label><label>背板颜色<input data-role="board-color" type="color"></label><label>背板透明度 <output data-role="board-alpha-label">100%</output><input data-role="board-alpha" type="range" min="0" max="100"></label><button type="button" data-action="board-image">选择背板图</button><button type="button" data-action="clear-board-image">清除背板图</button><span data-role="board-image-name">未选择</span><input data-role="board-image-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden><p>只作用于图纸矩形区域；透明时透出外层布景。</p></details>',
     '    <div class="finish-facts"><span data-role="facts">等待载入</span><span data-role="picked">单击编辑 · 长按高亮同色</span></div>',
     '    <button type="button" data-action="snapshot">保存对比快照</button>',
     '    <button type="button" data-action="compare">分屏比较</button>',
@@ -180,6 +180,7 @@
       dialog.querySelector('[data-role="board-alpha"]').value = settings.boardAlpha;
       dialog.querySelector('[data-role="board-alpha-label"]').textContent = `${settings.boardAlpha}%`;
       dialog.querySelector('[data-role="board-image-name"]').textContent = settings.boardImageName || "未选择";
+      dialog.querySelector('[data-action="clear-board-image"]').disabled = !settings.boardImageData;
       dialog.querySelectorAll('[data-tool]').forEach((button) => {
         const active = button.dataset.tool === (options.getTool && options.getTool());
         button.classList.toggle("active", active);
@@ -457,6 +458,13 @@
       if (action === "tab-flat") switchTab("flat");
       if (action === "background-image") options.chooseBackgroundImage?.();
       if (action === "board-image") dialog.querySelector('[data-role="board-image-file"]').click();
+      if (action === "clear-board-image") {
+        settings.boardImageData = "";
+        settings.boardImageName = "";
+        if (settings.boardMode === "image") settings.boardMode = "transparent";
+        viewer?.setBoardBackground(settings);
+        syncControls(); saveSettings();
+      }
       if (action === "mode-view") setInteractionMode("view");
       if (action === "mode-edit") setInteractionMode("edit");
       if (action === "reset-view" && viewer) viewer.view(settings.side);
