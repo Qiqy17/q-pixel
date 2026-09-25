@@ -770,14 +770,27 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
     renderer.toneMappingExposure = value;
     invalidate();
   }
+  let lightEffect = "soft";
   function setLighting(intensity, temperature) {
     const level = Math.max(.5, Math.min(1.6, Number(intensity) || 1));
-    key.intensity = 1 * level;
-    fill.intensity = .3 * level;
-    ambient.intensity = .52 * level;
-    key.color.setHex(temperature === "warm" ? 0xffe5c5 : temperature === "cool" ? 0xdceaff : 0xffffff);
-    fill.color.setHex(temperature === "warm" ? 0xfff3df : temperature === "cool" ? 0xe5f1ff : 0xffffff);
+    settings.lightIntensity = level;
+    settings.lightTemperature = temperature;
+    const positions = {
+      left: [-140, 170, 100], right: [140, 170, 100], top: [0, 220, 20],
+      bottom: [0, 55, 170], front: [0, 160, 170], backlit: [0, 150, -170]
+    };
+    key.position.set(...(positions[lightEffect] || [-110, 180, 130]));
+    key.intensity = level * (lightEffect === "none" ? .15 : lightEffect === "dramatic" ? 1.7 : 1);
+    fill.intensity = level * (lightEffect === "dramatic" ? .06 : lightEffect === "none" ? .1 : .3);
+    ambient.intensity = level * (lightEffect === "dramatic" ? .22 : lightEffect === "none" ? .65 : .52);
+    const effectiveTemperature = lightEffect === "warm" || lightEffect === "cool" ? lightEffect : temperature;
+    key.color.setHex(effectiveTemperature === "warm" ? 0xffe5c5 : effectiveTemperature === "cool" ? 0xdceaff : 0xffffff);
+    fill.color.setHex(effectiveTemperature === "warm" ? 0xfff3df : effectiveTemperature === "cool" ? 0xe5f1ff : 0xffffff);
     invalidate();
+  }
+  function setLightEffect(effect) {
+    lightEffect = effect || "soft";
+    setLighting(settings.lightIntensity, settings.lightTemperature);
   }
   function setBackground(value) {
     scene.background = value === "transparent" ? null : new THREE.Color(value === "dark" ? 0x1d2626 : 0xe6e9e5);
@@ -873,7 +886,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   setBackground(settings.background);
   view(settings.side);
   onStatus(`${count.toLocaleString()} 颗 · ${currentQuality} 精度 · ${memory.suggestLowDetail ? "弱设备模式 · " : ""}未实物标定参考模型`);
-  return { setProfile, setTuning, setOverlay, setInteractionMode, moveCamera, updatePattern, snapshot, setExposure, setLighting, setBackground, view, exportPng, cancelExport, dispose, draw, getQuality: () => currentQuality };
+  return { setProfile, setTuning, setOverlay, setInteractionMode, moveCamera, updatePattern, snapshot, setExposure, setLighting, setLightEffect, setBackground, view, exportPng, cancelExport, dispose, draw, getQuality: () => currentQuality };
 }
 
 export { create };

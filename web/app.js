@@ -10310,18 +10310,31 @@
     };
   }
 
+  function renderSharedStyleBackground(canvas) {
+    const ctx = canvas.getContext("2d");
+    const alpha = els.styleBackgroundAlphaRange ? clamp(els.styleBackgroundAlphaRange.value, 0, 100) / 100 : 1;
+    if (alpha <= 0) return;
+    const layer = document.createElement("canvas");
+    layer.width = canvas.width;
+    layer.height = canvas.height;
+    drawStyleBackground(layer.getContext("2d"), layer.width, layer.height,
+      els.materialBackgroundSelect?.value || "felt", els.styleBackgroundColorInput?.value || "#f4f0e8", 1);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.drawImage(layer, 0, 0);
+    ctx.restore();
+  }
+
   function drawMaterialPreview() {
     const sourcePattern = getMaterialPattern();
     const pattern = sourcePattern && cropPatternToContent(sourcePattern);
     if (!pattern || !els.materialPreviewCanvas) return false;
     const mode = "normal";
     const frameType = els.materialBaseSelect ? els.materialBaseSelect.value : "none";
-    const backgroundType = els.materialBackgroundSelect ? els.materialBackgroundSelect.value : "felt";
     const light = els.materialLightSelect ? els.materialLightSelect.value : "soft";
     const decor = els.materialDecorSelect ? els.materialDecorSelect.value : "none";
     const ratio = els.styleRatioSelect ? els.styleRatioSelect.value : "1:1";
     const coverLayout = els.styleCoverLayoutSelect ? els.styleCoverLayoutSelect.value : "center";
-    const backgroundColor = els.styleBackgroundColorInput ? els.styleBackgroundColorInput.value : "#f4f0e8";
     const backgroundAlpha = els.styleBackgroundAlphaRange ? clamp(els.styleBackgroundAlphaRange.value, 0, 100) / 100 : 1;
     const borderSize = els.styleBorderSizeRange ? clamp(els.styleBorderSizeRange.value, 0, 90) : 28;
     const borderColor = els.styleBorderColorInput ? els.styleBorderColorInput.value : "#d8c7aa";
@@ -10340,7 +10353,7 @@
     canvas.height = size.height;
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    drawStyleBackground(ctx, canvas.width, canvas.height, backgroundType, backgroundColor, backgroundAlpha);
+    renderSharedStyleBackground(canvas);
     drawStyleFrame(ctx, canvas.width, canvas.height, frameType, borderSize, borderColor);
 
     const innerPad = Math.max(38, borderSize + 36);
@@ -10380,6 +10393,7 @@
     drawMaterialDecor(ctx, canvas.width, canvas.height, decor, intensity);
     drawStyleUserOverlays(ctx);
     applyPreviewZoom(canvas, state.beads.stylePreviewZoom || 1);
+    canvas.dispatchEvent(new Event("previewbackgroundrender"));
     return true;
   }
 
@@ -10513,6 +10527,7 @@
     state.beads.styleBackgroundImageName = name || "自定义背景";
     if (els.styleBackgroundImageName) els.styleBackgroundImageName.textContent = state.beads.styleBackgroundImageName;
     if (els.materialBackgroundSelect) els.materialBackgroundSelect.value = "custom";
+    markUnsavedChanges();
     drawMaterialPreview();
   }
 
@@ -11832,6 +11847,14 @@
       inventorySnapshot: state.inventory && Object.keys(state.inventory).length ? JSON.parse(JSON.stringify(state.inventory)) : null,
       boardPlan: state.beads.boardPlan ? JSON.parse(JSON.stringify(state.beads.boardPlan)) : null,
       finish3d: state.beads.finish3d ? JSON.parse(JSON.stringify(state.beads.finish3d)) : null,
+      previewBackground: {
+        type: els.materialBackgroundSelect?.value || "felt",
+        color: els.styleBackgroundColorInput?.value || "#f4f0e8",
+        alpha: Number(els.styleBackgroundAlphaRange?.value ?? 100),
+        light: els.materialLightSelect?.value || "soft",
+        imageData: state.beads.styleBackgroundImageData || "",
+        imageName: state.beads.styleBackgroundImageName || ""
+      },
       checkpoints: Array.isArray(state.beads.checkpoints)
         ? state.beads.checkpoints.map((item) => item && item.payload ? item : null).filter(Boolean)
         : [],
@@ -11931,6 +11954,28 @@
     state.beads.finish3d = payload.finish3d && typeof payload.finish3d === "object"
       ? JSON.parse(JSON.stringify(payload.finish3d))
       : null;
+    const previewBackground = payload.previewBackground && typeof payload.previewBackground === "object" ? payload.previewBackground : {};
+    if (els.materialBackgroundSelect) {
+      const type = typeof previewBackground.type === "string" ? previewBackground.type : "felt";
+      els.materialBackgroundSelect.value = Array.from(els.materialBackgroundSelect.options).some((option) => option.value === type) ? type : "felt";
+    }
+    if (els.styleBackgroundColorInput) els.styleBackgroundColorInput.value = /^#[0-9a-f]{6}$/i.test(previewBackground.color || "") ? previewBackground.color : "#f4f0e8";
+    if (els.styleBackgroundAlphaRange) els.styleBackgroundAlphaRange.value = clamp(previewBackground.alpha ?? 100, 0, 100);
+    if (els.materialLightSelect) {
+      const light = typeof previewBackground.light === "string" ? previewBackground.light : "soft";
+      els.materialLightSelect.value = Array.from(els.materialLightSelect.options).some((option) => option.value === light) ? light : "soft";
+    }
+    state.beads.styleBackgroundImage = null;
+    state.beads.styleBackgroundImageData = typeof previewBackground.imageData === "string" && /^data:image\/(?:png|jpeg|webp|gif);base64,/i.test(previewBackground.imageData) && previewBackground.imageData.length <= 20000000 ? previewBackground.imageData : "";
+    state.beads.styleBackgroundImageName = typeof previewBackground.imageName === "string" ? previewBackground.imageName : "";
+    if (els.styleBackgroundImageName) els.styleBackgroundImageName.textContent = state.beads.styleBackgroundImageName || "未选择";
+    if (state.beads.styleBackgroundImageData) {
+      const imageData = state.beads.styleBackgroundImageData;
+      loadImageFromDataUrl(imageData).then((image) => {
+        if (state.beads.styleBackgroundImageData === imageData) { state.beads.styleBackgroundImage = image; drawMaterialPreview(); }
+      }).catch(() => {});
+    }
+    syncMaterialPickerFromControls();
     state.beads.checkpoints = Array.isArray(payload.checkpoints)
       ? payload.checkpoints
           .map((item) => projectStoreModule ? projectStoreModule.normalizeCheckpoint(item, projectModelModule) : null)
@@ -15549,7 +15594,7 @@
     document.getElementById("studioOutputPreviewButton")?.addEventListener("click", () => els.exportTopButton?.click());
     document.getElementById("studioOutputBoardPdfButton")?.addEventListener("click", exportBoardPdf);
     document.getElementById("studioOutputMaterialsButton")?.addEventListener("click", exportMaterialsCsv);
-    document.getElementById("studioOutput3dButton")?.addEventListener("click", () => document.getElementById("finish3dButton")?.click());
+    document.getElementById("studioOutput3dButton")?.addEventListener("click", () => document.getElementById("unifiedPreviewButton")?.click());
     if (window.QPixelFinishWorkbench && window.QPixelFinishCore) {
       const forward3dEdit = (phase, cell) => {
         const tool = state.beads.editTool;
@@ -15574,6 +15619,46 @@
           return state.beads.pattern;
         },
         getSettings: () => state.beads.finish3d,
+        getBackground: () => ({
+          type: els.materialBackgroundSelect?.value || "felt",
+          color: els.styleBackgroundColorInput?.value || "#f4f0e8",
+          alpha: Number(els.styleBackgroundAlphaRange?.value ?? 100),
+          materials: Array.from(els.materialBackgroundSelect?.options || []).map((option) => ({ value: option.value, label: option.textContent }))
+        }),
+        getLightEffect: () => ({
+          value: els.materialLightSelect?.value || "soft",
+          options: Array.from(els.materialLightSelect?.options || []).map((option) => ({ value: option.value, label: option.textContent }))
+        }),
+        setLightEffect: (effect) => {
+          if (els.materialLightSelect) els.materialLightSelect.value = effect;
+          markUnsavedChanges();
+          drawMaterialPreview();
+        },
+        setBackground: (change) => {
+          if (change.type && els.materialBackgroundSelect) {
+            els.materialBackgroundSelect.value = change.type;
+            syncMaterialPickerFromControls();
+          }
+          if (change.color && els.styleBackgroundColorInput) {
+            els.styleBackgroundColorInput.value = change.color;
+            state.beads.styleMaterialColorPreset = "custom";
+            if (els.materialCustomColorInput) els.materialCustomColorInput.value = change.color;
+            renderMaterialPicker();
+          }
+          if (change.alpha != null && els.styleBackgroundAlphaRange) els.styleBackgroundAlphaRange.value = change.alpha;
+          markUnsavedChanges();
+          drawMaterialPreview();
+        },
+        renderBackground: renderSharedStyleBackground,
+        chooseBackgroundImage: () => els.styleBackgroundImageInput?.click(),
+        prepareFlatPreview: () => {
+          state.beads.styleStickerLibrary = getStyleStickerLibrary();
+          renderStyleStickerList();
+          renderStylePresetList();
+          populateStyleFontSelect();
+          drawMaterialPreview();
+        },
+        fitFlatPreview: () => updatePreviewZoom("style", "fit"),
         colorOf: (code) => getPaletteColor(code).hex,
         getGuides: () => state.beads.guideLines || [],
         getSelection: () => state.beads.selectedCells || [],
@@ -15581,12 +15666,21 @@
         setTool: (tool) => document.querySelector(`.canvas-tool-rail .tool-button[data-tool="${tool}"]`)?.click(),
         onEdit: forward3dEdit,
         onHistory: (action) => action === "undo" ? undoEdit() : redoEdit(),
-        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js?v=20260925-finish-view-12"),
+        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js?v=20260925-unified-preview-13"),
         onSettings: (settings) => { state.beads.finish3d = settings; markUnsavedChanges(); },
         onExport: (blob) => saveBlobFile(blob, `Q像素-成品3D-${formatStamp(new Date())}.png`, "image/png", "3D 成品预览已导出。")
       });
-      document.getElementById("finish3dButton")?.addEventListener("click", () => {
+      document.getElementById("unifiedPreviewButton")?.addEventListener("click", () => {
         finishWorkbench.open().then((opened) => { if (!opened) setMessage("请先创建或导入图纸。", true); });
+      });
+      els.materialPreviewCanvas?.addEventListener("previewbackgroundrender", () => finishWorkbench.refreshBackground());
+      els.materialLightSelect?.addEventListener("change", () => { markUnsavedChanges(); finishWorkbench.refreshLightEffect(); });
+      const flatPreviewBody = document.querySelector("#materialPreviewModal .material-body");
+      flatPreviewBody?.addEventListener("change", (event) => {
+        if (["materialBackgroundSelect", "styleBackgroundColorInput", "styleBackgroundAlphaRange", "styleBackgroundImageInput"].includes(event.target.id)) markUnsavedChanges();
+      });
+      flatPreviewBody?.addEventListener("click", (event) => {
+        if (event.target.closest("#materialOptionList button, #materialColorPresetList button")) markUnsavedChanges();
       });
     }
     document.querySelectorAll("[data-studio-entry]").forEach((button) => button.addEventListener("click", async () => {

@@ -12,7 +12,7 @@
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.svg">
   <link rel="stylesheet" href="./styles.css">
-  <link rel="stylesheet" href="./studio/studio.css?v=20260925-finish-view-12">
+  <link rel="stylesheet" href="./studio/studio.css?v=20260925-unified-preview-13">
 </head>
 <body>
   <main class="app-shell is-home">
@@ -94,7 +94,7 @@
         <button class="text-button secondary" id="chooseTopButton" type="button">导入</button>
         <button class="text-button secondary" id="saveTopButton" type="button">保存</button>
         <span class="save-status" id="saveStatus">已保存</span>
-        <details class="top-action-menu"><summary class="text-button secondary">预览</summary><div><button class="text-button secondary" id="materialPreviewButton" type="button">展示图</button><button class="text-button secondary" id="finish3dButton" type="button">成品质感 3D</button></div></details>
+        <button class="text-button secondary" id="unifiedPreviewButton" type="button">预览</button>
         <button class="text-button" id="exportTopButton" type="button">导出</button>
         <details class="top-action-menu"><summary class="text-button secondary" aria-label="更多工具">更多</summary><div><button class="text-button secondary" id="removeBackgroundButton" type="button">去背景</button><button class="text-button secondary" id="aiGenerateTopButton" type="button">AI 灵感</button><button type="button" id="openCurrentHistoryButton">版本与恢复</button><label class="autosave-menu-label" for="autoDraftIntervalSelect">自动保存草稿<select id="autoDraftIntervalSelect" aria-label="自动保存草稿间隔"><option value="0">关闭</option><option value="15000">15 秒</option><option value="30000">30 秒</option><option value="60000">1 分钟</option><option value="180000" selected>3 分钟</option><option value="300000">5 分钟</option></select></label></div></details>
       </div>
@@ -785,7 +785,7 @@
             <input id="styleBackgroundImageInput" type="file" accept="image/*" hidden>
           </div>
           </details>
-          <p class="material-true-color-note">展示图保留图纸原色。豆体、烫法与透明材质请在「成品质感 3D」中查看。</p>
+          <p class="material-true-color-note">展示图保留图纸原色；可切换上方「成品 3D」查看豆体和烫法。</p>
           <details class="style-control-group" id="styleBorderGroup">
             <summary>边框 <span id="styleBorderGroupSummary">无边框</span></summary>
           <label>边框类型
@@ -852,7 +852,7 @@
           <label>光线
             <select id="materialLightSelect">
               <option value="none">不打光</option>
-              <option value="soft">柔光</option>
+              <option value="soft" selected>柔光</option>
               <option value="left">左上侧光</option>
               <option value="right">右上侧光</option>
               <option value="top">顶部亮光</option>
@@ -1543,11 +1543,11 @@
   <script src="./studio/background-tool.js"></script>
   <script src="./studio/surface-engine.js"></script>
   <script src="./studio/scene-catalog.js"></script>
-  <script src="./3d/finish-core.js?v=20260925-finish-view-12"></script>
+  <script src="./3d/finish-core.js?v=20260925-unified-preview-13"></script>
   <script src="./3d/webgl-support.js"></script>
-  <script src="./3d/finish-workbench.js?v=20260925-finish-view-12"></script>
+  <script src="./3d/finish-workbench.js?v=20260925-unified-preview-13"></script>
   <script src="./import-engine.js"></script>
   <script src="./import-processing.js"></script>
-  <script src="./app.js?v=20260925-finish-view-12"></script>
+  <script src="./app.js?v=20260925-unified-preview-13"></script>
 </body>
 </html>
