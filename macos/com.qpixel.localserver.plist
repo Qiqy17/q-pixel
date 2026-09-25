@@ -10,7 +10,7 @@
     <string>-u</string>
     <string>__RESOURCES__/qpixel_ipad_https_server.py</string>
     <string>--http</string>
-    <string>--host</string><string>0.0.0.0</string>
+    <string>--host</string><string>127.0.0.1</string>
     <string>--cert-host</string><string>127.0.0.1</string>
     <string>--port</string><string>8766</string>
   </array>

@@ -43,7 +43,7 @@ export OPENAI_API_KEY="你的 OpenAI API key"
 python3 /Users/mac/GitHub/q-pixel/scripts/qpixel_ipad_https_server.py --http --port 8766
 ```
 
-桌面/iPad 服务：
+如需平板访问，请先启动桌面 App，再在电脑上手动开启平板共享。终端会显示平板地址和本次配对码；关闭终端即停止共享：
 
 ```zsh
 export OPENAI_API_KEY="你的 OpenAI API key"

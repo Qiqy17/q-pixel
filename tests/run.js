@@ -10,4 +10,6 @@ for (const file of files) {
   const result = spawnSync(process.execPath, [path.join(__dirname, file)], { stdio: "inherit" });
   if (result.status !== 0) process.exit(result.status || 1);
 }
+const python = spawnSync("python3", [path.join(__dirname, "local-server-security.test.py")], { stdio: "inherit" });
+if (python.status !== 0) process.exit(python.status || 1);
 console.log(`${files.length} 个测试文件通过`);

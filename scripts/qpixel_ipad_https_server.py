@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 import argparse
+import hmac
+import http.client
 import ipaddress
 import json
 import os
+import secrets
 import shutil
 import ssl
 import subprocess
 import tempfile
 from datetime import datetime, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.cookies import SimpleCookie
 from pathlib import Path
 from threading import Lock
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from qpixel_openai import OpenAIConfigError, OpenAIRequestError, find_latest_download_image, generate_image, get_provider_status
 
@@ -39,9 +43,6 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         path = urlparse(self.path).path
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
         if path.startswith("/api/"):
             self.send_header("Cache-Control", "no-store")
         else:
@@ -49,11 +50,122 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_OPTIONS(self):
+        if not self.check_request_origin():
+            return
         self.send_response(204)
         self.end_headers()
 
+    def check_request_origin(self):
+        host = self.headers.get("Host", "")
+        allowed = self.server.allowed_hosts
+        if host not in allowed:
+            self.send_error(403, "Host not allowed")
+            return False
+        origin = self.headers.get("Origin")
+        if origin and origin != f"{self.server.scheme}://{host}":
+            self.send_error(403, "Origin not allowed")
+            return False
+        return True
+
+    def paired(self):
+        if not self.server.pairing_code:
+            return True
+        cookie = SimpleCookie()
+        try:
+            cookie.load(self.headers.get("Cookie", ""))
+        except Exception:
+            return False
+        value = cookie.get("qpixel_pair")
+        return bool(value and hmac.compare_digest(value.value, self.server.pairing_token))
+
+    def gate(self):
+        if not self.check_request_origin():
+            return False
+        if not self.server.pairing_code or self.paired():
+            return True
+        if urlparse(self.path).path == "/pair" and self.command in ("GET", "POST"):
+            return True
+        if urlparse(self.path).path.startswith("/api/"):
+            self.send_json({"error": "请先在平板上输入配对码。"}, status=401)
+        else:
+            self.send_response(303)
+            self.send_header("Location", "/pair")
+            self.end_headers()
+        return False
+
+    def pair_page(self, error=False):
+        message = "配对码不正确，请重试。" if error else "在电脑启动平板共享后，输入终端显示的配对码。"
+        body = ("<!doctype html><html lang='zh-CN'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+                "<title>Q像素平板配对</title><style>body{font:16px -apple-system,sans-serif;max-width:420px;margin:12vh auto;padding:24px;color:#173e38}"
+                "input,button{box-sizing:border-box;width:100%;min-height:48px;margin-top:12px;padding:10px;font-size:17px}button{background:#176d61;color:white;border:0;border-radius:8px}</style>"
+                f"<h1>Q像素平板配对</h1><p>{message}</p><form method='post' action='/pair'><input name='code' type='password' required autocomplete='one-time-code' aria-label='配对码'><button>连接创作空间</button></form></html>").encode("utf-8")
+        self.send_response(403 if error else 200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def pair_request(self):
+        length = self.request_length(4096)
+        if length is None:
+            return
+        if length < 1 or length > 4096:
+            self.send_error(413, "Invalid pairing request")
+            return
+        code = parse_qs(self.rfile.read(length).decode("utf-8", "replace")).get("code", [""])[0]
+        if not hmac.compare_digest(code, self.server.pairing_code):
+            self.pair_page(error=True)
+            return
+        self.send_response(303)
+        self.send_header("Location", "/index.html")
+        self.send_header("Set-Cookie", f"qpixel_pair={self.server.pairing_token}; HttpOnly; Secure; SameSite=Strict; Path=/")
+        self.end_headers()
+
+    def proxy_request(self):
+        length = self.request_length(100 * 1024 * 1024)
+        if length is None:
+            return
+        body = self.rfile.read(length) if length else None
+        connection = http.client.HTTPConnection("127.0.0.1", self.server.proxy_port, timeout=60)
+        try:
+            headers = {"Accept": "application/json"}
+            if body is not None:
+                headers["Content-Type"] = self.headers.get("Content-Type", "application/json")
+            connection.request(self.command, self.path, body=body, headers=headers)
+            response = connection.getresponse()
+            payload = response.read()
+            self.send_response(response.status)
+            self.send_header("Content-Type", response.getheader("Content-Type", "application/json"))
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        except (OSError, http.client.HTTPException):
+            self.send_json({"error": "电脑创作空间暂时不可用。"}, status=503)
+        finally:
+            connection.close()
+
+    def request_length(self, limit):
+        try:
+            length = int(self.headers.get("Content-Length") or "0")
+        except ValueError:
+            self.send_error(400, "Invalid Content-Length")
+            return None
+        if length < 0 or length > limit:
+            self.send_error(413, "Request too large")
+            return None
+        return length
+
     def do_GET(self):
+        if not self.gate():
+            return
         path = urlparse(self.path).path
+        if path == "/pair" and self.server.pairing_code:
+            self.pair_page()
+            return
+        if path.startswith("/api/") and self.server.proxy_port:
+            self.proxy_request()
+            return
         if path == "/api/ai/status":
             self.send_json({"providers": get_provider_status()})
             return
@@ -83,7 +195,15 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self):
+        if not self.gate():
+            return
         path = urlparse(self.path).path
+        if path == "/pair" and self.server.pairing_code:
+            self.pair_request()
+            return
+        if path.startswith("/api/") and self.server.proxy_port:
+            self.proxy_request()
+            return
         if path == "/api/ai/generate":
             self.generate_ai_image()
             return
@@ -118,6 +238,11 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
         self.send_json({"ok": True, "count": len(payload[:200])})
 
     def do_DELETE(self):
+        if not self.gate():
+            return
+        if urlparse(self.path).path.startswith("/api/") and self.server.proxy_port:
+            self.proxy_request()
+            return
         project_id = get_project_id_from_path(urlparse(self.path).path)
         if not project_id:
             self.send_error(404)
@@ -532,14 +657,30 @@ def merge_settings(existing, incoming):
 
 def main():
     parser = argparse.ArgumentParser(description="Q像素 iPad 本地访问服务")
-    parser.add_argument("--host", default="0.0.0.0")
+    parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--cert-host", default=os.environ.get("QPIXEL_IP", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument("--proxy-port", type=int, default=0, help="配对服务转发到本机服务端口。")
     parser.add_argument("--http", action="store_true", help="使用普通 HTTP，保留创作空间同步接口。")
     args = parser.parse_args()
-    cleanup_backups()
-    migrate_projects_if_needed()
+    pairing_code = os.environ.get("QPIXEL_PAIRING_CODE", "").strip()
+    try:
+        loopback = ipaddress.ip_address(args.host).is_loopback
+    except ValueError:
+        loopback = args.host == "localhost"
+    if not loopback and not pairing_code:
+        parser.error("非本机地址必须通过 run_ipad_server.sh 启用配对。")
+    if pairing_code and (args.http or not args.proxy_port):
+        parser.error("配对服务必须使用 HTTPS，并转发到本机服务。")
+    if not args.proxy_port:
+        cleanup_backups()
+        migrate_projects_if_needed()
     server = ThreadingHTTPServer((args.host, args.port), QPixelHttpsHandler)
+    server.scheme = "http" if args.http else "https"
+    server.allowed_hosts = {f"{args.cert_host}:{args.port}"} if pairing_code else {f"127.0.0.1:{args.port}", f"localhost:{args.port}"}
+    server.pairing_code = pairing_code
+    server.pairing_token = secrets.token_urlsafe(32) if pairing_code else ""
+    server.proxy_port = args.proxy_port
     if args.http:
         print(f"Q像素 iPad HTTP 服务：http://{args.cert_host}:{args.port}/index.html")
     else:

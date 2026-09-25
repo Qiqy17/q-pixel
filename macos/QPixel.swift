@@ -63,7 +63,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     private func loadInterface() {
         let remoteURLs = [
-            "http://Qiqys-MacBook-Air.local:8766/index.html",
             "http://127.0.0.1:8766/index.html"
         ].compactMap(URL.init(string:))
         loadRemoteInterface(remoteURLs, index: 0)
