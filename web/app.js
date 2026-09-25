@@ -337,6 +337,7 @@
       floatingSelection: null,
       recentCodes: [beadPalette[0].code],
       guideLines: [],
+      guideVisible: true,
       guideOrientation: "vertical",
       guideStyle: "dashed",
       guideColor: "#ff9d38",
@@ -559,7 +560,7 @@
       "toolOptionsPanel", "brushSizeRange", "brushSizeLabel", "brushDoneButton", "eraserSizeRange", "eraserSizeLabel", "eraserDoneButton",
       "outlineAddButton", "outlineRemoveButton", "outlineWidthRange", "outlineWidthLabel", "outlineColorSelect", "outlineApplyButton",
       "recolorFromSelect", "recolorToSelect", "recolorApplyButton",
-      "guideVerticalButton", "guideHorizontalButton", "guideSolidButton", "guideDashedButton", "guideColorInput", "guideOpacityRange", "guideOpacityLabel", "guideClearButton",
+      "guideVerticalButton", "guideHorizontalButton", "guideSolidButton", "guideDashedButton", "guideColorInput", "guideOpacityRange", "guideOpacityLabel", "guideVisibleToggle", "guideClearButton",
       "selectRectButton", "selectLassoButton", "selectionReplaceButton",
       "selectionAddButton", "selectionSubtractButton", "selectionFillButton", "selectionClearButton",
       "selectionCopyButton", "selectionPasteButton", "selectionMoveButton", "selectionMirrorButton",
@@ -802,6 +803,24 @@
     if (state.mode === "pixel") syncDropZoneClass();
   }
 
+  const toolCursorCache = new Map();
+  function cursorForEditTool(tool) {
+    if (tool === "pan") return "grab";
+    if (tool === "inspect") return "help";
+    const button = els.toolButtons?.find((item) => item.dataset.tool === tool);
+    const icon = button?.querySelector(".tool-svg-icon");
+    const cacheKey = `${tool}:${icon?.innerHTML || ""}`;
+    if (toolCursorCache.has(cacheKey)) return toolCursorCache.get(cacheKey);
+    const fallback = ({ brush: "✎", eraser: "⌫", picker: "⌕", bucket: "◩", select: "□", guide: "╋" })[tool] || "✎";
+    const drawing = icon
+      ? `<g fill="none" stroke="#176d61" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon.innerHTML.replace(/currentColor/g, "#176d61")}</g>`
+      : `<text x="12" y="18" text-anchor="middle" font-size="17" fill="#176d61">${fallback}</text>`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect x="1" y="1" width="25" height="25" rx="6" fill="#fffefa" stroke="#176d61"/><g transform="translate(2 2)">${drawing}</g></svg>`;
+    const cursor = `url("data:image/svg+xml,${encodeURIComponent(svg)}") 2 2, crosshair`;
+    toolCursorCache.set(cacheKey, cursor);
+    return cursor;
+  }
+
   function syncBeadControls() {
     const params = clampBeadParams(state.beads);
     state.beads.width = params.width;
@@ -924,6 +943,7 @@
     if (els.guideColorInput) els.guideColorInput.value = state.beads.guideColor || "#ff9d38";
     if (els.guideOpacityRange) els.guideOpacityRange.value = String(state.beads.guideOpacity || 80);
     if (els.guideOpacityLabel) els.guideOpacityLabel.textContent = `${state.beads.guideOpacity || 80}%`;
+    if (els.guideVisibleToggle) els.guideVisibleToggle.checked = state.beads.guideVisible !== false;
     renderGuideLineSelect();
     ["replace", "add", "subtract"].forEach((op) => {
       const id = op === "replace" ? "selectionReplaceButton" : op === "add" ? "selectionAddButton" : "selectionSubtractButton";
@@ -935,6 +955,7 @@
         button.classList.toggle("active", button.dataset.tool === state.beads.editTool);
       });
     }
+    if (els.previewCanvas) els.previewCanvas.style.cursor = state.mode === "beads" ? cursorForEditTool(state.beads.editTool) : "";
     updatePaletteActiveState();
     updateHistoryButtons();
     syncToolOptions();
@@ -2172,7 +2193,7 @@
   }
 
   function drawGuideLines(ctx, x, y, cellSize, pattern) {
-    if (!pattern || !state.beads.guideLines || !state.beads.guideLines.length) return;
+    if (!pattern || !state.beads.guideVisible || !state.beads.guideLines || !state.beads.guideLines.length) return;
     ctx.save();
     state.beads.guideLines.forEach((guide) => {
       const orientation = guide.orientation === "horizontal" ? "horizontal" : "vertical";
@@ -5926,45 +5947,48 @@
   function renderLayerList() {
     if (!els.layerList) return;
     els.layerList.innerHTML = "";
+    const count = document.getElementById("layerCount");
     if (!state.beads.pattern) {
+      if (count) count.textContent = "";
       els.layerList.innerHTML = '<div class="panel-caption">尚未生成图纸。</div>';
       return;
     }
     ensureLayers();
+    if (count) count.textContent = `${state.beads.layers.length} 层`;
     state.beads.layers.slice().reverse().forEach((layer) => {
       const row = document.createElement("div");
       row.className = "layer-row";
       row.classList.toggle("active", layer.id === state.beads.activeLayerId);
       row.innerHTML = `
-        <div class="layer-thumb"></div>
+        <button class="layer-select" type="button" data-layer-action="select" aria-label="选择图层">${layer.id === state.beads.activeLayerId ? "当前" : "选择"}</button>
         <div class="layer-main">
-          <input class="layer-name" value="">
-          <div class="layer-meta">${state.beads.pattern.width} x ${state.beads.pattern.height} 格${layer.groupName ? ` · ${layer.groupName}` : ""}</div>
-          <div class="layer-actions-inline">
-            <button type="button" data-layer-action="duplicate">复制</button>
-            <button type="button" data-layer-action="mirror">镜像</button>
-          </div>
+          <input class="layer-name" aria-label="图层名称" value="">
+          <div class="layer-meta"></div>
         </div>
         <div class="layer-controls">
-          <button class="layer-mini" type="button" data-layer-action="visible" title="显示隐藏">${layer.visible ? "眼" : "隐"}</button>
-          <button class="layer-mini" type="button" data-layer-action="lock" title="锁定">${layer.locked ? "锁" : "开"}</button>
-          <button class="layer-mini ${layer.alphaLocked ? "alpha-active" : ""}" type="button" data-layer-action="alpha" title="阿尔法锁定：只改已有格，不增删格">α</button>
-          <button class="layer-mini" type="button" data-layer-action="select" title="选中">选</button>
+          <button class="layer-mini" type="button" data-layer-action="visible" aria-pressed="${layer.visible}" title="切换图层显示">${layer.visible ? "显示中" : "已隐藏"}</button>
+          <button class="layer-mini" type="button" data-layer-action="lock" aria-pressed="${layer.locked}" title="切换图层锁定">${layer.locked ? "已锁定" : "未锁定"}</button>
+          <button class="layer-mini ${layer.alphaLocked ? "alpha-active" : ""}" type="button" data-layer-action="alpha" aria-pressed="${layer.alphaLocked}" title="透明锁定：只改已有格，不增删格">透明锁定${layer.alphaLocked ? "开" : "关"}</button>
+          <details class="layer-more"><summary>更多</summary><div><button type="button" data-layer-action="duplicate">复制图层</button><button type="button" data-layer-action="mirror">镜像图层</button></div></details>
         </div>
       `;
       const input = row.querySelector(".layer-name");
       input.value = layer.name;
+      row.querySelector(".layer-meta").textContent = `${state.beads.pattern.width} × ${state.beads.pattern.height} 格${layer.groupName ? ` · ${layer.groupName}` : ""}`;
       input.addEventListener("change", () => {
         layer.name = input.value.replace(/·.*$/, "").trim() || "图层";
+        markUnsavedChanges();
         renderLayerList();
       });
       row.querySelector('[data-layer-action="visible"]').addEventListener("click", () => {
         layer.visible = !layer.visible;
         syncCompositePattern();
+        markUnsavedChanges();
         render();
       });
       row.querySelector('[data-layer-action="lock"]').addEventListener("click", () => {
         layer.locked = !layer.locked;
+        markUnsavedChanges();
         renderLayerList();
       });
       row.querySelector('[data-layer-action="alpha"]').addEventListener("click", () => {
@@ -5975,6 +5999,7 @@
       });
       row.querySelector('[data-layer-action="select"]').addEventListener("click", () => {
         state.beads.activeLayerId = layer.id;
+        markUnsavedChanges();
         renderLayerList();
       });
       row.querySelector('[data-layer-action="duplicate"]').addEventListener("click", () => {
@@ -11899,6 +11924,7 @@
         baseboardMode: state.beads.baseboardMode,
         baseboardColor: state.beads.baseboardColor,
         guideLines: normalizeGuideLines(),
+        guideVisible: state.beads.guideVisible !== false,
         guideOrientation: state.beads.guideOrientation,
         guideStyle: state.beads.guideStyle,
         guideColor: state.beads.guideColor,
@@ -12039,6 +12065,7 @@
     state.beads.guideLines = Array.isArray(payload.editorSettings && payload.editorSettings.guideLines)
       ? payload.editorSettings.guideLines.map((guide, index) => normalizeGuideLine(guide, index))
       : [];
+    state.beads.guideVisible = !payload.editorSettings || payload.editorSettings.guideVisible !== false;
     state.beads.guideOrientation = payload.editorSettings && payload.editorSettings.guideOrientation === "horizontal" ? "horizontal" : "vertical";
     state.beads.guideStyle = payload.editorSettings && payload.editorSettings.guideStyle === "solid" ? "solid" : "dashed";
     state.beads.guideColor = payload.editorSettings && /^#[0-9a-f]{6}$/i.test(payload.editorSettings.guideColor || "") ? payload.editorSettings.guideColor : "#ff9d38";
@@ -13456,7 +13483,7 @@
     try {
       await moduleLoader.loadScript("./workspaces/quality-checks.js", { async: false });
       await moduleLoader.loadScript("./workspaces/context-inspector.js", { async: false });
-      await moduleLoader.loadScript("./workspaces/workspace-controller.js?v=20260924-tool-groups", { async: false });
+      await moduleLoader.loadScript("./workspaces/workspace-controller.js?v=20260926-editor-visibility-17", { async: false });
       await moduleLoader.loadScript("./import/import-router.js", { async: false });
       await moduleLoader.loadScript("./pattern-rebuild/rebuild-engine.js", { async: false });
       await moduleLoader.loadScript("./pattern-rebuild/legend-schema.js", { async: false });
@@ -14276,6 +14303,10 @@
         } else {
           state.beads.editTool = nextTool;
         }
+        if (nextTool === "guide" && !state.beads.guideVisible) {
+          state.beads.guideVisible = true;
+          markUnsavedChanges();
+        }
         syncBeadControls();
         render();
       });
@@ -14306,6 +14337,13 @@
       els.guideOpacityRange.addEventListener("input", () => {
         state.beads.guideOpacity = clamp(els.guideOpacityRange.value, 10, 100);
         syncBeadControls();
+        render();
+      });
+    }
+    if (els.guideVisibleToggle) {
+      els.guideVisibleToggle.addEventListener("change", () => {
+        state.beads.guideVisible = els.guideVisibleToggle.checked;
+        markUnsavedChanges();
         render();
       });
     }
@@ -14526,6 +14564,11 @@
       addLayer();
       setMessage("已新建图层。", false);
     });
+    const layerCard = document.querySelector(".layer-card");
+    if (layerCard) {
+      layerCard.open = localStorage.getItem("q-pixel-layer-card-open") !== "0";
+      layerCard.addEventListener("toggle", () => localStorage.setItem("q-pixel-layer-card-open", layerCard.open ? "1" : "0"));
+    }
 
     if (els.brushSizeRange) {
       els.brushSizeRange.addEventListener("input", () => {
@@ -15637,6 +15680,7 @@
           return state.beads.pattern;
         },
         getSettings: () => state.beads.finish3d,
+        getCanvasSize: () => state.beads.pattern ? { width: state.beads.pattern.width, height: state.beads.pattern.height } : null,
         getBackground: () => ({
           type: els.materialBackgroundSelect?.value || "felt",
           color: els.styleBackgroundColorInput?.value || "#f4f0e8",
@@ -15678,13 +15722,21 @@
         },
         fitFlatPreview: () => updatePreviewZoom("style", "fit"),
         colorOf: (code) => getPaletteColor(code).hex,
-        getGuides: () => state.beads.guideLines || [],
+        getGuides: () => state.beads.guideVisible ? state.beads.guideLines || [] : [],
+        getGuidesVisible: () => state.beads.guideVisible !== false,
+        setGuidesVisible: (visible) => {
+          state.beads.guideVisible = Boolean(visible);
+          if (els.guideVisibleToggle) els.guideVisibleToggle.checked = state.beads.guideVisible;
+          markUnsavedChanges();
+          render();
+        },
         getSelection: () => state.beads.selectedCells || [],
         getTool: () => state.beads.editTool,
+        getToolCursor: () => cursorForEditTool(state.beads.editTool),
         setTool: (tool) => document.querySelector(`.canvas-tool-rail .tool-button[data-tool="${tool}"]`)?.click(),
         onEdit: forward3dEdit,
         onHistory: (action) => action === "undo" ? undoEdit() : redoEdit(),
-        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js?v=20260926-board-depth-16"),
+        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js?v=20260926-editor-visibility-17"),
         onSettings: (settings) => { state.beads.finish3d = settings; markUnsavedChanges(); },
         onExport: (blob) => saveBlobFile(blob, `Q像素-成品3D-${formatStamp(new Date())}.png`, "image/png", "3D 成品预览已导出。")
       });

@@ -12,7 +12,7 @@
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.svg">
   <link rel="stylesheet" href="./styles.css">
-  <link rel="stylesheet" href="./studio/studio.css?v=20260926-board-depth-16">
+  <link rel="stylesheet" href="./studio/studio.css?v=20260926-editor-visibility-17">
 </head>
 <body>
   <main class="app-shell is-home">
@@ -96,7 +96,7 @@
         <span class="save-status" id="saveStatus">已保存</span>
         <button class="text-button secondary" id="unifiedPreviewButton" type="button">预览</button>
         <button class="text-button" id="exportTopButton" type="button">导出</button>
-        <details class="top-action-menu"><summary class="text-button secondary" aria-label="更多工具">更多</summary><div><button class="text-button secondary" id="removeBackgroundButton" type="button">去背景</button><button class="text-button secondary" id="aiGenerateTopButton" type="button">AI 灵感</button><button type="button" id="openCurrentHistoryButton">版本与恢复</button><label class="autosave-menu-label" for="autoDraftIntervalSelect">自动保存草稿<select id="autoDraftIntervalSelect" aria-label="自动保存草稿间隔"><option value="0">关闭</option><option value="15000">15 秒</option><option value="30000">30 秒</option><option value="60000">1 分钟</option><option value="180000" selected>3 分钟</option><option value="300000">5 分钟</option></select></label></div></details>
+        <details class="top-action-menu"><summary class="text-button secondary" aria-label="更多工具">更多</summary><div><button class="text-button secondary" id="aiGenerateTopButton" type="button">AI 灵感</button><button type="button" id="openCurrentHistoryButton">版本与恢复</button><label class="autosave-menu-label" for="autoDraftIntervalSelect">自动保存草稿<select id="autoDraftIntervalSelect" aria-label="自动保存草稿间隔"><option value="0">关闭</option><option value="15000">15 秒</option><option value="30000">30 秒</option><option value="60000">1 分钟</option><option value="180000" selected>3 分钟</option><option value="300000">5 分钟</option></select></label></div></details>
       </div>
       <button class="chrome-toggle topbar-collapse-button" id="topbarCollapseButton" type="button" title="收起顶部栏" aria-label="收起顶部栏">⌃</button>
     </header>
@@ -143,6 +143,7 @@
             <div class="recent-color-stack" id="recentColorStack" title="近期色号"></div>
             <button class="tool-button with-badge" id="toolEraserButton" type="button" data-tool="eraser" title="橡皮擦" data-icon="⌫">橡皮<span class="tool-badge" id="eraserBadge">1</span></button>
             <button class="tool-button" id="toolRectClearButton" type="button" data-tool="rect-clear" title="连通区域删除" data-icon="▨">区删</button>
+            <button class="tool-button" id="removeBackgroundButton" type="button" title="选择并去除背景像素" data-icon="▧">去背景</button>
             <button class="tool-button" id="toolRecolorButton" type="button" data-tool="recolor" title="一键替换配色" data-icon="⇄">配色</button>
             <button class="tool-button" id="toolGuideButton" type="button" data-tool="guide" title="添加辅助线" data-icon="╋">辅助线</button>
           </div>
@@ -214,6 +215,7 @@
             </div>
             <div class="option-block tool-option" data-option="guide">
               <label>辅助线</label>
+              <label class="guide-visible-row"><input id="guideVisibleToggle" type="checkbox" checked>显示辅助线（关闭仅隐藏）</label>
               <div class="mini-segmented">
                 <button id="guideVerticalButton" type="button" data-guide-orientation="vertical" class="active">纵向</button>
                 <button id="guideHorizontalButton" type="button" data-guide-orientation="horizontal">横向</button>
@@ -569,13 +571,11 @@
             </div>
           </div>
 
-          <div class="panel-card layer-card" data-studio-stages="design">
-            <div class="panel-section panel-headline">
-              <h2>图层</h2>
-              <button class="icon-plus" id="layerPanelToggle" type="button" title="新建图层">+</button>
-            </div>
+          <details class="panel-card layer-card" data-studio-stages="design" open>
+            <summary class="panel-section panel-headline"><h2>图层 <span id="layerCount" class="layer-count"></span></h2><span class="layer-collapse-hint">点击收起 / 展开</span></summary>
             <div class="right-layer-panel" id="rightLayerPanel">
               <div class="layer-actions">
+                <button id="layerPanelToggle" type="button">＋ 新建图层</button>
                 <button id="layerMergeButton" type="button">合并</button>
                 <button id="layerGroupButton" type="button">分组</button>
                 <button id="layerImportButton" type="button">导入图层</button>
@@ -586,7 +586,7 @@
               <div id="layerList" class="layer-list"></div>
               <input id="layerImportInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,.qpx,application/json" hidden>
             </div>
-          </div>
+          </details>
 
           <div class="panel-card canvas-edit-card" data-studio-stages="design">
             <div class="panel-section compact">
@@ -1544,11 +1544,11 @@
   <script src="./studio/background-tool.js"></script>
   <script src="./studio/surface-engine.js"></script>
   <script src="./studio/scene-catalog.js"></script>
-  <script src="./3d/finish-core.js?v=20260926-board-depth-16"></script>
+  <script src="./3d/finish-core.js?v=20260926-editor-visibility-17"></script>
   <script src="./3d/webgl-support.js"></script>
-  <script src="./3d/finish-workbench.js?v=20260926-board-depth-16"></script>
+  <script src="./3d/finish-workbench.js?v=20260926-editor-visibility-17"></script>
   <script src="./import-engine.js"></script>
   <script src="./import-processing.js"></script>
-  <script src="./app.js?v=20260926-board-depth-16"></script>
+  <script src="./app.js?v=20260926-editor-visibility-17"></script>
 </body>
 </html>

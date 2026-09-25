@@ -27,7 +27,8 @@
       'clear-layer': '<path d="M4 7h16M9 7V4h6v3m-9 0 1 13h10l1-13"/><path d="m10 11 4 5m0-5-4 5"/>',
       pan: '<path d="M12 3v18M3 12h18m-9-9-3 3m3-3 3 3m-3 15-3-3m3 3 3-3M3 12l3-3m-3 3 3 3m15-3-3-3m3 3-3 3"/>',
       recolor: '<path d="M5 7h14m-3-3 3 3-3 3M19 17H5m3-3-3 3 3 3"/><circle cx="12" cy="12" r="2"/>',
-      guide: '<path d="M12 2v20M2 12h20" stroke-dasharray="3 2"/><circle cx="12" cy="12" r="3" fill="currentColor"/>'
+      guide: '<path d="M12 2v20M2 12h20" stroke-dasharray="3 2"/><circle cx="12" cy="12" r="3" fill="currentColor"/>',
+      'remove-background': '<path d="M4 4h16v16H4z" stroke-dasharray="3 2"/><path d="m8 15 3-4 3 2 3-4"/><path d="M8 19h9"/>'
     };
 
     function setStage(stage) {
@@ -63,7 +64,7 @@
       Array.from(secondary.querySelectorAll(".tool-button")).forEach((button) => primary.appendChild(button));
       const groups = [
         { id: "draw", label: "绘制", tools: ["brush", "picker", "eraser", "bucket", "palette"] },
-        { id: "area", label: "区域", tools: ["select", "rect-fill", "rect-clear", "shape", "outline", "clear-layer"] },
+        { id: "area", label: "区域", tools: ["select", "rect-fill", "rect-clear", "remove-background", "shape", "outline", "clear-layer"] },
         { id: "assist", label: "辅助", tools: ["pan", "recolor", "guide"] }
       ];
       const activeTool = primary.querySelector(".tool-button.active");
@@ -79,7 +80,9 @@
         summary.setAttribute("aria-label", `${group.label}工具`);
         details.appendChild(summary);
         group.tools.forEach((tool) => {
-          const button = primary.querySelector(`.tool-button[data-tool="${tool}"]`);
+          const button = tool === "remove-background"
+            ? documentRef.getElementById("removeBackgroundButton")
+            : primary.querySelector(`.tool-button[data-tool="${tool}"]`);
           if (!button) return;
           const icon = documentRef.createElementNS("http://www.w3.org/2000/svg", "svg");
           icon.setAttribute("viewBox", "0 0 24 24");

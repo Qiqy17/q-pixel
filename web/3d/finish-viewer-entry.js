@@ -488,6 +488,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   };
   let activePointer = null, longPressTimer = 0, highlightedCode = null;
   let interactionMode = "view";
+  let editCursor = "crosshair";
   function clearPress() {
     clearTimeout(longPressTimer);
     activePointer = null;
@@ -560,7 +561,11 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
     interactionMode = next;
     controls.enabled = next === "view";
     if (!controls.enabled) controls.update();
-    canvas.style.cursor = next === "edit" ? "crosshair" : "grab";
+    canvas.style.cursor = next === "edit" ? editCursor : "grab";
+  }
+  function setEditCursor(cursor) {
+    editCursor = typeof cursor === "string" && cursor ? cursor : "crosshair";
+    if (interactionMode === "edit") canvas.style.cursor = editCursor;
   }
   canvas.addEventListener("pointerdown", pointerDown);
   canvas.addEventListener("pointermove", pointerMove);
@@ -957,7 +962,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   setBoardBackground(settings);
   view(settings.side);
   onStatus(`${count.toLocaleString()} 颗 · ${currentQuality} 精度 · ${memory.suggestLowDetail ? "弱设备模式 · " : ""}未实物标定参考模型`);
-  return { setProfile, setTuning, setOverlay, setInteractionMode, moveCamera, updatePattern, snapshot, setExposure, setLighting, setLightEffect, setBackground, setBoardBackground, view, exportPng, cancelExport, dispose, draw, getQuality: () => currentQuality };
+  return { setProfile, setTuning, setOverlay, setInteractionMode, setEditCursor, moveCamera, updatePattern, snapshot, setExposure, setLighting, setLightEffect, setBackground, setBoardBackground, view, exportPng, cancelExport, dispose, draw, getQuality: () => currentQuality };
 }
 
 export { create };

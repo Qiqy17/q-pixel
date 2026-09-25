@@ -13,6 +13,7 @@
     '<div class="finish-body">',
     '  <main class="finish-stage"><canvas data-role="scene-background" aria-hidden="true"></canvas><canvas data-role="canvas" aria-label="3D 成品画布"></canvas><canvas data-role="overlay" aria-hidden="true"></canvas>',
     '    <div class="finish-stage-toolbar" role="group" aria-label="3D 画布操作"><button type="button" data-action="mode-view" aria-pressed="true">观察视角</button><button type="button" data-action="mode-edit" aria-pressed="false">编辑图纸</button><button type="button" data-action="reset-view">重置视角</button><div class="finish-stage-tools" data-role="quick-tools" hidden><button type="button" data-tool="brush">画笔</button><button type="button" data-tool="eraser">橡皮</button><button type="button" data-tool="picker">取色</button></div><span data-role="mode-hint">拖动旋转 · 滚轮或双指缩放</span></div>',
+    '    <div class="finish-edit-display" data-role="edit-display" hidden><strong data-role="canvas-size">画布尺寸</strong><span data-role="active-tool">当前工具：画笔</span><label><input data-role="quick-show-codes" type="checkbox">色号</label><label><input data-role="quick-show-grid" type="checkbox">网格</label><label><input data-role="quick-show-guides" type="checkbox">辅助线</label></div>',
     '    <div class="finish-editor-rails" data-role="editor-rails" hidden><div data-role="rail-main"></div><div data-role="rail-extra"></div></div>',
     '    <span class="finish-watermark" data-role="watermark">参考模拟 · 未实物标定</span>',
     '    <div class="finish-compare" data-role="compare" hidden><img alt="保存的对比视角"><button type="button" data-action="hide-compare">关闭对比</button></div></main>',
@@ -23,7 +24,7 @@
     '    <details class="finish-control-group" data-role="tool-settings"><summary>工具参数与色板</summary><div data-role="tool-options"></div></details>',
     '    <details class="finish-control-group" data-role="layer-group"><summary>图层</summary><div data-role="layers"></div></details>',
     '    <details class="finish-control-group" open><summary>熨烫质感</summary><label>纹理粗糙程度 <output data-value="textureRoughness"></output><input data-tuning="textureRoughness" type="range" min="0" max="100"></label><label>纹理透明度 <output data-value="textureOpacity"></output><input data-tuning="textureOpacity" type="range" min="0" max="100"></label><label>融边程度 <output data-value="meltEdge"></output><input data-tuning="meltEdge" type="range" min="0" max="100"></label><button type="button" data-action="reset-tuning">恢复当前烫法默认</button></details>',
-    '    <details class="finish-control-group"><summary>图纸与标记</summary><label><input data-role="show-codes" type="checkbox">显示色号</label><label><input data-role="show-grid" type="checkbox">显示网格</label><label>色号透明度 <output data-value="codeOpacity"></output><input data-role="code-opacity" type="range" min="0" max="100"></label><label>色号大小 <output data-value="codeSize"></output><input data-role="code-size" type="range" min="0" max="100"></label><p>缩放过小时会暂时隐藏细字与网格，放大后恢复。</p></details>',
+    '    <details class="finish-control-group"><summary>图纸与标记</summary><label><input data-role="show-codes" type="checkbox">显示色号</label><label><input data-role="show-grid" type="checkbox">显示网格</label><label><input data-role="show-guides" type="checkbox">显示辅助线</label><label>色号透明度 <output data-value="codeOpacity"></output><input data-role="code-opacity" type="range" min="0" max="100"></label><label>色号大小 <output data-value="codeSize"></output><input data-role="code-size" type="range" min="0" max="100"></label><p>缩放过小时会暂时隐藏细字与网格，放大后恢复。隐藏辅助线不会删除它们。</p></details>',
     '    <label>曝光<input data-role="exposure" type="range" min="50" max="180" value="100"></label>',
     '    <label>观察光照强度<input data-role="light-intensity" type="range" min="50" max="160" value="100"></label>',
     '    <label>观察光色<select data-role="light-temperature"><option value="neutral">中性对照光</option><option value="warm">暖光</option><option value="cool">冷光</option></select></label>',
@@ -84,6 +85,7 @@
       interactionMode = mode === "edit" ? "edit" : "view";
       if (interactionMode === "edit" && options.setTool && (!chosenToolIn3d || (options.getTool && options.getTool() === "pan"))) options.setTool("brush");
       if (viewer) viewer.setInteractionMode(interactionMode);
+      if (viewer && interactionMode === "edit") viewer.setEditCursor(options.getToolCursor?.());
       dialog.querySelectorAll('[data-action^="mode-"]').forEach((button) => {
         button.setAttribute("aria-pressed", String(button.dataset.action === `mode-${interactionMode}`));
       });
@@ -92,6 +94,7 @@
         : "单击落笔 · 拖动连续绘制";
       dialog.querySelector('[data-role="quick-tools"]').hidden = interactionMode !== "edit";
       dialog.querySelector('[data-role="editor-rails"]').hidden = interactionMode !== "edit";
+      dialog.querySelector('[data-role="edit-display"]').hidden = interactionMode !== "edit";
       if (interactionMode === "edit") dialog.querySelector('[data-role="preset-group"]').open = false;
       dialog.querySelector('[data-role="picked"]').textContent = interactionMode === "view"
         ? "观察中 · 切换编辑后可落笔"
@@ -99,7 +102,6 @@
       if (interactionMode === "edit") {
         dialog.querySelector('[data-role="edit-group"]').open = true;
         dialog.querySelector('[data-role="tool-settings"]').open = true;
-        dialog.querySelector('[data-role="layer-group"]').open = true;
       } else {
         dialog.querySelector('[data-role="edit-group"]').open = false;
         dialog.querySelector('[data-role="tool-settings"]').open = false;
@@ -171,6 +173,15 @@
       }
       dialog.querySelector('[data-role="show-codes"]').checked = settings.showCodes;
       dialog.querySelector('[data-role="show-grid"]').checked = settings.showGrid;
+      dialog.querySelector('[data-role="show-guides"]').checked = options.getGuidesVisible?.() !== false;
+      dialog.querySelector('[data-role="quick-show-codes"]').checked = settings.showCodes;
+      dialog.querySelector('[data-role="quick-show-grid"]').checked = settings.showGrid;
+      dialog.querySelector('[data-role="quick-show-guides"]').checked = options.getGuidesVisible?.() !== false;
+      const current = options.getCanvasSize?.();
+      dialog.querySelector('[data-role="canvas-size"]').textContent = current ? `画布 ${current.width} × ${current.height} 格` : "画布尺寸";
+      const toolButton = doc.querySelector(`#dropZone .tool-button[data-tool="${options.getTool?.()}"]`) || dialog.querySelector(`.tool-button[data-tool="${options.getTool?.()}"]`);
+      dialog.querySelector('[data-role="active-tool"]').textContent = `当前工具：${toolButton?.title || options.getTool?.() || "画笔"}`;
+      if (viewer && interactionMode === "edit") viewer.setEditCursor(options.getToolCursor?.());
       for (const [name, role] of [["codeOpacity", "code-opacity"], ["codeSize", "code-size"]]) {
         dialog.querySelector(`[data-role="${role}"]`).value = settings[name];
         dialog.querySelector(`[data-value="${name}"]`).textContent = `${settings[name]}%`;
@@ -304,6 +315,7 @@
           onStatus: (text) => { status.textContent = text; }
         });
         viewer.setInteractionMode("view");
+        viewer.setEditCursor(options.getToolCursor?.());
         viewer.setBackground("transparent");
         viewer.setBoardBackground(settings);
         syncLightEffect();
@@ -354,6 +366,20 @@
         syncControls(); saveSettings();
       });
     });
+    for (const [role, key] of [["quick-show-codes", "showCodes"], ["quick-show-grid", "showGrid"]]) {
+      dialog.querySelector(`[data-role="${role}"]`).addEventListener("change", (event) => {
+        settings[key] = event.target.checked;
+        viewer?.setOverlay(settings);
+        syncControls(); saveSettings();
+      });
+    }
+    for (const role of ["show-guides", "quick-show-guides"]) {
+      dialog.querySelector(`[data-role="${role}"]`).addEventListener("change", (event) => {
+        options.setGuidesVisible?.(event.target.checked);
+        viewer?.draw();
+        syncControls();
+      });
+    }
     function chooseTool(event) {
       const button = event.target.closest('[data-tool]');
       if (!button || !options.setTool) return;
