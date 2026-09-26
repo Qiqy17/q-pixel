@@ -1,4 +1,5 @@
-const CACHE_NAME = "q-pixel-v20260926-continuous-preview-27";
+importScripts("./studio/scene-material-library.js");
+const CACHE_NAME = "q-pixel-v20260927-editor-materials-28";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -15,17 +16,19 @@ const APP_SHELL = [
   "./make/board-planner.js",
   "./make/build-navigation.js",
   "./studio/studio.css",
-  "./studio/studio.css?v=20260926-continuous-preview-27",
+  "./studio/studio.css?v=20260927-editor-materials-28",
   "./studio/background-engine.js",
   "./studio/background-tool.js",
   "./studio/surface-engine.js",
   "./studio/scene-catalog.js",
+  "./studio/scene-material-library.js",
   "./assets/materials/rough_linen_diff_1k.jpg",
   "./assets/materials/synthetic_wood_diff_4k.jpg",
   "./assets/materials/white_plaster_02_diff_1k.jpg",
   "./assets/materials/dark_rock_diff_1k.jpg",
   "./assets/materials/marble_01_diff_4k.jpg",
   "./assets/materials/concrete_diff_4k.jpg",
+  ...self.QPixelMaterialLibrary.items.map((item) => item.file),
   "./3d/finish-core.js",
   "./3d/finish-core.js?v=20260926-editor-visibility-17",
   "./3d/calibration-manifest.json",
@@ -47,7 +50,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20260926-continuous-preview-27",
+  "./app.js?v=20260927-editor-materials-28",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"

@@ -229,3 +229,48 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .professional-workspace .canvas-tool-rail:not(.rail-b) { width:94px; }
   .professional-workspace .canvas-tool-options { left:116px; width:min(220px,calc(100vw - 132px)); }
 }
+
+/* Editor chrome uses reserved lanes so an old dragged position cannot cover colors. */
+.professional-workspace #dropZone > .canvas-tool-rail:not(.rail-b) { left:12px; top:12px; right:auto; bottom:auto; transform:none; }
+.professional-workspace #dropZone > .canvas-tool-rail:not(.rail-b) .rail-grip,
+.professional-workspace #dropZone > .color-strip .strip-grip { display:none; }
+.professional-workspace #dropZone > .color-strip { left:134px; right:12px; top:auto; bottom:12px; transform:none; grid-template-columns:74px minmax(0,1fr); min-width:0; }
+.professional-workspace #dropZone > .color-strip.collapsed { right:auto; grid-template-columns:74px; }
+.professional-workspace #dropZone > .color-strip .strip-content { min-width:0; }
+.professional-workspace .preview-toolbar .meta #renderHint { color:#648077; }
+
+/* Two compact rows at desktop/tablet widths; keep controls readable in the side panel. */
+@media (min-width:981px) and (max-width:1250px) {
+  .professional-workspace .topbar { min-height:0; grid-template-columns:minmax(230px,1fr) auto; grid-template-rows:auto auto; gap:7px 14px; padding:10px 56px 10px 16px; }
+  .professional-workspace .topbar .brand { grid-column:1; grid-row:1; }
+  .professional-workspace .topbar .mode-tabs { grid-column:2; grid-row:1; justify-self:end; }
+  .professional-workspace .topbar .workflow-stagebar { grid-column:1; grid-row:2; justify-self:start; align-self:center; }
+  .professional-workspace .topbar .top-actions { grid-column:2; grid-row:2; justify-self:end; align-self:center; flex-wrap:nowrap; min-width:0; gap:5px; }
+  .professional-workspace .topbar .top-actions > button,
+  .professional-workspace .topbar .top-action-menu > summary { padding-inline:9px; }
+}
+@media (min-width:768px) and (max-width:980px) {
+  .professional-workspace .topbar { min-height:0; grid-template-columns:minmax(0,1fr) auto; grid-template-rows:auto auto; gap:7px 12px; padding:9px 52px 9px 14px; }
+  .professional-workspace .topbar .brand { grid-column:1; grid-row:1; }
+  .professional-workspace .topbar .mode-tabs { display:none; }
+  .professional-workspace .topbar .workflow-stagebar { grid-column:2; grid-row:1; justify-self:end; }
+  .professional-workspace .topbar .top-actions { grid-column:1/-1; grid-row:2; justify-self:stretch; flex-wrap:nowrap; overflow-x:auto; }
+}
+@media (max-width:767px) {
+  .professional-workspace #dropZone > .canvas-tool-rail:not(.rail-b) { width:110px; }
+  .professional-workspace .canvas-tool-options { left:134px; width:min(220px,calc(100vw - 150px)); }
+  .professional-workspace #dropZone > .color-strip { left:134px; right:8px; }
+  .professional-workspace #dropZone > .color-strip.collapsed { right:auto; }
+  .professional-workspace .topbar .save-status { order:0; width:auto; }
+}
+.professional-workspace .build-navigation-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.professional-workspace .build-navigation-actions #buildLocateNextButton { grid-column:1/-1; grid-row:1; }
+.professional-workspace .build-navigation-actions button { min-width:0; white-space:normal; line-height:1.25; padding:8px 5px; }
+.professional-workspace .build-current-color { grid-template-columns:24px auto minmax(0,1fr); }
+.professional-workspace .build-current-color em { min-width:0; overflow-wrap:anywhere; }
+.professional-workspace .control-panel button,
+.professional-workspace .material-picker button { min-width:0; overflow-wrap:anywhere; }
+.professional-workspace .control-panel select { min-width:0; max-width:100%; }
+.professional-workspace .compact-select-row { grid-template-columns:max-content minmax(0,1fr); }
+.professional-workspace .material-picker-chips { flex-wrap:nowrap; overflow-x:auto; overscroll-behavior-x:contain; scrollbar-width:thin; padding-bottom:5px; }
+.professional-workspace .material-picker-chip { flex:none; white-space:nowrap; }

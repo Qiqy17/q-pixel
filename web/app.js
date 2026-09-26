@@ -222,6 +222,16 @@
     }
   ];
 
+  if (sceneCatalog?.materials?.length) {
+    [...new Set(sceneCatalog.materials.map((item) => item.group))].forEach((label) => {
+      styleBackgroundMaterialGroups.push({
+        label,
+        items: sceneCatalog.materials.filter((item) => item.group === label).map((item) => ({
+          value: item.id, label: item.label, texture: item.texture, colors: item.colors
+        }))
+      });
+    });
+  }
   const styleBackgroundMaterials = styleBackgroundMaterialGroups.flatMap((group) =>
     group.items.map((item) => Object.assign({ group: group.label }, item))
   );
@@ -806,18 +816,18 @@
   const toolCursorCache = new Map();
   function cursorForEditTool(tool) {
     if (tool === "pan") return "grab";
-    if (tool === "inspect") return "help";
-    const button = els.toolButtons?.find((item) => item.dataset.tool === tool);
-    const icon = button?.querySelector(".tool-svg-icon");
-    const cacheKey = `${tool}:${icon?.innerHTML || ""}`;
-    if (toolCursorCache.has(cacheKey)) return toolCursorCache.get(cacheKey);
-    const fallback = ({ brush: "✎", eraser: "⌫", picker: "⌕", bucket: "◩", select: "□", guide: "╋" })[tool] || "✎";
-    const drawing = icon
-      ? `<g fill="none" stroke="#176d61" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${icon.innerHTML.replace(/currentColor/g, "#176d61")}</g>`
-      : `<text x="12" y="18" text-anchor="middle" font-size="17" fill="#176d61">${fallback}</text>`;
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><rect x="1" y="1" width="25" height="25" rx="6" fill="#fffefa" stroke="#176d61"/><g transform="translate(2 2)">${drawing}</g></svg>`;
-    const cursor = `url("data:image/svg+xml,${encodeURIComponent(svg)}") 2 2, crosshair`;
-    toolCursorCache.set(cacheKey, cursor);
+    const drawings = {
+      brush: '<path d="M4 13 13 4l3 3-9 9-4 1zM11 6l3 3"/>',
+      eraser: '<path d="m4 12 8-8 5 5-8 8H6zM8 15h8"/>',
+      bucket: '<path d="m5 7 5-5 7 7-5 5zM4 17h12M16 13c1 1 2 2 2 3a2 2 0 0 1-4 0c0-1 1-2 2-3z"/>',
+      picker: '<path d="m12 4 4 4M14 3l3 3-9 9-4 1 1-4zM4 17h8"/>'
+    };
+    if (!drawings[tool]) return tool === "inspect" ? "help" : "crosshair";
+    if (toolCursorCache.has(tool)) return toolCursorCache.get(tool);
+    // The hotspot is an empty corner; the thin glyph sits away from the edited pixel.
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20"><g fill="none" stroke="#176d61" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${drawings[tool]}</g></svg>`;
+    const cursor = `url("data:image/svg+xml,${encodeURIComponent(svg)}") 1 19, crosshair`;
+    toolCursorCache.set(tool, cursor);
     return cursor;
   }
 
@@ -1003,7 +1013,7 @@
     if (!els.renderHint) return;
     if (state.mode === "beads") {
       const total = state.beads.pattern ? countPatternCells(state.beads.pattern) : 0;
-      els.renderHint.textContent = `${state.beads.width} x ${state.beads.height} 格 · ${total} 颗`;
+      els.renderHint.textContent = `${total} 颗`;
     } else {
       const pattern = state.beads.pattern;
       els.renderHint.textContent = pattern && state.beads.sourceLabel === "像素画结果"
@@ -10607,7 +10617,7 @@
     const material = getStyleBackgroundMaterial(type);
     const bitmapMaterial = ensureStyleMaterialBitmap(type);
     if (bitmapMaterial && bitmapMaterial.image && bitmapMaterial.image.complete && bitmapMaterial.image.naturalWidth > 0) {
-      drawBitmapStyleBackground(ctx, width, height, bitmapMaterial, color, alpha);
+      drawBitmapStyleBackground(ctx, width, height, bitmapMaterial, color, alpha, material?.texture);
       ctx.restore();
       return;
     }
@@ -10730,7 +10740,11 @@
     const source = styleMaterialBitmapSources[type];
     if (!source) return null;
     const cached = state.beads.styleMaterialImages.get(type);
-    if (cached) return cached;
+    if (cached) {
+      state.beads.styleMaterialImages.delete(type);
+      state.beads.styleMaterialImages.set(type, cached);
+      return cached;
+    }
     const image = new Image();
     const pending = { image, loading: true, relief: null };
     state.beads.styleMaterialImages.set(type, pending);
@@ -10738,6 +10752,11 @@
       pending.loading = false;
       state.beads.styleMaterialFallbacks.delete(type);
       pending.relief = buildMaterialReliefMap(image);
+      while (state.beads.styleMaterialImages.size > 8) {
+        const oldest = state.beads.styleMaterialImages.keys().next().value;
+        if (oldest === type) break;
+        state.beads.styleMaterialImages.delete(oldest);
+      }
       if (els.materialBackgroundSelect && els.materialBackgroundSelect.value === type) drawMaterialPreview();
     };
     image.onerror = () => {
@@ -10792,13 +10811,16 @@
     return source;
   }
 
-  function drawBitmapStyleBackground(ctx, width, height, asset, color, alpha) {
+  function drawBitmapStyleBackground(ctx, width, height, asset, color, alpha, materialType) {
     const profile = {
       concrete: { roughness: 0.88, specular: 0.08, relief: 0.66 },
       marble: { roughness: 0.32, specular: 0.52, relief: 0.5 },
       wood: { roughness: 0.58, specular: 0.24, relief: 0.56 },
-      fabric: { roughness: 0.94, specular: 0.08, relief: 0.82 }
-    }[asset.image.src.includes("concrete") ? "concrete" : asset.image.src.includes("marble") ? "marble" : asset.image.src.includes("wood") ? "wood" : "fabric"];
+      fabric: { roughness: 0.94, specular: 0.08, relief: 0.82 },
+      stone: { roughness: 0.72, specular: 0.18, relief: 0.72 },
+      metal: { roughness: 0.38, specular: 0.58, relief: 0.46 },
+      paper: { roughness: 0.91, specular: 0.05, relief: 0.7 }
+    }[materialType] || { roughness: 0.85, specular: 0.1, relief: 0.68 };
     ctx.save();
     ctx.globalAlpha = alpha;
     drawCoverImage(ctx, asset.image, 0, 0, width, height);
@@ -13352,6 +13374,13 @@
 
   function makeFloatingPanelDraggable(panel, handle, options) {
     if (!panel || !handle || !els.dropZone) return;
+    // The primary rail and color strip have reserved positions in the editor.
+    // Clear old dragged coordinates so a previous session cannot make them overlap.
+    if (panel.id === "colorStrip" || (panel.classList.contains("canvas-tool-rail") && !panel.classList.contains("rail-b"))) {
+      if (options?.persistKey) localStorage.removeItem(options.persistKey);
+      ["left", "top", "right", "bottom", "transform"].forEach((property) => panel.style.removeProperty(property));
+      return;
+    }
     let drag = null;
     const clampPosition = (left, top) => {
       const zone = els.dropZone.getBoundingClientRect();

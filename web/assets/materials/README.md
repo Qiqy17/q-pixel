@@ -1,5 +1,7 @@
 # QPixel Material Sources
 
+The `polyhaven/` directory contains 64 distinct 1K diffuse JPEG textures for the offline background picker. `polyhaven/manifest.json` records each source asset page, Chinese label, category, file size, license, and SHA256. `scripts/fetch_polyhaven_materials.py` reproduces the catalog from Poly Haven's public file API and validates each downloaded JPEG against the API MD5. Existing projects continue to use their original material IDs.
+
 These bitmap material references are from Poly Haven and are used as diffuse base maps for the style preview and export pipeline. They are combined with local relief, roughness, highlight, and edge-light processing in QPixel.
 
 - `concrete_diff_4k.jpg`: https://polyhaven.com/a/concrete

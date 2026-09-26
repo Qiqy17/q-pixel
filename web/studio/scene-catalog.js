@@ -1,14 +1,19 @@
 (function (root, factory) {
-  const catalog = factory();
+  const library = root?.QPixelMaterialLibrary || (typeof module === "object" && module.exports ? require("./scene-material-library.js") : null);
+  const catalog = factory(library);
   if (typeof module === "object" && module.exports) module.exports = catalog;
   if (root) root.QPixelSceneCatalog = catalog;
-})(typeof window !== "undefined" ? window : globalThis, function () {
+})(typeof window !== "undefined" ? window : globalThis, function (library) {
   "use strict";
+  const materials = Object.freeze(library?.items || []);
   const groups = Object.freeze([
     { label: "纸张手作", ids: ["paper-cotton", "kraft", "grid-paper"] },
     { label: "织物", ids: ["rough-linen", "fabric-felt", "fabric-soft"] },
     { label: "木石桌面", ids: ["wood", "white-plaster", "slate-board", "marble"] },
-    { label: "摄影棚", ids: ["concrete-studio", "dark-studio"] }
+    { label: "摄影棚", ids: ["concrete-studio", "dark-studio"] },
+    ...[...new Set(materials.map((item) => item.group))].map((label) => ({
+      label, ids: materials.filter((item) => item.group === label).map((item) => item.id)
+    }))
   ]);
   const layouts = Object.freeze([
     { id: "center", label: "干净居中" },
@@ -22,7 +27,8 @@
     "white-plaster": "./assets/materials/white_plaster_02_diff_1k.jpg",
     "slate-board": "./assets/materials/dark_rock_diff_1k.jpg",
     marble: "./assets/materials/marble_01_diff_4k.jpg",
-    "concrete-studio": "./assets/materials/concrete_diff_4k.jpg"
+    "concrete-studio": "./assets/materials/concrete_diff_4k.jpg",
+    ...Object.fromEntries(materials.map((item) => [item.id, item.file]))
   });
   const metadata = Object.freeze({
     "paper-cotton": { kind: "procedural", scaleHint: "fine", use: "浅色图案", light: "soft" },
@@ -36,7 +42,11 @@
     "slate-board": { kind: "bitmap", scaleHint: "medium", use: "浅色图案", light: "left", source: "https://polyhaven.com/a/dark_rock", license: "CC0" },
     marble: { kind: "bitmap", scaleHint: "broad", use: "深色图案", light: "soft", source: "https://polyhaven.com/a/marble_01", license: "CC0" },
     "concrete-studio": { kind: "bitmap", scaleHint: "medium", use: "色彩检查", light: "front", source: "https://polyhaven.com/a/concrete", license: "CC0" },
-    "dark-studio": { kind: "procedural", scaleHint: "medium", use: "浅色及透明豆", light: "front" }
+    "dark-studio": { kind: "procedural", scaleHint: "medium", use: "浅色及透明豆", light: "front" },
+    ...Object.fromEntries(materials.map((item) => [item.id, {
+      kind: "bitmap", scaleHint: "medium", use: "展示背景", light: "soft",
+      source: item.source, license: item.license, sha256: item.sha256
+    }]))
   });
-  return Object.freeze({ groups, layouts, metadata, bitmaps });
+  return Object.freeze({ groups, layouts, metadata, bitmaps, materials });
 });
