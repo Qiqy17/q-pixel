@@ -1,4 +1,4 @@
-const CACHE_NAME = "q-pixel-v20260926-editor-visibility-17";
+const CACHE_NAME = "q-pixel-v20260926-continuous-preview-27";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -15,7 +15,7 @@ const APP_SHELL = [
   "./make/board-planner.js",
   "./make/build-navigation.js",
   "./studio/studio.css",
-  "./studio/studio.css?v=20260926-editor-visibility-17",
+  "./studio/studio.css?v=20260926-continuous-preview-27",
   "./studio/background-engine.js",
   "./studio/background-tool.js",
   "./studio/surface-engine.js",
@@ -31,7 +31,7 @@ const APP_SHELL = [
   "./3d/calibration-manifest.json",
   "./3d/webgl-support.js",
   "./3d/finish-workbench.js",
-  "./3d/finish-workbench.js?v=20260926-editor-visibility-17",
+  "./3d/finish-workbench.js?v=20260926-continuous-preview-27",
   "./generated/finish-viewer.bundle.js",
   "./generated/finish-viewer.bundle.js?v=20260926-editor-visibility-17",
   "./workspaces/quality-checks.js",
@@ -47,7 +47,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20260926-editor-visibility-17",
+  "./app.js?v=20260926-continuous-preview-27",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"

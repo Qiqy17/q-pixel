@@ -11,8 +11,9 @@
     '  <button type="button" data-action="close" aria-label="关闭">×</button>',
     '</div>',
     '<div class="finish-body">',
-    '  <main class="finish-stage"><canvas data-role="scene-background" aria-hidden="true"></canvas><canvas data-role="canvas" aria-label="3D 成品画布"></canvas><canvas data-role="overlay" aria-hidden="true"></canvas>',
-    '    <div class="finish-stage-toolbar" role="group" aria-label="3D 画布操作"><button type="button" data-action="mode-view" aria-pressed="true">观察视角</button><button type="button" data-action="mode-edit" aria-pressed="false">编辑图纸</button><button type="button" data-action="reset-view">重置视角</button><div class="finish-stage-tools" data-role="quick-tools" hidden><button type="button" data-tool="brush">画笔</button><button type="button" data-tool="eraser">橡皮</button><button type="button" data-tool="picker">取色</button></div><span data-role="mode-hint">拖动旋转 · 滚轮或双指缩放</span></div>',
+    '  <main class="finish-stage" data-view="3d"><canvas data-role="scene-background" aria-hidden="true"></canvas><canvas data-role="canvas" aria-label="3D 成品画布"></canvas><canvas data-role="overlay" aria-hidden="true"></canvas><div class="finish-flat" data-role="flat" hidden></div><canvas data-role="flat-editor" aria-label="平面图纸编辑画布" hidden></canvas>',
+    '    <div class="finish-stage-toolbar" role="group" aria-label="预览画布操作"><button type="button" data-action="mode-view" aria-pressed="true">观察视角</button><button type="button" data-action="mode-edit" aria-pressed="false">编辑图纸</button><button type="button" data-action="reset-view">重置视角</button><div class="finish-stage-tools" data-role="quick-tools" hidden><button type="button" data-tool="brush">画笔</button><button type="button" data-tool="eraser">橡皮</button><button type="button" data-tool="picker">取色</button></div><span data-role="mode-hint">拖动旋转 · 滚轮或双指缩放</span></div>',
+    '    <div class="finish-flat-zoom" data-role="flat-edit-zoom" hidden><button type="button" data-action="flat-zoom-out" aria-label="缩小图纸">－</button><button type="button" data-action="flat-zoom-fit">适应</button><button type="button" data-action="flat-zoom-in" aria-label="放大图纸">＋</button></div>',
     '    <div class="finish-edit-display" data-role="edit-display" hidden><strong data-role="canvas-size">画布尺寸</strong><span data-role="active-tool">当前工具：画笔</span><label><input data-role="quick-show-codes" type="checkbox">色号</label><label><input data-role="quick-show-grid" type="checkbox">网格</label><label><input data-role="quick-show-guides" type="checkbox">辅助线</label></div>',
     '    <div class="finish-editor-rails" data-role="editor-rails" hidden><div data-role="rail-main"></div><div data-role="rail-extra"></div></div>',
     '    <span class="finish-watermark" data-role="watermark">参考模拟 · 未实物标定</span>',
@@ -23,6 +24,7 @@
     '    <details class="finish-control-group" data-role="edit-group"><summary>图纸编辑</summary><p>工具与主画布共用；选择“编辑图纸”后落笔。</p><div data-role="editor-actions"><button type="button" data-action="undo">撤销</button><button type="button" data-action="redo">重做</button></div><div data-role="color-strip"></div></details>',
     '    <details class="finish-control-group" data-role="tool-settings"><summary>工具参数与色板</summary><div data-role="tool-options"></div></details>',
     '    <details class="finish-control-group" data-role="layer-group"><summary>图层</summary><div data-role="layers"></div></details>',
+    '    <details class="finish-control-group finish-flat-controls" data-role="flat-controls-group"><summary>平面构图</summary><div data-role="flat-controls"></div></details>',
     '    <details class="finish-control-group" open><summary>熨烫质感</summary><label>纹理粗糙程度 <output data-value="textureRoughness"></output><input data-tuning="textureRoughness" type="range" min="0" max="100"></label><label>纹理透明度 <output data-value="textureOpacity"></output><input data-tuning="textureOpacity" type="range" min="0" max="100"></label><label>融边程度 <output data-value="meltEdge"></output><input data-tuning="meltEdge" type="range" min="0" max="100"></label><button type="button" data-action="reset-tuning">恢复当前烫法默认</button></details>',
     '    <details class="finish-control-group"><summary>图纸与标记</summary><label><input data-role="show-codes" type="checkbox">显示色号</label><label><input data-role="show-grid" type="checkbox">显示网格</label><label><input data-role="show-guides" type="checkbox">显示辅助线</label><label>色号透明度 <output data-value="codeOpacity"></output><input data-role="code-opacity" type="range" min="0" max="100"></label><label>色号大小 <output data-value="codeSize"></output><input data-role="code-size" type="range" min="0" max="100"></label><p>缩放过小时会暂时隐藏细字与网格，放大后恢复。隐藏辅助线不会删除它们。</p></details>',
     '    <label>曝光<input data-role="exposure" type="range" min="50" max="180" value="100"></label>',
@@ -38,8 +40,7 @@
     '    <button type="button" data-action="export">导出 4K PNG</button>',
     '    <button type="button" data-action="cancel-export" hidden>取消导出</button>',
     '    <div data-role="status" role="status"></div></aside>',
-    '</div>',
-    '<div class="finish-flat" data-role="flat" hidden></div>'
+    '</div>'
   ].join("");
 
   function create(options) {
@@ -52,6 +53,7 @@
     const canvas = dialog.querySelector('[data-role="canvas"]');
     const overlay = dialog.querySelector('[data-role="overlay"]');
     const sceneBackground = dialog.querySelector('[data-role="scene-background"]');
+    const flatEditorCanvas = dialog.querySelector('[data-role="flat-editor"]');
     const status = dialog.querySelector('[data-role="status"]');
     const profiles = dialog.querySelector('[data-role="profiles"]');
     const presetGroups = [
@@ -81,8 +83,156 @@
     let refreshTimer = 0;
     let interactionMode = "view";
     let chosenToolIn3d = false;
+    let activeTab = "3d";
+    let flatZoomInitialized = false;
+    let flatControlsOpenBeforeEdit = true;
+    const flatEditorView = { zoom: 1, panX: 0, panY: 0, grid: null, pointer: null };
+    const flatPointers = new Map();
+    let flatPinch = null;
+    function drawFlatEditor() {
+      if (activeTab !== "flat" || interactionMode !== "edit" || !dialog.open || !options.renderFlatEditor) return;
+      const stage = dialog.querySelector(".finish-stage");
+      const dpr = Math.min(root.devicePixelRatio || 1, 2);
+      flatEditorCanvas.width = Math.max(1, Math.round(stage.clientWidth * dpr));
+      flatEditorCanvas.height = Math.max(1, Math.round(stage.clientHeight * dpr));
+      flatEditorView.grid = options.renderFlatEditor(flatEditorCanvas, flatEditorView);
+      flatEditorCanvas.style.cursor = options.getToolCursor?.() || "crosshair";
+    }
+    function updateStageView() {
+      const flat = activeTab === "flat";
+      const editingFlat = flat && interactionMode === "edit";
+      const stage = dialog.querySelector(".finish-stage");
+      stage.dataset.view = flat ? "flat" : "3d";
+      dialog.querySelector(".finish-body").dataset.view = flat ? "flat" : "3d";
+      sceneBackground.hidden = flat;
+      canvas.hidden = flat;
+      overlay.hidden = flat;
+      dialog.querySelector('[data-role="flat"]').hidden = !flat || editingFlat;
+      flatEditorCanvas.hidden = !editingFlat;
+      dialog.querySelector('[data-role="flat-edit-zoom"]').hidden = !editingFlat;
+      dialog.querySelector('[data-role="watermark"]').hidden = flat || core.isCalibrated();
+      dialog.querySelector('[data-role="compare"]').hidden = true;
+      dialog.querySelector('[data-action="mode-view"]').textContent = flat ? "查看展示图" : "观察视角";
+      dialog.querySelector('[data-action="reset-view"]').hidden = flat;
+      if (editingFlat) drawFlatEditor();
+      if (flat && !editingFlat) options.prepareFlatPreview?.();
+    }
+    function flatCellAt(event) {
+      const grid = flatEditorView.grid;
+      if (!grid || !grid.cellSize) return null;
+      const rect = flatEditorCanvas.getBoundingClientRect();
+      const x = (event.clientX - rect.left) * flatEditorCanvas.width / Math.max(1, rect.width);
+      const y = (event.clientY - rect.top) * flatEditorCanvas.height / Math.max(1, rect.height);
+      if (x < grid.x || y < grid.y || x >= grid.x + grid.width || y >= grid.y + grid.height) return null;
+      return { col: Math.floor((x - grid.x) / grid.cellSize), row: Math.floor((y - grid.y) / grid.cellSize) };
+    }
+    function flatEdit(phase, event) {
+      const cell = flatCellAt(event) || (phase === "end" ? flatEditorView.pointer?.lastCell : null);
+      if (!cell) return;
+      const previous = flatEditorView.pointer?.lastCell;
+      let changed = false;
+      if (phase === "move" && previous && ["brush", "eraser"].includes(options.getTool?.())) {
+        const steps = Math.max(Math.abs(cell.col - previous.col), Math.abs(cell.row - previous.row));
+        const line = [];
+        for (let step = 1; step <= steps; step += 1) {
+          line.push({
+            col: Math.round(previous.col + (cell.col - previous.col) * step / steps),
+            row: Math.round(previous.row + (cell.row - previous.row) * step / steps)
+          });
+        }
+        if (line.length && options.onEditStroke) changed = Boolean(options.onEditStroke(line)?.changed);
+        else for (const between of line) changed = Boolean(options.onEdit?.("move", between)?.changed) || changed;
+      } else changed = Boolean(options.onEdit?.(phase, cell)?.changed);
+      if (flatEditorView.pointer) flatEditorView.pointer.lastCell = cell;
+      if (changed || phase === "end") {
+        clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(() => {
+          drawFlatEditor();
+          if (phase === "end") options.prepareFlatPreview?.();
+          refreshViewer();
+        }, phase === "end" ? 0 : 70);
+      } else drawFlatEditor();
+    }
+    flatEditorCanvas.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      flatEditorCanvas.setPointerCapture?.(event.pointerId);
+      flatPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (flatPointers.size === 2) {
+        const points = [...flatPointers.values()];
+        flatPinch = { distance: Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y), zoom: flatEditorView.zoom };
+        clearTimeout(flatEditorView.pointer?.startTimer);
+        if (flatEditorView.pointer?.editing && flatEditorView.pointer.started) flatEdit("end", event);
+        flatEditorView.pointer = null;
+        return;
+      }
+      const panning = options.getTool?.() === "pan";
+      const pointer = { id: event.pointerId, x: event.clientX, y: event.clientY, panX: flatEditorView.panX, panY: flatEditorView.panY, editing: !panning, started: false };
+      flatEditorView.pointer = pointer;
+      if (!panning && event.pointerType === "touch") {
+        pointer.startTimer = setTimeout(() => {
+          if (flatEditorView.pointer === pointer && flatPointers.size === 1) {
+            pointer.started = true;
+            flatEdit("start", { clientX: pointer.x, clientY: pointer.y });
+          }
+        }, 90);
+      } else if (!panning) {
+        pointer.started = true;
+        flatEdit("start", event);
+      }
+    });
+    flatEditorCanvas.addEventListener("pointermove", (event) => {
+      if (flatPointers.has(event.pointerId)) flatPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      if (flatPinch && flatPointers.size >= 2) {
+        const points = [...flatPointers.values()];
+        flatEditorView.zoom = Math.max(.25, Math.min(8, flatPinch.zoom * Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y) / Math.max(1, flatPinch.distance)));
+        drawFlatEditor();
+        return;
+      }
+      const pointer = flatEditorView.pointer;
+      if (!pointer || pointer.id !== event.pointerId) return;
+      if (!pointer.editing) {
+        const dpr = flatEditorCanvas.width / Math.max(1, flatEditorCanvas.clientWidth);
+        flatEditorView.panX = pointer.panX + (event.clientX - pointer.x) * dpr;
+        flatEditorView.panY = pointer.panY + (event.clientY - pointer.y) * dpr;
+        drawFlatEditor();
+      } else {
+        if (!pointer.started) {
+          clearTimeout(pointer.startTimer);
+          pointer.started = true;
+          flatEdit("start", { clientX: pointer.x, clientY: pointer.y });
+        }
+        flatEdit("move", event);
+      }
+    });
+    function stopFlatPointer(event) {
+      flatPointers.delete(event.pointerId);
+      if (flatPointers.size < 2) flatPinch = null;
+      if (flatEditorView.pointer?.id === event.pointerId) {
+        clearTimeout(flatEditorView.pointer.startTimer);
+        if (flatEditorView.pointer.editing) {
+          if (!flatEditorView.pointer.started) flatEdit("start", event);
+          flatEdit("end", event);
+        }
+        flatEditorView.pointer = null;
+      }
+    }
+    flatEditorCanvas.addEventListener("pointerup", stopFlatPointer);
+    flatEditorCanvas.addEventListener("pointercancel", stopFlatPointer);
+    flatEditorCanvas.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      flatEditorView.zoom = Math.max(.25, Math.min(8, flatEditorView.zoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12)));
+      drawFlatEditor();
+    }, { passive: false });
     function setInteractionMode(mode) {
+      const previousMode = interactionMode;
       interactionMode = mode === "edit" ? "edit" : "view";
+      const flatControls = dialog.querySelector('[data-role="flat-controls-group"]');
+      if (activeTab === "flat" && previousMode !== interactionMode) {
+        if (interactionMode === "edit") {
+          flatControlsOpenBeforeEdit = flatControls.open;
+          flatControls.open = false;
+        } else flatControls.open = flatControlsOpenBeforeEdit;
+      }
       if (interactionMode === "edit" && options.setTool && (!chosenToolIn3d || (options.getTool && options.getTool() === "pan"))) options.setTool("brush");
       if (viewer) viewer.setInteractionMode(interactionMode);
       if (viewer && interactionMode === "edit") viewer.setEditCursor(options.getToolCursor?.());
@@ -90,7 +240,7 @@
         button.setAttribute("aria-pressed", String(button.dataset.action === `mode-${interactionMode}`));
       });
       dialog.querySelector('[data-role="mode-hint"]').textContent = interactionMode === "view"
-        ? "拖动旋转 · 滚轮或双指缩放"
+        ? (activeTab === "flat" ? "拖动文字或贴纸 · 滚轮或双指缩放" : "拖动旋转 · 滚轮或双指缩放")
         : "单击落笔 · 拖动连续绘制";
       dialog.querySelector('[data-role="quick-tools"]').hidden = interactionMode !== "edit";
       dialog.querySelector('[data-role="editor-rails"]').hidden = interactionMode !== "edit";
@@ -107,6 +257,7 @@
         dialog.querySelector('[data-role="tool-settings"]').open = false;
         dialog.querySelector('[data-role="layer-group"]').open = false;
       }
+      updateStageView();
       syncControls();
     }
     const movedPanels = [];
@@ -132,6 +283,8 @@
       });
     }
     function refreshViewer() {
+      if (activeTab === "flat" && interactionMode === "edit") drawFlatEditor();
+      if (activeTab === "flat" && interactionMode === "view") options.prepareFlatPreview?.();
       if (!viewer) return;
       const current = options.getPattern();
       const analysis = viewer.updatePattern(current);
@@ -202,7 +355,6 @@
       if (options.onSettings) options.onSettings(Object.assign({}, settings));
     }
 
-    let activeTab = "3d";
     let backgroundObserver = null;
     function drawSceneBackground() {
       const stage = dialog.querySelector(".finish-stage");
@@ -236,13 +388,16 @@
     function switchTab(tab) {
       if (tab === "3d" && dialog.querySelector('[data-action="tab-3d"]').disabled) tab = "flat";
       activeTab = tab === "flat" ? "flat" : "3d";
-      dialog.querySelector('[data-role="flat"]').hidden = activeTab !== "flat";
-      dialog.querySelector('.finish-body').hidden = activeTab !== "3d";
+      dialog.querySelector('[data-role="flat-controls-group"]').open = activeTab === "flat" && interactionMode === "view";
       dialog.querySelectorAll('[role="tab"]').forEach((button) => button.setAttribute("aria-selected", String(button.dataset.action === `tab-${activeTab}`)));
-      if (activeTab === "flat") {
-        options.prepareFlatPreview?.();
+      updateStageView();
+      dialog.querySelector('[data-role="mode-hint"]').textContent = interactionMode === "view"
+        ? (activeTab === "flat" ? "拖动文字或贴纸 · 滚轮或双指缩放" : "拖动旋转 · 滚轮或双指缩放")
+        : "单击落笔 · 拖动连续绘制";
+      if (activeTab === "flat" && interactionMode === "view" && !flatZoomInitialized) {
+        flatZoomInitialized = true;
         root.requestAnimationFrame?.(() => options.fitFlatPreview?.());
-      } else {
+      } else if (activeTab === "3d") {
         syncBackgroundControls();
         syncLightEffect();
         viewer?.draw();
@@ -261,6 +416,11 @@
       const watermark = dialog.querySelector('[data-role="watermark"]');
       if (watermark) watermark.hidden = calibrated;
       settings = core.normalizeSettings(options.getSettings ? options.getSettings() : {});
+      activeTab = "3d";
+      flatZoomInitialized = false;
+      Object.assign(flatEditorView, { zoom: 1, panX: 0, panY: 0, grid: null, pointer: null });
+      flatPointers.clear();
+      flatPinch = null;
       chosenToolIn3d = false;
       setInteractionMode("view");
       syncControls();
@@ -269,7 +429,8 @@
       moveNode(doc.querySelector("#dropZone .canvas-tool-rail:not(.rail-b)"), "rail-main");
       moveNode(doc.querySelector("#dropZone .canvas-tool-rail.rail-b"), "rail-extra");
       movePanel("colorStrip", "color-strip");
-      moveNode(doc.querySelector("#materialPreviewModal .material-body"), "flat");
+      moveNode(doc.querySelector("#materialPreviewModal .material-canvas-wrap"), "flat");
+      moveNode(doc.querySelector("#materialPreviewModal .material-controls"), "flat-controls");
       // 空白工程也是可编辑的 3D 画布。
       // WebGL2 预检：不支持时直接给出可读解释，不再尝试加载 500KB 引擎。
       const support = window.QPixelWebGLSupport || root.QPixelWebGLSupport;
@@ -286,7 +447,7 @@
       dialog.showModal();
       switchTab(tab);
       syncBackgroundControls();
-      backgroundObserver = new ResizeObserver(drawSceneBackground);
+      backgroundObserver = new ResizeObserver(() => { drawSceneBackground(); drawFlatEditor(); });
       backgroundObserver.observe(dialog.querySelector(".finish-stage"));
       status.textContent = "正在加载 3D 引擎…";
       try {
@@ -335,6 +496,10 @@
     function close() {
       if (viewer) viewer.setInteractionMode("view");
       clearTimeout(refreshTimer);
+      clearTimeout(flatEditorView.pointer?.startTimer);
+      flatEditorView.pointer = null;
+      flatPointers.clear();
+      flatPinch = null;
       backgroundObserver?.disconnect();
       backgroundObserver = null;
       restorePanels();
@@ -363,6 +528,7 @@
       element.addEventListener(element.type === "checkbox" ? "change" : "input", () => {
         settings[key] = element.type === "checkbox" ? element.checked : Number(element.value);
         if (viewer) viewer.setOverlay(settings);
+        drawFlatEditor();
         syncControls(); saveSettings();
       });
     });
@@ -370,6 +536,7 @@
       dialog.querySelector(`[data-role="${role}"]`).addEventListener("change", (event) => {
         settings[key] = event.target.checked;
         viewer?.setOverlay(settings);
+        drawFlatEditor();
         syncControls(); saveSettings();
       });
     }
@@ -377,6 +544,7 @@
       dialog.querySelector(`[data-role="${role}"]`).addEventListener("change", (event) => {
         options.setGuidesVisible?.(event.target.checked);
         viewer?.draw();
+        drawFlatEditor();
         syncControls();
       });
     }
@@ -494,6 +662,11 @@
       if (action === "mode-view") setInteractionMode("view");
       if (action === "mode-edit") setInteractionMode("edit");
       if (action === "reset-view" && viewer) viewer.view(settings.side);
+      if (["flat-zoom-in", "flat-zoom-out", "flat-zoom-fit"].includes(action)) {
+        if (action === "flat-zoom-fit") Object.assign(flatEditorView, { zoom: 1, panX: 0, panY: 0 });
+        else flatEditorView.zoom = Math.max(.25, Math.min(8, flatEditorView.zoom * (action === "flat-zoom-in" ? 1.25 : .8)));
+        drawFlatEditor();
+      }
       if (action === "reset-tuning") {
         delete settings.profileTuning[settings.profile];
         if (viewer) viewer.setProfile(settings.profile);

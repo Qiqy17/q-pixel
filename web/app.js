@@ -10574,10 +10574,10 @@
     const canvas = kind === "export" ? els.exportPreviewCanvas : els.materialPreviewCanvas;
     if (action === "fit" && canvas && canvas.parentElement) {
       const wrap = canvas.parentElement;
-      const toolbar = kind === "export" ? wrap.querySelector(".preview-zoom-bar") : null;
+      const toolbar = wrap.querySelector(".preview-zoom-bar");
       const style = getComputedStyle(wrap);
       const availableWidth = wrap.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
-      const availableHeight = wrap.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) - (toolbar ? toolbar.offsetHeight : 0) - (toolbar ? parseFloat(style.rowGap) || 0 : 0);
+      const availableHeight = wrap.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) - (toolbar ? toolbar.offsetHeight + (parseFloat(getComputedStyle(toolbar).marginBottom) || 0) : 0) - (parseFloat(style.rowGap) || 0);
       const fit = Math.min(
         Math.max(1, availableWidth - 12) / Math.max(1, canvas.width),
         Math.max(1, availableHeight - 12) / Math.max(1, canvas.height)
@@ -15721,6 +15721,30 @@
           drawMaterialPreview();
         },
         fitFlatPreview: () => updatePreviewZoom("style", "fit"),
+        renderFlatEditor: (targetCanvas, view) => {
+          if (state.mode === "pixel" && state.image) ensurePixelEditablePattern(false);
+          syncCompositePattern();
+          const pattern = state.beads.pattern;
+          if (!pattern) return null;
+          const ctx = targetCanvas.getContext("2d");
+          ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+          ctx.fillStyle = getBaseboardColor() || "#fbfaf7";
+          ctx.fillRect(0, 0, targetCanvas.width, targetCanvas.height);
+          const padding = Math.min(72, Math.max(30, targetCanvas.width * .045));
+          const dpr = targetCanvas.width / Math.max(1, targetCanvas.clientWidth);
+          const topInset = (targetCanvas.clientWidth < 700 ? 124 : 108) * dpr;
+          const fit = Math.min((targetCanvas.width - padding * 2) / pattern.width, (targetCanvas.height - topInset - padding) / pattern.height);
+          const cellSize = Math.max(.5, fit * view.zoom);
+          const width = pattern.width * cellSize;
+          const height = pattern.height * cellSize;
+          const x = (targetCanvas.width - width) / 2 + view.panX;
+          const y = topInset + (targetCanvas.height - topInset - height) / 2 + view.panY;
+          drawPatternGrid(ctx, pattern, x, y, cellSize, { showCodes: state.beads.finish3d?.showCodes !== false, showGrid: state.beads.finish3d?.showGrid !== false });
+          drawGuideLines(ctx, x, y, cellSize, pattern);
+          drawSelectionOverlay(ctx, x, y, cellSize);
+          drawAxisLabels(ctx, { x, y, width, height }, pattern.width, pattern.height, cellSize, cellSize);
+          return { x, y, width, height, cellSize };
+        },
         colorOf: (code) => getPaletteColor(code).hex,
         getGuides: () => state.beads.guideVisible ? state.beads.guideLines || [] : [],
         getGuidesVisible: () => state.beads.guideVisible !== false,
@@ -15735,6 +15759,29 @@
         getToolCursor: () => cursorForEditTool(state.beads.editTool),
         setTool: (tool) => document.querySelector(`.canvas-tool-rail .tool-button[data-tool="${tool}"]`)?.click(),
         onEdit: forward3dEdit,
+        onEditStroke: (line) => {
+          const tool = state.beads.editTool;
+          if (!["brush", "eraser"].includes(tool) || !state.beads.isPointerDown) return { changed: false };
+          const layer = getActiveLayer();
+          const cells = getEditableCells();
+          if (!layer || !cells) return { changed: false };
+          const code = tool === "eraser" ? null : state.beads.selectedCode;
+          const size = tool === "eraser" ? state.beads.eraserSize : state.beads.brushSize;
+          const flashes = [];
+          let changed = 0;
+          line.forEach((center) => forEachCellInBrush(center, size, (cell) => {
+            if (!canWriteLayerCell(layer, cell.row, cell.col, code) || cells[cell.row][cell.col] === code) return;
+            cells[cell.row][cell.col] = code;
+            changed += 1;
+            if (code === null) flashes.push(cell);
+          }));
+          if (changed) {
+            syncCompositePattern();
+            if (flashes.length) addEraserFlashCells(flashes);
+            render();
+          }
+          return { changed: changed > 0 };
+        },
         onHistory: (action) => action === "undo" ? undoEdit() : redoEdit(),
         loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js?v=20260926-editor-visibility-17"),
         onSettings: (settings) => { state.beads.finish3d = settings; markUnsavedChanges(); },
