@@ -389,6 +389,7 @@
       replaceTo: beadPalette[0].code,
       pattern: null,
       layers: [],
+      tileLayout: null,
       activeLayerId: "",
       sourceLabel: "",
       pixelSignature: "",
@@ -430,6 +431,7 @@
         regionRows: 2,
         regionCols: 2,
         regionSelectedId: "",
+        regionPreviewIds: [],
         usageLayout: "wrap",
         usageStyle: "chips",
         usageFontSize: 16,
@@ -590,7 +592,7 @@
       "layerImportInput", "layerList", "exportGridToggle", "exportCenterToggle", "exportCodesToggle",
       "canvasMirrorButton", "expandAmountInput", "expandUpButton", "expandDownButton",
       "expandLeftButton", "expandRightButton", "cropAutoButton", "cropSelectionButton",
-      "scaleFactorInput", "scaleUpButton", "scaleDownButton",
+      "scaleFactorInput", "scaleUpButton", "scaleDownButton", "tileRowsInput", "tileColsInput", "tileCreateButton", "tileProjectStatus",
       "exportUsageToggle", "exportSortToggle", "exportInfoToggle", "exportMirrorToggle",
       "exportPdfToggle", "exportWatermarkInput", "projectTitleInput",
       "saveProjectButton", "importProjectButton", "exportProjectButton",
@@ -648,7 +650,7 @@
       "watermarkOffsetXRange", "watermarkOffsetXLabel", "watermarkOffsetYRange", "watermarkOffsetYLabel",
       "exportRegionToggle", "exportRegionRowsInput", "exportRegionColsInput", "exportRegionAutoButton", "exportRegionGuideButton",
       "exportRegionStartRowInput", "exportRegionStartColInput", "exportRegionHeightInput", "exportRegionWidthInput",
-      "exportRegionAddButton", "exportRegionSelect", "exportRegionMultiSelect", "exportRegionDeleteButton", "exportRegionExportButton",
+      "exportRegionAddButton", "exportRegionSelect", "exportRegionMultiSelect", "tilePreviewSelection", "tileRegionChecklist", "tileSelectAllButton", "exportRegionDeleteButton", "exportRegionExportButton",
       "exportRegionExportSelectedButton", "exportRegionExportAllButton", "exportRegionNudgeInput",
       "exportRegionNudgeUpButton", "exportRegionNudgeDownButton", "exportRegionNudgeLeftButton", "exportRegionNudgeRightButton",
       "exportAppInfoToggle", "exportPresetNameInput", "exportPresetSaveButton", "exportPresetList",
@@ -883,9 +885,29 @@
     if (els.exportWatermarkInput) els.exportWatermarkInput.value = state.beads.exportSettings.watermark || "";
     if (els.watermarkEnabledToggle) els.watermarkEnabledToggle.checked = Boolean(state.beads.exportSettings.watermarkEnabled);
     if (els.watermarkColorInput) els.watermarkColorInput.value = state.beads.exportSettings.watermarkColor || "#222222";
-    if (els.exportRegionToggle) els.exportRegionToggle.checked = Boolean(state.beads.exportSettings.regionEnabled);
+    if (els.exportRegionToggle) {
+      els.exportRegionToggle.checked = Boolean(state.beads.exportSettings.regionEnabled || state.beads.tileLayout);
+      els.exportRegionToggle.disabled = Boolean(state.beads.tileLayout);
+      els.exportRegionToggle.title = state.beads.tileLayout ? "分区工程始终按独立画布预览" : "";
+    }
     if (els.exportRegionRowsInput) els.exportRegionRowsInput.value = String(state.beads.exportSettings.regionRows || 2);
     if (els.exportRegionColsInput) els.exportRegionColsInput.value = String(state.beads.exportSettings.regionCols || 2);
+    if (els.tilePreviewSelection) els.tilePreviewSelection.hidden = !state.beads.tileLayout;
+    if (els.exportRegionMultiSelect?.parentElement) els.exportRegionMultiSelect.parentElement.hidden = Boolean(state.beads.tileLayout);
+    if (els.tileProjectStatus) els.tileProjectStatus.textContent = state.beads.tileLayout
+      ? `${state.beads.tileLayout.rows * state.beads.tileLayout.cols} 块独立画布 · 点击画布切换图层；导出预览可单选、多选或全部`
+      : "";
+    [els.layerPanelToggle, els.layerMergeButton, els.layerImportButton, els.canvasMirrorButton,
+      els.expandUpButton, els.expandDownButton, els.expandLeftButton, els.expandRightButton,
+      els.cropAutoButton, els.cropSelectionButton, els.scaleUpButton, els.scaleDownButton,
+      els.exportRegionAutoButton, els.exportRegionGuideButton, els.exportRegionAddButton,
+      els.exportRegionDeleteButton, els.exportRegionNudgeUpButton, els.exportRegionNudgeDownButton,
+      els.exportRegionNudgeLeftButton, els.exportRegionNudgeRightButton].forEach((button) => {
+      if (button) {
+        button.disabled = Boolean(state.beads.tileLayout);
+        button.title = state.beads.tileLayout ? "分区工程的画布与图层边界固定；请在原工程更改整体尺寸或图层结构" : "";
+      }
+    });
     syncExportRegionInputs();
     renderExportRegionSelect();
     [
@@ -1362,6 +1384,7 @@
     state.beads.height = height;
     state.beads.pattern = pattern;
     state.beads.layers = [];
+    state.beads.tileLayout = null;
     state.beads.activeLayerId = "";
     state.beads.sourceLabel = "像素画结果";
     state.beads.pixelSignature = signature;
@@ -1980,7 +2003,22 @@
       showCodes: state.beads.showCodes,
       showGrid: state.beads.showGrid
     });
+    drawTileBoundaries(ctx, state.beads.lastGridRect);
     els.canvasSize.textContent = `${pattern.width} x ${pattern.height} 格`;
+  }
+
+  function drawTileBoundaries(ctx, grid) {
+    if (!state.beads.tileLayout || !grid) return;
+    ctx.save();
+    ctx.lineWidth = Math.max(2, Math.min(5, grid.cellSize * .15));
+    state.beads.layers.forEach((layer) => {
+      const region = layer.tileRegion;
+      if (!region) return;
+      ctx.strokeStyle = layer.id === state.beads.activeLayerId ? "#168879" : "rgba(35, 73, 67, .65)";
+      ctx.strokeRect(grid.x + region.startCol * grid.cellSize, grid.y + region.startRow * grid.cellSize,
+        region.width * grid.cellSize, region.height * grid.cellSize);
+    });
+    ctx.restore();
   }
 
   function drawPatternPreview(ctx, canvas, pattern, options) {
@@ -3757,6 +3795,7 @@
         state.beads.height = request.height;
         state.beads.pattern = null;
         state.beads.layers = [];
+        state.beads.tileLayout = null;
         state.beads.activeLayerId = "";
         state.beads.pixelSignature = "";
         state.beads.restorationFingerprint = "";
@@ -5100,6 +5139,7 @@
     state.beads.height = pattern.height;
     state.beads.pattern = pattern;
     state.beads.layers = [];
+    state.beads.tileLayout = null;
     state.beads.activeLayerId = "";
     state.beads.sourceLabel = session.name;
     state.beads.pixelSignature = "";
@@ -5183,6 +5223,7 @@
     state.beads.width = width;
     state.beads.height = height;
     state.beads.layers = [];
+    state.beads.tileLayout = null;
     state.beads.activeLayerId = "";
     state.beads.projectId = null;
     state.beads.projectTitle = `${baseName} 重建`;
@@ -5334,6 +5375,7 @@
       state.beads.width = pattern.width;
       state.beads.height = pattern.height;
       state.beads.layers = [];
+      state.beads.tileLayout = null;
       state.beads.activeLayerId = "";
       state.beads.pixelSignature = "";
       state.beads.restorationFingerprint = "";
@@ -5592,6 +5634,7 @@
     state.beads.height = pattern.height;
     state.beads.pattern = pattern;
     state.beads.layers = [];
+    state.beads.tileLayout = null;
     state.beads.activeLayerId = "";
     state.beads.sourceLabel = session.name;
     state.beads.pixelSignature = "";
@@ -5667,6 +5710,7 @@
     const pattern = applyImportModeToPattern(rawPattern, getImportMode());
     state.beads.pattern = pattern;
     state.beads.layers = [];
+    state.beads.tileLayout = null;
     state.beads.activeLayerId = "";
     ensureLayers();
     state.beads.sourceLabel = state.imageName;
@@ -5858,6 +5902,7 @@
     state.beads.width = state.beads.pattern.width;
     state.beads.height = state.beads.pattern.height;
     state.beads.layers = [];
+    state.beads.tileLayout = null;
     state.beads.activeLayerId = "";
     state.beads.sourceLabel = "空白画布";
     state.beads.importRecipe = null;
@@ -5895,6 +5940,7 @@
 
   function canWriteLayerCell(layer, row, col, nextCode) {
     if (!layer || layer.locked || !layer.cells[row]) return false;
+    if (state.beads.tileLayout && (!layer.tileRegion || !window.QPixelTileProject.contains(layer.tileRegion, row, col))) return false;
     if (!layer.alphaLocked) return true;
     const current = layer.cells[row][col];
     return Boolean(current) && Boolean(nextCode);
@@ -5928,6 +5974,7 @@
         locked: layer.locked,
         alphaLocked: Boolean(layer.alphaLocked),
         groupName: layer.groupName || "",
+        tileRegion: layer.tileRegion ? Object.assign({}, layer.tileRegion) : null,
         cells: cloneCells(layer.cells)
       })),
       activeLayerId: state.beads.activeLayerId
@@ -5949,6 +5996,7 @@
       locked: Boolean(layer.locked),
       alphaLocked: Boolean(layer.alphaLocked),
       groupName: layer.groupName || "",
+      tileRegion: layer.tileRegion ? Object.assign({}, layer.tileRegion) : null,
       cells: cloneCells(layer.cells)
     }));
     state.beads.activeLayerId = snapshot.activeLayerId || (state.beads.layers[0] && state.beads.layers[0].id) || "";
@@ -5976,6 +6024,7 @@
         <div class="layer-main">
           <input class="layer-name" aria-label="图层名称" value="">
           <div class="layer-meta"></div>
+          ${layer.tileRegion ? '<details class="tile-usage"><summary>本画布色号统计</summary><div class="tile-usage-list"></div></details>' : ""}
         </div>
         <div class="layer-controls">
           <button class="layer-mini" type="button" data-layer-action="visible" aria-pressed="${layer.visible}" title="切换图层显示">${layer.visible ? "显示中" : "已隐藏"}</button>
@@ -5986,7 +6035,17 @@
       `;
       const input = row.querySelector(".layer-name");
       input.value = layer.name;
-      row.querySelector(".layer-meta").textContent = `${state.beads.pattern.width} × ${state.beads.pattern.height} 格${layer.groupName ? ` · ${layer.groupName}` : ""}`;
+      const region = layer.tileRegion;
+      const usage = region && window.QPixelTileProject ? window.QPixelTileProject.usage(layer.cells, region) : null;
+      const total = usage ? Object.values(usage).reduce((sum, count) => sum + count, 0) : 0;
+      row.querySelector(".layer-meta").textContent = region
+        ? `${region.width} × ${region.height} 格 · ${total} 颗 · ${Object.keys(usage).length} 色${layer.groupName ? ` · ${layer.groupName}` : ""}`
+        : `${state.beads.pattern.width} × ${state.beads.pattern.height} 格${layer.groupName ? ` · ${layer.groupName}` : ""}`;
+      if (region) {
+        const detail = row.querySelector(".tile-usage-list");
+        detail.textContent = Object.entries(usage).sort((a, b) => b[1] - a[1]).map(([code, count]) => `${code} ${count}`).join(" · ") || "暂无拼豆";
+        row.querySelectorAll('.layer-more button').forEach((button) => { button.disabled = true; button.title = "分区工程固定每块一个图层"; });
+      }
       input.addEventListener("change", () => {
         layer.name = input.value.replace(/·.*$/, "").trim() || "图层";
         markUnsavedChanges();
@@ -6033,6 +6092,7 @@
 
   function addLayer(name, cells, options = {}) {
     if (!state.beads.pattern) return null;
+    if (state.beads.tileLayout) { setMessage("分区工程每块固定对应一个图层，请先回到普通工程操作图层结构。", true); return null; }
     ensureLayers();
     const layer = makeLayer(name || `图层 ${state.beads.layers.length + 1}`, cells, true, false, "", options.alphaLocked);
     state.beads.layers.push(layer);
@@ -6050,6 +6110,7 @@
 
   function mergeVisibleLayers() {
     if (!state.beads.pattern) return false;
+    if (state.beads.tileLayout) { setMessage("分区工程不能合并图层，以免破坏画布边界。", true); return false; }
     syncCompositePattern();
     const layer = makeLayer("合并图层", state.beads.pattern.cells, true, false, "");
     state.beads.layers = [layer];
@@ -6072,6 +6133,7 @@
   function mirrorActiveLayer() {
     const layer = getActiveLayer();
     if (!layer || layer.locked) return 0;
+    if (state.beads.tileLayout) { setMessage("分区图层不能整体镜像，以免跨越画布边界。", true); return 0; }
     let changed = 0;
     for (let row = 0; row < layer.cells.length; row += 1) {
       const before = layer.cells[row].join("|");
@@ -6094,6 +6156,7 @@
 
   function mirrorFullCanvas() {
     if (!state.beads.pattern) return 0;
+    if (state.beads.tileLayout) { setMessage("分区工程不能全图镜像；可在原工程修改后重新划分。", true); return 0; }
     ensureLayers();
     let changed = 0;
     state.beads.layers.forEach((layer) => {
@@ -6120,6 +6183,7 @@
   }
 
   function expandCanvas(direction, amount) {
+    if (state.beads.tileLayout) { setMessage("分区工程不能扩容；可在原工程修改后重新划分。", true); return 0; }
     if (!state.beads.pattern) return 0;
     const safeAmount = clamp(amount, 1, 200);
     const nextWidth = state.beads.pattern.width + (direction === "left" || direction === "right" ? safeAmount : 0);
@@ -6174,12 +6238,14 @@
   }
 
   function autoCropCanvas() {
+    if (state.beads.tileLayout) { setMessage("分区工程不能裁剪；可在原工程修改后重新划分。", true); return 0; }
     if (!state.beads.pattern) return 0;
     syncCompositePattern();
     return cropCanvasToBounds(getPatternBoundsFromCells(state.beads.pattern.cells));
   }
 
   function cropCanvasToSelection() {
+    if (state.beads.tileLayout) { setMessage("分区工程不能裁剪；可在原工程修改后重新划分。", true); return 0; }
     if (!state.beads.selectedCells.length) return 0;
     const boundsRect = {
       minRow: Math.min(...state.beads.selectedCells.map((cell) => cell.row)),
@@ -6372,6 +6438,7 @@
   }
 
   function scaleCanvasByFactor(factor) {
+    if (state.beads.tileLayout) { setMessage("分区工程不能更改格数；画布视图仍可缩放。", true); return 0; }
     if (!state.beads.pattern) return 0;
     const safeFactor = Math.max(0.25, Math.min(6, Number(factor) || 1));
     const nextWidth = clamp(Math.round(state.beads.pattern.width * safeFactor), bounds.beadSize.min, bounds.beadSize.max);
@@ -7214,6 +7281,7 @@
       for (let row = 0; row < pattern.height; row += 1) {
         for (let col = 0; col < pattern.width; col += 1) {
           if (cells[row][col]) continue;
+          if (!canWriteLayerCell(layer, row, col, code)) continue;
           if (hasNeighborWithin(row, col, (value) => Boolean(value))) {
             next[row][col] = code;
             changed += 1;
@@ -7224,6 +7292,7 @@
       for (let row = 0; row < pattern.height; row += 1) {
         for (let col = 0; col < pattern.width; col += 1) {
           if (!cells[row][col]) continue;
+          if (!canWriteLayerCell(layer, row, col, null)) continue;
           const touchesEmpty = hasNeighborWithin(row, col, (value) => !value);
           const touchesEdge = row < safeWidth || col < safeWidth || row >= pattern.height - safeWidth || col >= pattern.width - safeWidth;
           if (touchesEmpty || touchesEdge) {
@@ -7242,6 +7311,7 @@
   }
 
   function mergeSmallColors(limit) {
+    if (state.beads.tileLayout) { setMessage("分区工程请在各画布内使用调色工具；全图色数优化请在原工程完成。", true); return 0; }
     const safeLimit = clamp(limit, 1, 9999);
     const usage = calculateUsage(state.beads.pattern).filter((item) => item.count < safeLimit && item.code !== state.beads.selectedCode);
     if (!usage.length) return 0;
@@ -7436,7 +7506,7 @@
             if (Math.abs(dx) + Math.abs(dy) > safeWidth) continue;
             const row = cell.row + dy;
             const col = cell.col + dx;
-            if (!inBounds(row, col) || selectedKeys.has(`${row},${col}`)) continue;
+            if (!inBounds(row, col) || selectedKeys.has(`${row},${col}`) || !canWriteLayerCell(layer, row, col, code)) continue;
             if (next[row][col] === code) continue;
             next[row][col] = code;
             changed += 1;
@@ -7445,7 +7515,7 @@
       });
     } else {
       selected.forEach((cell) => {
-        if (!inBounds(cell.row, cell.col) || !cells[cell.row][cell.col]) return;
+        if (!inBounds(cell.row, cell.col) || !cells[cell.row][cell.col] || !canWriteLayerCell(layer, cell.row, cell.col, null)) return;
         let boundary = false;
         for (let dy = -safeWidth; dy <= safeWidth && !boundary; dy += 1) {
           for (let dx = -safeWidth; dx <= safeWidth; dx += 1) {
@@ -7773,6 +7843,10 @@
     const floating = state.beads.floatingSelection;
     const layer = getActiveLayer();
     if (!pattern || !cells || !floating || !floating.cells.length || (layer && layer.alphaLocked && !floating.copyMode)) return 0;
+    if (state.beads.tileLayout && floating.cells.some((cell) => cell.code && !canWriteLayerCell(layer, floating.targetRow + cell.row, floating.targetCol + cell.col, cell.code))) {
+      setMessage("选区不能跨越当前画布边界，请移回本画布。", true);
+      return 0;
+    }
     pushHistory();
     let changed = 0;
     const nextSelection = [];
@@ -7827,6 +7901,10 @@
     const width = Math.max(...clipboard.map((cell) => cell.col)) + 1;
     const targetRow = minRow;
     const targetCol = Math.min(pattern.width - 1, minCol + width);
+    if (state.beads.tileLayout && clipboard.some((cell) => cell.code && !canWriteLayerCell(getActiveLayer(), targetRow + cell.row, targetCol + cell.col, cell.code))) {
+      setMessage("粘贴内容超出当前画布边界。", true);
+      return 0;
+    }
     let changed = 0;
     const nextSelection = [];
     clipboard.forEach((cell) => {
@@ -8006,6 +8084,15 @@
     if (!cell) return;
     event.preventDefault();
 
+    if (state.beads.tileLayout && window.QPixelTileProject && state.beads.editTool !== "guide") {
+      const tile = state.beads.layers.find((layer) => window.QPixelTileProject.contains(layer.tileRegion, cell.row, cell.col));
+      if (tile && tile.id !== state.beads.activeLayerId) {
+        state.beads.activeLayerId = tile.id;
+        renderLayerList();
+        if (els.tileProjectStatus) els.tileProjectStatus.textContent = `当前编辑：${tile.name}`;
+      }
+    }
+
     if (state.beads.buildMode) {
       toggleBuildCell(cell);
       render();
@@ -8167,6 +8254,7 @@
   }
 
   function handleCanvasPointerUp(event) {
+    if (state.beads.tileLayout) window.setTimeout(() => { renderLayerList(); refreshExportPreviewIfOpen(); }, 0);
     if (event && els.previewCanvas && event.pointerId != null && els.previewCanvas.releasePointerCapture) {
       try {
         els.previewCanvas.releasePointerCapture(event.pointerId);
@@ -8715,6 +8803,52 @@
     return normalizeExportRegions(regions, pattern);
   }
 
+  async function createTiledProject(rows, cols) {
+    if (!state.beads.pattern || !window.QPixelTileProject) {
+      setMessage("请先创建图纸。", true);
+      return false;
+    }
+    let split;
+    try {
+      syncCompositePattern();
+      split = window.QPixelTileProject.divide(state.beads.pattern, rows, cols);
+    } catch (error) {
+      setMessage(error.message || "分区设置无效。", true);
+      return false;
+    }
+    const savedOriginal = await saveCurrentProject();
+    if (!savedOriginal) {
+      setMessage("原工程尚未保存成功，请先保存或导出工程文件。", true);
+      return false;
+    }
+    const payload = makeProjectPayload();
+    payload.id = makeId();
+    payload.title = `${state.beads.projectTitle || "未命名"} · ${rows}×${cols} 分区`;
+    payload.createdAt = new Date().toISOString();
+    payload.savedAt = payload.createdAt;
+    payload.checkpoints = [];
+    payload.buildProgress = {};
+    payload.layers = split.layers.map(({ region, cells }) => ({
+      id: makeId(), name: region.name, visible: true, locked: false,
+      alphaLocked: false, groupName: "", tileRegion: region, cells
+    }));
+    payload.activeLayerId = payload.layers[0].id;
+    payload.tileLayout = { rows, cols };
+    payload.exportRegions = split.regions;
+    payload.exportSettings = Object.assign({}, payload.exportSettings, {
+      regionEnabled: true, regionRows: rows, regionCols: cols,
+      regionSelectedId: split.regions[0].id,
+      regionPreviewIds: split.regions.map((region) => region.id)
+    });
+    if (!applyProjectPayload(payload)) return false;
+    if (els.tileProjectStatus) els.tileProjectStatus.textContent = `${split.regions.length} 块独立画布 · 点击画布切换当前图层；导出预览可单选、多选或全部`;
+    markUnsavedChanges();
+    const savedCopy = await saveCurrentProject();
+    render(); renderLayerList(); syncBeadControls();
+    setMessage(savedCopy ? `已生成并保存 ${split.regions.length} 块画布的新工程。` : "分区工程已生成，但自动保存失败；请导出工程文件。", !savedCopy);
+    return savedCopy;
+  }
+
   function makeExportRegionsFromGuides(pattern, guidesOverride) {
     if (!pattern) return [];
     const guides = Array.isArray(guidesOverride) ? guidesOverride : normalizeGuideLines();
@@ -8755,6 +8889,7 @@
 
   function getExportRegions(pattern) {
     if (!pattern || !state.beads.exportSettings.regionEnabled) return [];
+    if (state.beads.tileLayout) return state.beads.layers.map((layer) => Object.assign({}, layer.tileRegion, { name: layer.name }));
     const custom = normalizeExportRegions(state.beads.exportRegions, pattern);
     if (custom.length) return custom;
     return makeAutoExportRegions(pattern, state.beads.exportSettings.regionRows, state.beads.exportSettings.regionCols);
@@ -8796,6 +8931,9 @@
 
   function getBestRegionPreviewColumns(pages, settings) {
     if (!pages.length) return 1;
+    if (state.beads.tileLayout && pages.length === state.beads.tileLayout.rows * state.beads.tileLayout.cols) {
+      return state.beads.tileLayout.cols;
+    }
     const ratio = getExportRatioNumbers(settings || {});
     if (!ratio) return Math.min(2, pages.length);
     const maxColumns = Math.min(8, pages.length);
@@ -8897,6 +9035,7 @@
     if (els.exportRegionSelect) els.exportRegionSelect.innerHTML = "";
     if (els.exportRegionMultiSelect) els.exportRegionMultiSelect.innerHTML = "";
     if (!regions.length) {
+      if (els.tileRegionChecklist) els.tileRegionChecklist.replaceChildren();
       const option = document.createElement("option");
       option.value = "";
       option.textContent = "暂无区域";
@@ -8923,6 +9062,38 @@
         option.selected = option.value === selected.id;
       });
     }
+    renderTilePreviewChecklist(regions);
+  }
+
+  function selectedTilePreviewIds(regions = getExportRegions(state.beads.pattern)) {
+    const available = new Set(regions.map((region) => region.id));
+    const saved = state.beads.exportSettings.regionPreviewIds;
+    const selected = Array.isArray(saved) ? saved.filter((id) => available.has(id)) : [];
+    return selected.length ? selected : regions.map((region) => region.id);
+  }
+
+  function renderTilePreviewChecklist(regions) {
+    if (!els.tileRegionChecklist) return;
+    els.tileRegionChecklist.replaceChildren();
+    if (!state.beads.tileLayout) return;
+    const selected = new Set(selectedTilePreviewIds(regions));
+    regions.forEach((region) => {
+      const row = document.createElement("div");
+      row.className = "tile-preview-row";
+      const label = document.createElement("label");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox"; checkbox.value = region.id; checkbox.checked = selected.has(region.id);
+      label.append(checkbox, document.createTextNode(`${region.name} · ${region.width}×${region.height} 格`));
+      const only = document.createElement("button");
+      only.type = "button"; only.textContent = "仅此"; only.title = `只预览${region.name}`;
+      only.addEventListener("click", () => {
+        state.beads.exportSettings.regionPreviewIds = [region.id];
+        state.beads.exportSettings.regionSelectedId = region.id;
+        renderTilePreviewChecklist(regions);
+        refreshExportPreviewIfOpen(); markUnsavedChanges();
+      });
+      row.append(label, only); els.tileRegionChecklist.appendChild(row);
+    });
   }
 
   function getRegionIdsFromMultiSelect() {
@@ -8931,6 +9102,7 @@
   }
 
   function autoGenerateExportRegions() {
+    if (state.beads.tileLayout) return setMessage("分区工程的导出区域与各画布绑定，不能重新划分。", true);
     if (!state.beads.pattern) {
       setMessage("请先生成图纸。", true);
       return;
@@ -8951,6 +9123,7 @@
   }
 
   function generateExportRegionsFromGuides() {
+    if (state.beads.tileLayout) { setMessage("分区工程的导出区域与各画布绑定，不能重新划分。", true); return 0; }
     if (!state.beads.pattern) {
       setMessage("请先生成图纸。", true);
       return 0;
@@ -8973,6 +9146,7 @@
   }
 
   function addCustomExportRegion() {
+    if (state.beads.tileLayout) return setMessage("分区工程的导出区域与各画布绑定，不能新增。", true);
     if (!state.beads.pattern) {
       setMessage("请先生成图纸。", true);
       return;
@@ -8998,6 +9172,7 @@
   }
 
   function deleteSelectedExportRegion() {
+    if (state.beads.tileLayout) return setMessage("分区工程不能删除画布区域。", true);
     const selected = getSelectedExportRegion(state.beads.pattern);
     if (!selected) return setMessage("没有可删除的区域。", true);
     state.beads.exportRegions = normalizeExportRegions(state.beads.exportRegions, state.beads.pattern).filter((region) => region.id !== selected.id);
@@ -9008,6 +9183,7 @@
   }
 
   function nudgeSelectedExportRegion(direction) {
+    if (state.beads.tileLayout) return setMessage("分区工程不能移动画布区域。", true);
     if (!state.beads.pattern) return setMessage("请先生成图纸。", true);
     const selected = getSelectedExportRegion(state.beads.pattern);
     if (!selected) return setMessage("请先添加或自动划分区域。", true);
@@ -9492,7 +9668,9 @@
       return;
     }
     let pages = [];
-    const regions = getExportRegions(state.beads.pattern);
+    const allRegions = getExportRegions(state.beads.pattern);
+    const selectedIds = state.beads.tileLayout ? new Set(selectedTilePreviewIds(allRegions)) : null;
+    const regions = selectedIds ? allRegions.filter((region) => selectedIds.has(region.id)) : allRegions;
     if (state.beads.exportSettings.regionEnabled && regions.length) {
       pages = regions.map((region, index) => makeRegionCanvas(state.beads.pattern, region, index));
     } else {
@@ -9545,6 +9723,7 @@
     if (!state.beads.pattern) return null;
     const regions = getExportRegions(state.beads.pattern);
     if (state.beads.exportSettings.regionEnabled && regions.length) {
+      if (state.beads.tileLayout) return makeRegionsExportCanvasByIds(selectedTilePreviewIds(regions));
       return makeRegionPreviewCanvas(state.beads.pattern);
     }
     return makeBeadExportCanvas(state.beads.pattern);
@@ -11934,9 +12113,11 @@
         locked: layer.locked,
         alphaLocked: Boolean(layer.alphaLocked),
         groupName: layer.groupName || "",
+        tileRegion: layer.tileRegion ? Object.assign({}, layer.tileRegion) : null,
         cells: layer.cells
       })),
       activeLayerId: state.beads.activeLayerId,
+      tileLayout: state.beads.tileLayout ? Object.assign({}, state.beads.tileLayout) : null,
       buildProgress: Object.assign({}, state.buildProgress || {}),
       exportSettings: Object.assign({}, state.beads.exportSettings),
       exportRegions: normalizeExportRegions(state.beads.exportRegions, state.beads.pattern),
@@ -11991,14 +12172,19 @@
         locked: Boolean(layer.locked),
         alphaLocked: Boolean(layer.alphaLocked),
         groupName: layer.groupName || "",
+        tileRegion: layer.tileRegion ? Object.assign({}, layer.tileRegion) : null,
         cells: Array.isArray(layer.cells) ? layer.cells.map((row) => row.map((code) => code && getPaletteColor(code).code === code ? code : null)) : makeEmptyCells(height, width)
       }));
       state.beads.activeLayerId = payload.activeLayerId || state.beads.layers[0].id;
     } else {
       state.beads.layers = [];
+      state.beads.tileLayout = null;
       state.beads.activeLayerId = "";
       ensureLayers();
     }
+    state.beads.tileLayout = payload.tileLayout && window.QPixelTileProject && window.QPixelTileProject.validLayout(state.beads.pattern, payload.tileLayout, state.beads.layers)
+      ? { rows: payload.tileLayout.rows, cols: payload.tileLayout.cols }
+      : null;
     state.beads.projectId = keepId === false ? null : (payload.id || makeId());
     state.beads.projectTitle = payload.title || "未命名";
     state.beads.projectCreatedAt = payload.createdAt || payload.savedAt || new Date().toISOString();
@@ -12054,6 +12240,7 @@
     }
     state.beads.importProcessedSource = null;
     state.beads.exportSettings = Object.assign({}, state.beads.exportSettings, payload.exportSettings || {});
+    if (state.beads.tileLayout) state.beads.exportSettings.regionEnabled = true;
     state.beads.exportRegions = normalizeExportRegions(payload.exportRegions || [], state.beads.pattern);
     state.beads.eraserSize = clamp(payload.editorSettings && payload.editorSettings.eraserSize, 1, 10);
     state.beads.codeFontScale = payload.editorSettings && Number.isFinite(Number(payload.editorSettings.codeFontScale))
@@ -12756,6 +12943,7 @@
     state.lastRender = null;
     state.beads.pattern = createBlankPattern(state.beads.width, state.beads.height, "空白画布");
     state.beads.layers = [];
+    state.beads.tileLayout = null;
     state.beads.activeLayerId = "";
     state.beads.projectId = null;
     state.beads.projectTitle = makeUntitledName();
@@ -14889,6 +15077,12 @@
       closeLayerImportModal();
       event.target.value = "";
     });
+    if (els.tileCreateButton) els.tileCreateButton.addEventListener("click", async () => {
+      const rows = Number(els.tileRowsInput.value), cols = Number(els.tileColsInput.value);
+      els.tileCreateButton.disabled = true;
+      try { await createTiledProject(rows, cols); }
+      finally { els.tileCreateButton.disabled = false; }
+    });
     els.canvasMirrorButton.addEventListener("click", () => {
       if (!ensurePatternForCanvasEdit()) return setMessage("请先载入图片或生成图纸。", true);
       pushHistory();
@@ -15091,6 +15285,20 @@
         }
       });
     }
+    if (els.tileRegionChecklist) els.tileRegionChecklist.addEventListener("change", (event) => {
+      if (!event.target.matches('input[type="checkbox"]')) return;
+      const ids = Array.from(els.tileRegionChecklist.querySelectorAll('input[type="checkbox"]:checked')).map((input) => input.value);
+      if (!ids.length) { event.target.checked = true; return; }
+      state.beads.exportSettings.regionPreviewIds = ids;
+      if (ids.length === 1) state.beads.exportSettings.regionSelectedId = ids[0];
+      refreshExportPreviewIfOpen(); markUnsavedChanges();
+    });
+    if (els.tileSelectAllButton) els.tileSelectAllButton.addEventListener("click", () => {
+      const regions = getExportRegions(state.beads.pattern);
+      state.beads.exportSettings.regionPreviewIds = regions.map((region) => region.id);
+      renderTilePreviewChecklist(regions);
+      refreshExportPreviewIfOpen(); markUnsavedChanges();
+    });
     if (els.exportRegionDeleteButton) els.exportRegionDeleteButton.addEventListener("click", deleteSelectedExportRegion);
     if (els.exportRegionExportButton) els.exportRegionExportButton.addEventListener("click", exportSelectedRegionPng);
     if (els.exportRegionExportSelectedButton) els.exportRegionExportSelectedButton.addEventListener("click", exportMultiRegionPng);
@@ -15216,6 +15424,7 @@
     state.beads.projectTitle = "测试源文件";
     state.beads.sourceLabel = "测试图";
     state.beads.layers = [];
+    state.beads.tileLayout = null;
     state.beads.activeLayerId = "";
     ensureLayers();
     clearHistory();
@@ -15233,6 +15442,7 @@
     state.beads.width = pattern.width;
     state.beads.height = pattern.height;
     state.beads.layers = [];
+    state.beads.tileLayout = null;
     state.beads.activeLayerId = "";
     state.beads.sourceLabel = "像素画结果";
     state.beads.pixelSignature = getPixelPatternSignature();
@@ -15645,6 +15855,13 @@
       cropCanvasToSelection,
       scaleCanvasByFactor,
       getLayers: () => state.beads.layers,
+      getTileLayout: () => state.beads.tileLayout,
+      createTiledProject,
+      canWriteActiveLayerCell: (row, col, code) => canWriteLayerCell(getActiveLayer(), row, col, code),
+      loadProject,
+      paintCell,
+      saveCurrentProject,
+      getGridRect: () => state.beads.lastGridRect,
       setActiveLayerAlphaLockForTest: (enabled) => {
         const layer = getActiveLayer();
         if (!layer) return false;
@@ -15655,6 +15872,8 @@
       makeRegionPreviewCanvas,
       makeRegionCanvas,
       makeRegionsExportCanvasByIds,
+      makeCurrentExportCanvas,
+      selectedTilePreviewIds: () => selectedTilePreviewIds(),
       makeRegionExportCanvasesByIds,
       makeExportRegionsFromGuides: (guides) => makeExportRegionsFromGuides(state.beads.pattern, guides),
       generateExportRegionsFromGuides,

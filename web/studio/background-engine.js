@@ -53,6 +53,33 @@
     return mask;
   }
 
+  function connectedColor(mask, cells, start, selected) {
+    const { width, height } = dimensions(cells);
+    const x = Math.floor(start.x), y = Math.floor(start.y);
+    if (x < 0 || y < 0 || x >= width || y >= height || !cells[y][x]) return 0;
+    const code = cells[y][x], seen = new Uint8Array(width * height);
+    const queue = new Int32Array(width * height);
+    let head = 0, tail = 0, changed = 0;
+    queue[tail++] = y * width + x;
+    seen[y * width + x] = 1;
+    while (head < tail) {
+      const index = queue[head++], row = Math.floor(index / width), col = index % width;
+      if (mask[index] !== (selected ? 1 : 0)) changed++;
+      mask[index] = selected ? 1 : 0;
+      const visit = (next) => {
+        if (!seen[next] && cells[Math.floor(next / width)][next % width] === code) {
+          seen[next] = 1;
+          queue[tail++] = next;
+        }
+      };
+      if (row > 0) visit(index - width);
+      if (row + 1 < height) visit(index + width);
+      if (col > 0) visit(index - 1);
+      if (col + 1 < width) visit(index + 1);
+    }
+    return changed;
+  }
+
   function rectangle(mask, width, height, start, end, selected) {
     const minX = Math.max(0, Math.min(Math.floor(start.x), Math.floor(end.x)));
     const maxX = Math.min(width - 1, Math.max(Math.floor(start.x), Math.floor(end.x)));
@@ -76,5 +103,5 @@
   }
 
   function count(mask) { let total = 0; for (let i = 0; i < mask.length; i += 1) total += mask[i] ? 1 : 0; return total; }
-  return Object.freeze({ detect, paint, rectangle, polygon, count, dimensions });
+  return Object.freeze({ detect, paint, rectangle, polygon, connectedColor, count, dimensions });
 });

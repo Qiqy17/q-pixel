@@ -12,7 +12,7 @@
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.svg">
   <link rel="stylesheet" href="./styles.css">
-  <link rel="stylesheet" href="./studio/studio.css?v=20260927-dual-tool-rails-30">
+  <link rel="stylesheet" href="./studio/studio.css?v=20260927-tile-workspace-31">
 </head>
 <body>
   <main class="app-shell is-home">
@@ -592,6 +592,16 @@
             <div class="panel-section compact">
               <h2>画布编辑</h2>
             </div>
+            <details class="tile-project-controls">
+              <summary>划分为多画布工程</summary>
+              <p class="panel-caption">保留原工程，复制当前可见图纸并按区域生成独立图层。</p>
+              <div class="region-auto-grid">
+                <label>横向画布 <input id="tileColsInput" type="number" min="1" max="4" value="3"></label>
+                <label>纵向画布 <input id="tileRowsInput" type="number" min="1" max="4" value="3"></label>
+              </div>
+              <button id="tileCreateButton" type="button" class="text-button secondary">生成新的分区工程</button>
+              <p id="tileProjectStatus" class="panel-caption" aria-live="polite"></p>
+            </details>
             <div class="edit-row">
               <span>全图镜像</span>
               <button class="mini-button" id="canvasMirrorButton" type="button">立即镜像</button>
@@ -977,6 +987,10 @@
           <canvas id="exportPreviewCanvas" width="900" height="620" aria-label="导出预览画布"></canvas>
         </div>
         <aside class="export-preview-side">
+          <div id="tilePreviewSelection" class="tile-preview-selection" hidden>
+            <div class="tile-preview-selection-head"><strong>选择预览画布</strong><button id="tileSelectAllButton" type="button">全选</button></div>
+            <div id="tileRegionChecklist" class="tile-region-checklist" role="group" aria-label="选择要预览和导出的画布"></div>
+          </div>
           <div class="export-settings">
             <h3>图纸显示</h3>
             <label class="switch-row"><span><strong>显示网格</strong><em>在导出图纸中显示细网格</em></span><input id="exportGridToggle" type="checkbox" checked></label>
@@ -1542,6 +1556,7 @@
   <script src="./make/build-navigation.js"></script>
   <script src="./studio/background-engine.js"></script>
   <script src="./studio/background-tool.js"></script>
+  <script src="./studio/tile-project.js"></script>
   <script src="./studio/surface-engine.js"></script>
   <script src="./studio/scene-material-library.js"></script>
   <script src="./studio/scene-catalog.js"></script>
@@ -1550,6 +1565,6 @@
   <script src="./3d/finish-workbench.js?v=20260926-continuous-preview-27"></script>
   <script src="./import-engine.js"></script>
   <script src="./import-processing.js"></script>
-  <script src="./app.js?v=20260927-dual-tool-rails-30"></script>
+  <script src="./app.js?v=20260927-tile-workspace-31"></script>
 </body>
 </html>
