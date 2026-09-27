@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import hashlib
 import hmac
 import http.client
 import ipaddress
@@ -10,6 +11,7 @@ import shutil
 import ssl
 import subprocess
 import tempfile
+import time
 from datetime import datetime, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from http.cookies import SimpleCookie
@@ -34,7 +36,50 @@ CERT_DIR = DATA_DIR / "ipad-cert"
 CERT_FILE = CERT_DIR / "qpixel-ipad.crt"
 KEY_FILE = CERT_DIR / "qpixel-ipad.key"
 CERT_HOST_FILE = CERT_DIR / "qpixel-ipad-host.txt"
+PAIRED_DEVICES_FILE = DATA_DIR / "ipad-paired-devices.json"
+PAIRING_LIFETIME_SECONDS = 30 * 24 * 60 * 60
 WRITE_LOCK = Lock()
+PAIRING_LOCK = Lock()
+
+
+def paired_device_hash(token):
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def read_paired_devices():
+    try:
+        data = json.loads(PAIRED_DEVICES_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    devices = data.get("devices", []) if isinstance(data, dict) else []
+    now = time.time()
+    return [device for device in devices if isinstance(device, dict)
+            and isinstance(device.get("hash"), str) and isinstance(device.get("expires"), (int, float))
+            and device["expires"] > now]
+
+
+def save_paired_devices(devices):
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=DATA_DIR,
+                                     prefix=".ipad-paired-", delete=False) as file:
+        path = Path(file.name)
+        try:
+            json.dump({"devices": devices}, file, ensure_ascii=False)
+            file.flush()
+            os.fsync(file.fileno())
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+    try:
+        os.chmod(path, 0o600)
+        os.replace(path, PAIRED_DEVICES_FILE)
+    finally:
+        path.unlink(missing_ok=True)
+
+
+def forget_paired_devices():
+    with PAIRING_LOCK:
+        PAIRED_DEVICES_FILE.unlink(missing_ok=True)
 
 
 class QPixelHttpsHandler(SimpleHTTPRequestHandler):
@@ -76,7 +121,12 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
         except Exception:
             return False
         value = cookie.get("qpixel_pair")
-        return bool(value and hmac.compare_digest(value.value, self.server.pairing_token))
+        if not value or len(value.value) > 128:
+            return False
+        token_hash = paired_device_hash(value.value)
+        with PAIRING_LOCK:
+            return any(hmac.compare_digest(token_hash, device["hash"])
+                       for device in read_paired_devices())
 
     def gate(self):
         if not self.check_request_origin():
@@ -94,7 +144,7 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
         return False
 
     def pair_page(self, error=False):
-        message = "配对码不正确，请重试。" if error else "在电脑启动平板共享后，输入终端显示的配对码。"
+        message = "配对码不正确，请重试。" if error else "首次连接请输入电脑终端显示的配对码。此浏览器将在 30 天内自动连接。"
         body = ("<!doctype html><html lang='zh-CN'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
                 "<title>Q像素平板配对</title><style>body{font:16px -apple-system,sans-serif;max-width:420px;margin:12vh auto;padding:24px;color:#173e38}"
                 "input,button{box-sizing:border-box;width:100%;min-height:48px;margin-top:12px;padding:10px;font-size:17px}button{background:#176d61;color:white;border:0;border-radius:8px}</style>"
@@ -117,9 +167,19 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
         if not hmac.compare_digest(code, self.server.pairing_code):
             self.pair_page(error=True)
             return
+        token = secrets.token_urlsafe(32)
+        with PAIRING_LOCK:
+            try:
+                devices = read_paired_devices()
+                devices.append({"hash": paired_device_hash(token),
+                                "expires": int(time.time()) + PAIRING_LIFETIME_SECONDS})
+                save_paired_devices(devices)
+            except OSError:
+                self.send_json({"error": "无法保存平板配对信息，请检查电脑存储权限。"}, status=503)
+                return
         self.send_response(303)
         self.send_header("Location", "/index.html")
-        self.send_header("Set-Cookie", f"qpixel_pair={self.server.pairing_token}; HttpOnly; Secure; SameSite=Strict; Path=/")
+        self.send_header("Set-Cookie", f"qpixel_pair={token}; Max-Age={PAIRING_LIFETIME_SECONDS}; HttpOnly; Secure; SameSite=Strict; Path=/")
         self.end_headers()
 
     def proxy_request(self):
@@ -662,7 +722,12 @@ def main():
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("--proxy-port", type=int, default=0, help="配对服务转发到本机服务端口。")
     parser.add_argument("--http", action="store_true", help="使用普通 HTTP，保留创作空间同步接口。")
+    parser.add_argument("--forget-devices", action="store_true", help="清除所有已记住的平板，然后退出。")
     args = parser.parse_args()
+    if args.forget_devices:
+        forget_paired_devices()
+        print("已清除所有已记住的平板。下次访问需重新输入配对码。")
+        return
     pairing_code = os.environ.get("QPIXEL_PAIRING_CODE", "").strip()
     try:
         loopback = ipaddress.ip_address(args.host).is_loopback
@@ -679,7 +744,6 @@ def main():
     server.scheme = "http" if args.http else "https"
     server.allowed_hosts = {f"{args.cert_host}:{args.port}"} if pairing_code else {f"127.0.0.1:{args.port}", f"localhost:{args.port}"}
     server.pairing_code = pairing_code
-    server.pairing_token = secrets.token_urlsafe(32) if pairing_code else ""
     server.proxy_port = args.proxy_port
     if args.http:
         print(f"Q像素 iPad HTTP 服务：http://{args.cert_host}:{args.port}/index.html")

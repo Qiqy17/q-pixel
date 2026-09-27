@@ -57,6 +57,8 @@ for file in index.html styles.css feature-flags.js module-loader.js import-engin
   esac
   cmp -s "$RESOURCES_DIR/$file" "$source_file"
 done
+cmp -s "$RESOURCES_DIR/run_ipad_server.sh" "$REPO_DIR/scripts/run_ipad_server.sh"
+zsh -n "$RESOURCES_DIR/run_ipad_server.sh"
 
 for file in project-model.js workspace-state.js dom-utils.js project-store.js; do
   cmp -s "$RESOURCES_DIR/core/$file" "$REPO_DIR/web/core/$file"

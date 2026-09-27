@@ -87,6 +87,7 @@ class LocalServerSecurityTest(unittest.TestCase):
                                           {"Content-Type": "application/x-www-form-urlencoded"})
         self.assertEqual(status, 303)
         cookie = headers["Set-Cookie"].split(";", 1)[0]
+        self.assertIn("Max-Age=2592000", headers["Set-Cookie"])
         self.assertIn("HttpOnly; Secure; SameSite=Strict", headers["Set-Cookie"])
         project = {"id": "security-test", "name": "security-test", "updatedAt": "2026-09-25T00:00:00"}
         status, _, _ = self.request(True, self.paired_port, "POST", "/api/projects/security-test",
@@ -104,6 +105,47 @@ class LocalServerSecurityTest(unittest.TestCase):
         status, _, _ = self.request(True, self.paired_port, "POST", "/api/projects", "[]",
                                     {"Cookie": cookie, "Content-Length": "bad"})
         self.assertEqual(status, 400)
+
+    def test_paired_browser_survives_restart_and_can_be_revoked(self):
+        status, headers, _ = self.request(True, self.paired_port, "POST", "/pair",
+                                          urlencode({"code": self.pairing_code}),
+                                          {"Content-Type": "application/x-www-form-urlencoded"})
+        self.assertEqual(status, 303)
+        cookie = headers["Set-Cookie"].split(";", 1)[0]
+        self.paired.terminate()
+        self.paired.wait(timeout=3)
+        self.paired = subprocess.Popen(
+            [sys.executable, str(SERVER), "--host", "127.0.0.1", "--cert-host", "127.0.0.1",
+             "--port", str(self.paired_port), "--proxy-port", str(self.local_port)],
+            env={**os.environ, "QPIXEL_DATA_DIR": self.temp.name,
+                 "QPIXEL_PAIRING_CODE": "new-code-after-restart"},
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        self.wait_ready(self.paired_port, secure=True)
+        status, _, _ = self.request(True, self.paired_port, "GET", "/api/projects",
+                                    headers={"Cookie": cookie})
+        self.assertEqual(status, 200)
+        subprocess.run([sys.executable, str(SERVER), "--forget-devices"], check=True,
+                       env={**os.environ, "QPIXEL_DATA_DIR": self.temp.name},
+                       stdout=subprocess.DEVNULL)
+        status, _, _ = self.request(True, self.paired_port, "GET", "/api/projects",
+                                    headers={"Cookie": cookie})
+        self.assertEqual(status, 401)
+
+    def test_expired_device_requires_pairing_again(self):
+        status, headers, _ = self.request(True, self.paired_port, "POST", "/pair",
+                                          urlencode({"code": self.pairing_code}),
+                                          {"Content-Type": "application/x-www-form-urlencoded"})
+        self.assertEqual(status, 303)
+        cookie = headers["Set-Cookie"].split(";", 1)[0]
+        devices_file = Path(self.temp.name) / "ipad-paired-devices.json"
+        self.assertEqual(devices_file.stat().st_mode & 0o777, 0o600)
+        data = json.loads(devices_file.read_text(encoding="utf-8"))
+        data["devices"][0]["expires"] = int(time.time()) - 1
+        devices_file.write_text(json.dumps(data), encoding="utf-8")
+        status, _, _ = self.request(True, self.paired_port, "GET", "/api/projects",
+                                    headers={"Cookie": cookie})
+        self.assertEqual(status, 401)
 
 
 if __name__ == "__main__":
