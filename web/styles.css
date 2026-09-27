@@ -366,17 +366,13 @@
   font-weight: 800;
 }
 
-.professional-workspace .canvas-tool-rail:not(.rail-b) {
+.professional-workspace .canvas-tool-rail {
   max-height: calc(100% - 24px);
   overflow-y: auto;
   scrollbar-width: thin;
 }
 
-.professional-workspace .canvas-tool-rail.workflow-rail-merged {
-  display: none !important;
-}
-
-.professional-workspace .canvas-tool-rail:not(.rail-b) .tool-button {
+.professional-workspace .canvas-tool-rail .tool-button {
   min-height: 46px;
 }
 
@@ -1574,7 +1570,8 @@ select {
   min-height: 42px;
 }
 
-.canvas-tool-rail:not(.rail-b).is-collapsed ~ .canvas-tool-options {
+.canvas-tool-rail:not(.rail-b).is-collapsed ~ .canvas-tool-options:not(.from-right-rail),
+.canvas-tool-rail.rail-b.is-collapsed ~ .canvas-tool-options.from-right-rail {
   display: none !important;
 }
 

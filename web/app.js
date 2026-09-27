@@ -1003,6 +1003,8 @@
     if (active === "guide" && state.beads.toolOptionsHiddenFor !== "guide") visibleOptions.add("guide");
     const blocks = Array.from(els.toolOptionsPanel.querySelectorAll(".tool-option"));
     blocks.forEach((block) => block.classList.toggle("active", visibleOptions.has(block.dataset.option)));
+    const activeButton = document.querySelector(`.canvas-tool-rail .tool-button[data-tool="${active}"]`);
+    els.toolOptionsPanel.classList.toggle("from-right-rail", Boolean(activeButton?.closest(".rail-b")));
     els.toolOptionsPanel.classList.toggle("active", visibleOptions.size > 0);
     if (visibleOptions.has("selection-colors")) renderSelectionColorPanel();
   }
@@ -13382,6 +13384,7 @@
       return;
     }
     let drag = null;
+    let hasCustomPosition = false;
     const clampPosition = (left, top) => {
       const zone = els.dropZone.getBoundingClientRect();
       const rect = panel.getBoundingClientRect();
@@ -13398,6 +13401,7 @@
       panel.style.bottom = "auto";
       panel.style.transform = "none";
       if (persist && options && options.persistKey) {
+        hasCustomPosition = true;
         localStorage.setItem(options.persistKey, JSON.stringify(next));
       }
       return next;
@@ -13440,6 +13444,7 @@
       } catch {}
     }
     window.addEventListener("resize", () => {
+      if (!hasCustomPosition) return;
       const rect = panel.getBoundingClientRect();
       const zone = els.dropZone.getBoundingClientRect();
       if (!rect.width || !zone.width) return;
@@ -13512,7 +13517,7 @@
     try {
       await moduleLoader.loadScript("./workspaces/quality-checks.js", { async: false });
       await moduleLoader.loadScript("./workspaces/context-inspector.js", { async: false });
-      await moduleLoader.loadScript("./workspaces/workspace-controller.js?v=20260926-editor-visibility-17", { async: false });
+      await moduleLoader.loadScript("./workspaces/workspace-controller.js?v=20260927-dual-tool-rails-30", { async: false });
       await moduleLoader.loadScript("./import/import-router.js", { async: false });
       await moduleLoader.loadScript("./pattern-rebuild/rebuild-engine.js", { async: false });
       await moduleLoader.loadScript("./pattern-rebuild/legend-schema.js", { async: false });
@@ -14213,20 +14218,25 @@
         const rail = els.toolRailBCollapseButton.closest(".canvas-tool-rail");
         const collapsed = !rail.classList.contains("is-collapsed");
         rail.classList.toggle("is-collapsed", collapsed);
-        els.toolRailBCollapseButton.textContent = collapsed ? "B组" : "›";
-        localStorage.setItem("q-pixel-tool-rail-b-collapsed", collapsed ? "1" : "0");
+        els.toolRailBCollapseButton.textContent = collapsed ? "区域·辅助" : "›";
+        els.toolRailBCollapseButton.title = collapsed ? "展开区域与辅助工具栏" : "收起区域与辅助工具栏";
+        els.toolRailBCollapseButton.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        localStorage.setItem("q-pixel-tool-rail-b-collapsed-v2", collapsed ? "1" : "0");
       });
     }
     makeFloatingPanelDraggable(els.toolRailGrip.closest(".canvas-tool-rail"), els.toolRailGrip, { persistKey: "q-pixel-tool-rail-position-v2" });
-    if (els.toolRailBGrip) makeFloatingPanelDraggable(els.toolRailBGrip.closest(".canvas-tool-rail"), els.toolRailBGrip, { persistKey: "q-pixel-tool-rail-b-position-v1" });
+    if (els.toolRailBGrip) makeFloatingPanelDraggable(els.toolRailBGrip.closest(".canvas-tool-rail"), els.toolRailBGrip, { persistKey: "q-pixel-tool-rail-b-position-v2" });
     makeFloatingPanelDraggable(els.colorStrip, els.colorStripGrip, { persistKey: "q-pixel-color-strip-position-v2" });
     if (localStorage.getItem("q-pixel-tool-rail-collapsed") === "1") {
       els.toolRailGrip.closest(".canvas-tool-rail").classList.add("is-collapsed");
       els.toolRailCollapseButton.textContent = "›";
     }
-    if (els.toolRailBCollapseButton && localStorage.getItem("q-pixel-tool-rail-b-collapsed") === "1") {
+    if (els.toolRailBCollapseButton && (localStorage.getItem("q-pixel-tool-rail-b-collapsed-v2") === "1" ||
+        (localStorage.getItem("q-pixel-tool-rail-b-collapsed-v2") === null && window.innerWidth <= 767))) {
       els.toolRailBCollapseButton.closest(".canvas-tool-rail").classList.add("is-collapsed");
-      els.toolRailBCollapseButton.textContent = "B组";
+      els.toolRailBCollapseButton.textContent = "区域·辅助";
+      els.toolRailBCollapseButton.title = "展开区域与辅助工具栏";
+      els.toolRailBCollapseButton.setAttribute("aria-expanded", "false");
     }
     els.modePixelButton.addEventListener("click", () => setMode("pixel"));
     els.modeBeadsButton.addEventListener("click", () => setMode("beads"));

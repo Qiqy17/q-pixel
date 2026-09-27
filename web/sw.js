@@ -1,5 +1,5 @@
 importScripts("./studio/scene-material-library.js");
-const CACHE_NAME = "q-pixel-v20260927-editor-materials-28";
+const CACHE_NAME = "q-pixel-v20260927-dual-tool-rails-30";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -16,7 +16,7 @@ const APP_SHELL = [
   "./make/board-planner.js",
   "./make/build-navigation.js",
   "./studio/studio.css",
-  "./studio/studio.css?v=20260927-editor-materials-28",
+  "./studio/studio.css?v=20260927-dual-tool-rails-30",
   "./studio/background-engine.js",
   "./studio/background-tool.js",
   "./studio/surface-engine.js",
@@ -40,7 +40,7 @@ const APP_SHELL = [
   "./workspaces/quality-checks.js",
   "./workspaces/context-inspector.js",
   "./workspaces/workspace-controller.js",
-  "./workspaces/workspace-controller.js?v=20260926-editor-visibility-17",
+  "./workspaces/workspace-controller.js?v=20260927-dual-tool-rails-30",
   "./import/import-router.js",
   "./pattern-rebuild/rebuild-engine.js",
   "./pattern-rebuild/rebuild-worker.js",
@@ -50,7 +50,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20260927-editor-materials-28",
+  "./app.js?v=20260927-dual-tool-rails-30",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"

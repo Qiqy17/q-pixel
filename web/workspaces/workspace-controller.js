@@ -56,25 +56,25 @@
       return state;
     }
 
-    function mergeToolRails() {
+    function splitToolRails() {
       if (!documentRef) return;
       const primary = documentRef.querySelector(".canvas-tool-rail:not(.rail-b)");
       const secondary = documentRef.querySelector(".canvas-tool-rail.rail-b");
-      if (!primary || !secondary || primary.dataset.workflowMerged === "1") return;
-      Array.from(secondary.querySelectorAll(".tool-button")).forEach((button) => primary.appendChild(button));
+      if (!primary || !secondary || primary.dataset.workflowSplit === "1") return;
       const groups = [
-        { id: "draw", label: "绘制", tools: ["brush", "picker", "eraser", "bucket", "palette"] },
-        { id: "area", label: "区域", tools: ["select", "rect-fill", "rect-clear", "remove-background", "shape", "outline", "clear-layer"] },
-        { id: "assist", label: "辅助", tools: ["pan", "recolor", "guide"] }
+        { id: "draw", label: "绘制", rail: primary, tools: ["brush", "picker", "eraser", "bucket", "palette"] },
+        { id: "area", label: "区域", rail: secondary, tools: ["select", "rect-fill", "rect-clear", "remove-background", "shape", "outline", "clear-layer"] },
+        { id: "assist", label: "辅助", rail: secondary, tools: ["pan", "recolor", "guide"] }
       ];
-      const activeTool = primary.querySelector(".tool-button.active");
-      let activeGroup = groups.find((group) => activeTool && group.tools.includes(activeTool.dataset.tool))?.id || "draw";
+      const activeTool = documentRef.querySelector(".canvas-tool-rail .tool-button.active");
+      let activeGroup = groups.find((group) => activeTool && group.tools.includes(activeTool.dataset.tool))?.id;
+      if (!activeGroup || activeGroup === "draw") activeGroup = "area";
       const detailsById = new Map();
       groups.forEach((group) => {
         const details = documentRef.createElement("details");
         details.className = "tool-rail-group";
         details.dataset.group = group.id;
-        details.open = group.id === activeGroup;
+        details.open = group.id === "draw" || group.id === activeGroup;
         const summary = documentRef.createElement("summary");
         summary.textContent = group.label;
         summary.setAttribute("aria-label", `${group.label}工具`);
@@ -82,7 +82,7 @@
         group.tools.forEach((tool) => {
           const button = tool === "remove-background"
             ? documentRef.getElementById("removeBackgroundButton")
-            : primary.querySelector(`.tool-button[data-tool="${tool}"]`);
+            : documentRef.querySelector(`.canvas-tool-rail .tool-button[data-tool="${tool}"]`);
           if (!button) return;
           const icon = documentRef.createElementNS("http://www.w3.org/2000/svg", "svg");
           icon.setAttribute("viewBox", "0 0 24 24");
@@ -102,22 +102,23 @@
           const recent = primary.querySelector(".recent-color-stack");
           if (recent) details.appendChild(recent);
         }
-        primary.appendChild(details);
+        group.rail.appendChild(details);
         detailsById.set(group.id, details);
         details.addEventListener("toggle", () => {
-          if (!details.open) return;
+          if (!details.open || group.id === "draw") return;
           activeGroup = group.id;
-          detailsById.forEach((other, id) => { if (id !== group.id) other.open = false; });
+          detailsById.forEach((other, id) => { if (id !== group.id && id !== "draw") other.open = false; });
         });
       });
-      primary.addEventListener("click", (event) => {
-        const button = event.target.closest(".tool-button");
-        if (!button) return;
-        const details = button.closest(".tool-rail-group");
-        if (details && !details.open) details.open = true;
+      [primary, secondary].forEach((rail) => {
+        rail.addEventListener("click", (event) => {
+          const button = event.target.closest(".tool-button");
+          if (!button) return;
+          const details = button.closest(".tool-rail-group");
+          if (details && !details.open) details.open = true;
+        });
       });
-      primary.dataset.workflowMerged = "1";
-      secondary.classList.add("workflow-rail-merged");
+      primary.dataset.workflowSplit = "1";
     }
 
     function mount(contextInspector) {
@@ -132,7 +133,7 @@
         button.dataset.workflowBound = "1";
         button.addEventListener("click", () => setStage(button.dataset.workflowStageButton));
       });
-      mergeToolRails();
+      splitToolRails();
       syncViewport();
       if (state && state.viewport !== "desktop" && typeof settings.setInspectorCollapsed === "function") {
         state = stateApi ? stateApi.reduce(state, { type: "close-drawers" }) : Object.assign({}, state, { inspectorOpen: false });

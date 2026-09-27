@@ -12,7 +12,7 @@
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.svg">
   <link rel="stylesheet" href="./styles.css">
-  <link rel="stylesheet" href="./studio/studio.css?v=20260927-editor-materials-28">
+  <link rel="stylesheet" href="./studio/studio.css?v=20260927-dual-tool-rails-30">
 </head>
 <body>
   <main class="app-shell is-home">
@@ -147,9 +147,9 @@
             <button class="tool-button" id="toolRecolorButton" type="button" data-tool="recolor" title="一键替换配色" data-icon="⇄">配色</button>
             <button class="tool-button" id="toolGuideButton" type="button" data-tool="guide" title="添加辅助线" data-icon="╋">辅助线</button>
           </div>
-          <div class="canvas-tool-rail rail-b bead-only" role="group" aria-label="画布辅助工具">
-            <button class="rail-grip" id="toolRailBGrip" type="button" title="拖动辅助工具栏">⋮⋮</button>
-            <button class="rail-collapse" id="toolRailBCollapseButton" type="button" title="收起辅助工具栏">›</button>
+          <div class="canvas-tool-rail rail-b bead-only" role="group" aria-label="区域与辅助工具">
+            <button class="rail-grip" id="toolRailBGrip" type="button" title="拖动区域与辅助工具栏">⋮⋮</button>
+            <button class="rail-collapse" id="toolRailBCollapseButton" type="button" title="收起区域与辅助工具栏" aria-expanded="true">›</button>
             <button class="tool-button active" id="toolPanButton" type="button" data-tool="pan" title="移动画布" data-icon="↕">移动</button>
             <button class="tool-button" id="toolBucketButton" type="button" data-tool="bucket" title="连通区域填充" data-icon="◩">填充</button>
             <button class="tool-button" id="toolOutlineButton" type="button" data-tool="outline" title="像素描边" data-icon="▣">描边</button>
@@ -1550,6 +1550,6 @@
   <script src="./3d/finish-workbench.js?v=20260926-continuous-preview-27"></script>
   <script src="./import-engine.js"></script>
   <script src="./import-processing.js"></script>
-  <script src="./app.js?v=20260927-editor-materials-28"></script>
+  <script src="./app.js?v=20260927-dual-tool-rails-30"></script>
 </body>
 </html>
