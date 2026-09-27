@@ -13803,19 +13803,27 @@
     projects.unshift(nextProject);
     const localResult = storeProjectsLocally(projects);
     if (localResult.localStorage && savingRevision === draftRevision) { markSaved(); clearRecoveryDraft(); }
-    else setMessage("本机空间不足，修改暂存在当前页面；请导出工程文件或释放空间。", true);
-    saveProjectToRemote(projects[0]).then((result) => {
+    const remoteSave = saveProjectToRemote(projects[0]).then((result) => {
       if (result && result.ok) {
         if (savingRevision === draftRevision) { markSaved(); clearRecoveryDraft(); }
         // 远程确认成功后刷新一次列表，让 remoteUpdatedAt 落地；避免下轮同步合并时列表跳变。
         renderProjectList();
         renderHomeProjects();
       }
-      setMessage(result && result.ok ? "已保存并同步到电脑创作空间。" : localResult.localStorage ? "已保存到当前设备，电脑同步服务暂时不可用。" : "保存未完成：本机空间不足且电脑同步服务不可用，请导出工程文件。", !(result && result.ok));
+      setMessage(result && result.ok
+        ? localResult.localStorage ? "已保存并同步到电脑创作空间。" : "已保存到电脑创作空间；本机浏览器缓存空间不足。"
+        : localResult.localStorage ? "已保存到当前设备，电脑同步服务暂时不可用。" : "保存未完成：本机空间不足且电脑同步服务不可用，请导出工程文件。", !(result && result.ok) && !localResult.localStorage);
+      return result;
     });
     renderProjectList();
     renderHomeProjects();
-    return Boolean(localResult.localStorage);
+    // Large imported images can exceed the browser quota. The desktop service is
+    // durable too, so wait for its acknowledgement before rejecting a split.
+    if (!localResult.localStorage) {
+      const remoteResult = await remoteSave;
+      return Boolean(remoteResult && remoteResult.ok);
+    }
+    return true;
   }
 
   async function loadProject(id) {

@@ -1,5 +1,5 @@
 importScripts("./studio/scene-material-library.js");
-const CACHE_NAME = "q-pixel-v20260927-dual-tool-rails-30";
+const CACHE_NAME = "q-pixel-v20260927-tile-storage-32";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -50,7 +50,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20260927-dual-tool-rails-30",
+  "./app.js?v=20260927-tile-storage-32",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"
