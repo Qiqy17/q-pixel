@@ -27,6 +27,7 @@
   const buildNavigationModule = window.QPixelBuildNavigation || null;
   const surfaceEngine = window.QPixelSurfaceEngine || null;
   const sceneCatalog = window.QPixelSceneCatalog || null;
+  const editorPerformance = window.QPixelEditorPerformance || null;
 
   if (!projectModelModule || typeof projectModelModule.createContext !== "function") {
     throw new Error("Q像素项目模型加载失败，已停止初始化以保护项目数据。");
@@ -86,6 +87,7 @@
     if (Math.abs(light) > 0.5) return light;
     return a.code.localeCompare(b.code, undefined, { numeric: true });
   });
+  const beadPaletteByCode = new Map(beadPalette.map((color) => [color.code, color]));
 
   const styleBackgroundMaterialGroups = [
     {
@@ -1096,7 +1098,7 @@
   }
 
   function getPaletteColor(code) {
-    return beadPalette.find((color) => color.code === code) || beadPalette[0];
+    return beadPaletteByCode.get(code) || beadPalette[0];
   }
 
   function nearestBeadColor(r, g, b) {
@@ -1359,7 +1361,7 @@
     ].join("|");
   }
 
-  function ensurePixelEditablePattern(force) {
+  function ensurePixelEditablePattern(force, compositeCurrent) {
     if (!state.image) return null;
     const signature = getPixelPatternSignature();
     const gridSize = getPixelGridSizeForImage(state.image, state.params);
@@ -1368,7 +1370,7 @@
     const existing = state.beads.pattern;
     if (!force && existing && state.beads.sourceLabel === "像素画结果" &&
       state.beads.pixelSignature === signature) {
-      syncCompositePattern();
+      if (!compositeCurrent) syncCompositePattern();
       return existing;
     }
 
@@ -1393,7 +1395,7 @@
     return pattern;
   }
 
-  function renderPixelMode() {
+  function renderPixelMode(compositeCurrent) {
     syncControls();
     resizePreviewCanvas();
     const canvas = els.previewCanvas;
@@ -1407,13 +1409,12 @@
     }
 
     hideEmptyState();
-    const pattern = ensurePixelEditablePattern(false);
+    const pattern = ensurePixelEditablePattern(false, compositeCurrent);
     if (!pattern) {
       showEmptyState("像素画生成失败", "请换一张图片或降低像素精度");
       els.canvasSize.textContent = "未生成像素网格";
       return;
     }
-    syncCompositePattern();
     syncBeadControls();
     ctx.fillStyle = getBaseboardColor() || "#fbfaf7";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -1980,10 +1981,10 @@
     return createPatternFromSource(source, width, height, sourceLabel, { clean: false });
   }
 
-  function renderBeadMode() {
+  function renderBeadMode(compositeCurrent) {
     syncControls();
     resizePreviewCanvas();
-    syncCompositePattern();
+    if (!compositeCurrent) syncCompositePattern();
     const canvas = els.previewCanvas;
     const ctx = canvas.getContext("2d");
     clearPreview(ctx, canvas);
@@ -2048,8 +2049,9 @@
     if (!currentCode) return;
     ctx.save();
     ctx.fillStyle = "rgba(245, 247, 250, .68)";
-    for (let row = 0; row < pattern.height; row += 1) {
-      for (let col = 0; col < pattern.width; col += 1) {
+    const visible = editorPerformance.visibleCellRange(pattern.width, pattern.height, x, y, cellSize, ctx.canvas.width, ctx.canvas.height);
+    for (let row = visible.firstRow; row < visible.lastRow; row += 1) {
+      for (let col = visible.firstCol; col < visible.lastCol; col += 1) {
         const code = pattern.cells[row][col];
         if (code && code !== currentCode) ctx.fillRect(x + col * cellSize, y + row * cellSize, cellSize, cellSize);
       }
@@ -2120,13 +2122,14 @@
     const fillSize = Math.max(0.5, cellSize - cellGap);
     const cellRadius = Math.max(0, Math.min(fillSize / 2, rawRadius * fillSize / 50));
     const labels = [];
+    const visible = editorPerformance.visibleCellRange(pattern.width, pattern.height, x, y, cellSize, ctx.canvas.width, ctx.canvas.height);
 
     ctx.save();
     ctx.imageSmoothingEnabled = false;
     ctx.translate(x, y);
     ctx.globalAlpha = state.beads.sourceCompareEnabled && !options.export ? 0.78 : 1;
-    for (let row = 0; row < pattern.height; row += 1) {
-      for (let col = 0; col < pattern.width; col += 1) {
+    for (let row = visible.firstRow; row < visible.lastRow; row += 1) {
+      for (let col = visible.firstCol; col < visible.lastCol; col += 1) {
         const code = pattern.cells[row][col];
         const px = col * cellSize;
         const py = row * cellSize;
@@ -2184,15 +2187,15 @@
       ctx.beginPath();
       ctx.strokeStyle = cellSize >= 10 ? "rgba(23, 32, 51, .28)" : "rgba(23, 32, 51, .16)";
       ctx.lineWidth = Math.max(0.5, Math.min(1.25, cellSize / 24));
-      for (let col = 0; col <= pattern.width; col += 1) {
+      for (let col = visible.firstCol; col <= visible.lastCol; col += 1) {
         const gx = col * cellSize;
-        ctx.moveTo(gx, 0);
-        ctx.lineTo(gx, pattern.height * cellSize);
+        ctx.moveTo(gx, visible.firstRow * cellSize);
+        ctx.lineTo(gx, visible.lastRow * cellSize);
       }
-      for (let row = 0; row <= pattern.height; row += 1) {
+      for (let row = visible.firstRow; row <= visible.lastRow; row += 1) {
         const gy = row * cellSize;
-        ctx.moveTo(0, gy);
-        ctx.lineTo(pattern.width * cellSize, gy);
+        ctx.moveTo(visible.firstCol * cellSize, gy);
+        ctx.lineTo(visible.lastCol * cellSize, gy);
       }
       ctx.stroke();
 
@@ -2200,15 +2203,15 @@
         ctx.beginPath();
         ctx.strokeStyle = "rgba(23, 32, 51, .36)";
         ctx.lineWidth = Math.max(1, Math.min(2, cellSize / 18));
-        for (let col = 0; col <= pattern.width; col += 5) {
+        for (let col = Math.ceil(visible.firstCol / 5) * 5; col <= visible.lastCol; col += 5) {
           const gx = col * cellSize;
-          ctx.moveTo(gx, 0);
-          ctx.lineTo(gx, pattern.height * cellSize);
+          ctx.moveTo(gx, visible.firstRow * cellSize);
+          ctx.lineTo(gx, visible.lastRow * cellSize);
         }
-        for (let row = 0; row <= pattern.height; row += 5) {
+        for (let row = Math.ceil(visible.firstRow / 5) * 5; row <= visible.lastRow; row += 5) {
           const gy = row * cellSize;
-          ctx.moveTo(0, gy);
-          ctx.lineTo(pattern.width * cellSize, gy);
+          ctx.moveTo(visible.firstCol * cellSize, gy);
+          ctx.lineTo(visible.lastCol * cellSize, gy);
         }
         ctx.stroke();
       }
@@ -4154,12 +4157,12 @@
     if (els.emptyState) els.emptyState.classList.add("hidden");
   }
 
-  function render() {
+  function render(compositeCurrent) {
     if (!els.previewCanvas) return;
     if (state.mode === "beads") {
-      renderBeadMode();
+      renderBeadMode(compositeCurrent);
     } else {
-      renderPixelMode();
+      renderPixelMode(compositeCurrent);
     }
   }
 
@@ -5760,7 +5763,8 @@
     if (!state.beads.pattern) return;
     ensureLayers();
     state.beads.undoStack.push(cloneLayerState());
-    if (state.beads.undoStack.length > 80) state.beads.undoStack.shift();
+    const limit = editorPerformance.historySnapshotLimit(state.beads.pattern.width, state.beads.pattern.height, state.beads.layers.length);
+    while (state.beads.undoStack.length > limit) state.beads.undoStack.shift();
     state.beads.redoStack = [];
     updateHistoryButtons();
     markUnsavedChanges();
@@ -5961,6 +5965,14 @@
       }
     });
     pattern.cells = composite;
+  }
+
+  function syncCompositeCell(row, col) {
+    let code = null;
+    for (const layer of state.beads.layers) {
+      if (layer.visible && layer.cells[row] && layer.cells[row][col]) code = layer.cells[row][col];
+    }
+    state.beads.pattern.cells[row][col] = code;
   }
 
   function cloneLayerState() {
@@ -6611,7 +6623,7 @@
     if (!canWriteLayerCell(layer, cell.row, cell.col, code)) return false;
     if (cells[cell.row][cell.col] === code) return false;
     cells[cell.row][cell.col] = code;
-    syncCompositePattern();
+    syncCompositeCell(cell.row, cell.col);
     return true;
   }
 
@@ -6649,13 +6661,18 @@
   }
 
   function paintBrushCell(cell, code, size) {
+    const layer = getActiveLayer();
+    const cells = getEditableCells();
+    if (!layer || !cells || !state.beads.pattern) return 0;
     let changed = 0;
     const flashed = [];
     forEachCellInBrush(cell, size || 1, (target) => {
-      if (paintCell(target, code)) {
-        changed += 1;
-        if (code === null) flashed.push({ row: target.row, col: target.col });
-      }
+      if (target.row < 0 || target.col < 0 || target.row >= state.beads.pattern.height || target.col >= state.beads.pattern.width) return;
+      if (!canWriteLayerCell(layer, target.row, target.col, code) || cells[target.row][target.col] === code) return;
+      cells[target.row][target.col] = code;
+      syncCompositeCell(target.row, target.col);
+      changed += 1;
+      if (code === null) flashed.push({ row: target.row, col: target.col });
     });
     if (flashed.length) addEraserFlashCells(flashed);
     return changed;
@@ -8135,7 +8152,7 @@
       pushHistory();
       const code = state.beads.editTool === "eraser" ? null : state.beads.selectedCode;
       const size = state.beads.editTool === "eraser" ? state.beads.eraserSize : state.beads.brushSize;
-      if (paintBrushCell(cell, code, size)) render();
+      if (paintBrushCell(cell, code, size)) render(true);
       return;
     }
 
@@ -8229,7 +8246,7 @@
     if (["brush", "eraser"].includes(state.beads.editTool)) {
       const code = state.beads.editTool === "eraser" ? null : state.beads.selectedCode;
       const size = state.beads.editTool === "eraser" ? state.beads.eraserSize : state.beads.brushSize;
-      if (paintBrushCell(cell, code, size)) render();
+      if (paintBrushCell(cell, code, size)) render(true);
       return;
     }
     if (["rect-fill", "rect-clear"].includes(state.beads.editTool)) {
@@ -15603,6 +15620,9 @@
       optimizePatternColors,
       reducePatternToColorLimit,
       undoEdit,
+      redoEdit,
+      pushHistoryForTest: pushHistory,
+      getHistoryDepthForTest: () => ({ undo: state.beads.undoStack.length, redo: state.beads.redoStack.length }),
       getFeatureFlagsForTest: () => featureFlags.all(),
       selectProjectEntryForTest: (entryId) => {
         if (!window.QPixelImportRouter) return null;

@@ -37,7 +37,7 @@ CERT_FILE = CERT_DIR / "qpixel-ipad.crt"
 KEY_FILE = CERT_DIR / "qpixel-ipad.key"
 CERT_HOST_FILE = CERT_DIR / "qpixel-ipad-host.txt"
 PAIRED_DEVICES_FILE = DATA_DIR / "ipad-paired-devices.json"
-PAIRING_LIFETIME_SECONDS = 30 * 24 * 60 * 60
+PAIRING_LIFETIME_SECONDS = 365 * 24 * 60 * 60
 WRITE_LOCK = Lock()
 PAIRING_LOCK = Lock()
 
@@ -88,6 +88,25 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         path = urlparse(self.path).path
+        host = self.headers.get("Host", "")
+        origin = self.headers.get("Origin")
+        if self.server.pairing_code and host in self.server.allowed_hosts and (not origin or origin == f"{self.server.scheme}://{host}") and self.paired():
+            cookie = SimpleCookie()
+            cookie.load(self.headers.get("Cookie", ""))
+            token = cookie.get("qpixel_pair")
+            if token:
+                self.send_header("Set-Cookie", f"qpixel_pair={token.value}; Max-Age={PAIRING_LIFETIME_SECONDS}; HttpOnly; Secure; SameSite=Strict; Path=/")
+                token_hash = paired_device_hash(token.value)
+                with PAIRING_LOCK:
+                    devices = read_paired_devices()
+                    for device in devices:
+                        if hmac.compare_digest(token_hash, device["hash"]) and device["expires"] < time.time() + PAIRING_LIFETIME_SECONDS - 86400:
+                            device["expires"] = int(time.time()) + PAIRING_LIFETIME_SECONDS
+                            try:
+                                save_paired_devices(devices)
+                            except OSError:
+                                pass
+                            break
         if path.startswith("/api/"):
             self.send_header("Cache-Control", "no-store")
         else:
@@ -144,7 +163,7 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
         return False
 
     def pair_page(self, error=False):
-        message = "配对码不正确，请重试。" if error else "首次连接请输入电脑终端显示的配对码。此浏览器将在 30 天内自动连接。"
+        message = "配对码不正确，请重试。" if error else "首次连接请输入电脑终端显示的配对码。此浏览器将在一年内自动连接，使用时自动续期。"
         body = ("<!doctype html><html lang='zh-CN'><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
                 "<title>Q像素平板配对</title><style>body{font:16px -apple-system,sans-serif;max-width:420px;margin:12vh auto;padding:24px;color:#173e38}"
                 "input,button{box-sizing:border-box;width:100%;min-height:48px;margin-top:12px;padding:10px;font-size:17px}button{background:#176d61;color:white;border:0;border-radius:8px}</style>"

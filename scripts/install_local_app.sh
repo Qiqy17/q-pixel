@@ -5,6 +5,7 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TARGET_APP="${QPIXEL_APP_PATH:-$HOME/Desktop/Q像素.app}"
 BACKUP_ROOT="${QPIXEL_BACKUP_DIR:-$HOME/Documents/Q像素/app-backups}"
 LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.qpixel.localserver.plist"
+IPAD_AGENT="$HOME/Library/LaunchAgents/com.qpixel.ipadserver.plist"
 OLD_AGENT="$HOME/Library/LaunchAgents/com.qpixel.sync.plist"
 TEMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/qpixel-install.XXXXXX")"
 trap 'rm -rf "$TEMP_DIR"' EXIT
@@ -14,6 +15,15 @@ STAGED_APP="$TEMP_DIR/Q像素.app"
 "$REPO_DIR/scripts/verify_release.sh" "$STAGED_APP"
 
 mkdir -p "$BACKUP_ROOT" "$HOME/Library/LaunchAgents"
+mkdir -p "$HOME/.config/qpixel"
+if [ ! -d "$HOME/.config/qpixel/ipad-cert" ] && [ -d "$HOME/Documents/Q像素/ipad-cert" ]; then
+  cp -R "$HOME/Documents/Q像素/ipad-cert" "$HOME/.config/qpixel/ipad-cert"
+fi
+if [ ! -f "$HOME/.config/qpixel/ipad-paired-devices.json" ] && [ -f "$HOME/Documents/Q像素/ipad-paired-devices.json" ]; then
+  cp "$HOME/Documents/Q像素/ipad-paired-devices.json" "$HOME/.config/qpixel/ipad-paired-devices.json"
+fi
+chmod 700 "$HOME/.config/qpixel"
+if [ -f "$HOME/.config/qpixel/ipad-paired-devices.json" ]; then chmod 600 "$HOME/.config/qpixel/ipad-paired-devices.json"; fi
 STAMP="$(date +%Y%m%d-%H%M%S)"
 if pgrep -f "$TARGET_APP/Contents/MacOS/QPixel" >/dev/null 2>&1; then
   osascript -e 'tell application id "local.qpixel.app" to quit' >/dev/null 2>&1 || true
@@ -38,9 +48,13 @@ xattr -cr "$TARGET_APP"
 
 USER_ID="$(id -u)"
 launchctl bootout "gui/$USER_ID/com.qpixel.localserver" >/dev/null 2>&1 || true
+launchctl bootout "gui/$USER_ID/com.qpixel.ipadserver" >/dev/null 2>&1 || true
 launchctl bootout "gui/$USER_ID/com.qpixel.sync" >/dev/null 2>&1 || true
 if [ -f "$LAUNCH_AGENT" ]; then
   cp "$LAUNCH_AGENT" "$BACKUP_ROOT/com.qpixel.localserver-$STAMP.plist"
+fi
+if [ -f "$IPAD_AGENT" ]; then
+  cp "$IPAD_AGENT" "$BACKUP_ROOT/com.qpixel.ipadserver-$STAMP.plist"
 fi
 if [ -f "$OLD_AGENT" ]; then
   mv "$OLD_AGENT" "$BACKUP_ROOT/com.qpixel.sync-$STAMP.plist"
@@ -53,4 +67,11 @@ plutil -lint "$TEMP_DIR/com.qpixel.localserver.plist" >/dev/null
 mv "$TEMP_DIR/com.qpixel.localserver.plist" "$LAUNCH_AGENT"
 launchctl bootstrap "gui/$USER_ID" "$LAUNCH_AGENT"
 launchctl kickstart -k "gui/$USER_ID/com.qpixel.localserver"
+cp "$REPO_DIR/macos/com.qpixel.ipadserver.plist" "$TEMP_DIR/com.qpixel.ipadserver.plist"
+sed -i '' -e "s|__RESOURCES__|$RESOURCES_DIR|g" "$TEMP_DIR/com.qpixel.ipadserver.plist"
+plutil -lint "$TEMP_DIR/com.qpixel.ipadserver.plist" >/dev/null
+mv "$TEMP_DIR/com.qpixel.ipadserver.plist" "$IPAD_AGENT"
+launchctl bootstrap "gui/$USER_ID" "$IPAD_AGENT"
+cp "$REPO_DIR/scripts/启动Q像素平板链接.command" "$HOME/Desktop/启动Q像素平板链接.command"
+chmod +x "$HOME/Desktop/启动Q像素平板链接.command"
 echo "Q像素已安装：$TARGET_APP"

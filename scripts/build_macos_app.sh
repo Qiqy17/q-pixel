@@ -39,6 +39,7 @@ cp "$REPO_DIR/web/core/workspace-state.js" "$RESOURCES_DIR/core/workspace-state.
 cp "$REPO_DIR/web/core/dom-utils.js" "$RESOURCES_DIR/core/dom-utils.js"
 cp "$REPO_DIR/web/core/project-store.js" "$RESOURCES_DIR/core/project-store.js"
 cp "$REPO_DIR/web/core/auto-draft.js" "$RESOURCES_DIR/core/auto-draft.js"
+cp "$REPO_DIR/web/core/editor-performance.js" "$RESOURCES_DIR/core/editor-performance.js"
 mkdir -p "$RESOURCES_DIR/workspaces"
 cp "$REPO_DIR/web/workspaces/quality-checks.js" "$RESOURCES_DIR/workspaces/quality-checks.js"
 cp "$REPO_DIR/web/workspaces/context-inspector.js" "$RESOURCES_DIR/workspaces/context-inspector.js"

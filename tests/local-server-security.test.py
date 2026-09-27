@@ -87,8 +87,12 @@ class LocalServerSecurityTest(unittest.TestCase):
                                           {"Content-Type": "application/x-www-form-urlencoded"})
         self.assertEqual(status, 303)
         cookie = headers["Set-Cookie"].split(";", 1)[0]
-        self.assertIn("Max-Age=2592000", headers["Set-Cookie"])
+        self.assertIn("Max-Age=31536000", headers["Set-Cookie"])
         self.assertIn("HttpOnly; Secure; SameSite=Strict", headers["Set-Cookie"])
+        status, renewed_headers, _ = self.request(True, self.paired_port, "GET", "/api/projects",
+                                                  headers={"Cookie": cookie})
+        self.assertEqual(status, 200)
+        self.assertIn("Max-Age=31536000", renewed_headers["Set-Cookie"])
         project = {"id": "security-test", "name": "security-test", "updatedAt": "2026-09-25T00:00:00"}
         status, _, _ = self.request(True, self.paired_port, "POST", "/api/projects/security-test",
                                     json.dumps(project), {"Cookie": cookie, "Content-Type": "application/json"})
