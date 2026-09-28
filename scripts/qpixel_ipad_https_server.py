@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import argparse
+import base64
+import binascii
 import hashlib
 import hmac
 import http.client
@@ -28,6 +30,7 @@ ROOT = REPO_WEB_DIR if (REPO_WEB_DIR / "index.html").exists() else SCRIPT_DIR
 DATA_DIR = Path(os.environ.get("QPIXEL_DATA_DIR") or Path.home() / "Documents" / "Q像素").expanduser()
 PROJECTS_FILE = DATA_DIR / "qpixel-projects.json"
 PROJECTS_DIR = DATA_DIR / "projects"
+PROJECT_INDEX_FILE = DATA_DIR / "qpixel-project-index-v1.json"
 SETTINGS_FILE = DATA_DIR / "qpixel-settings.json"
 BACKUP_DIR = DATA_DIR / "backups"
 PROJECT_BACKUP_LIMIT = 100
@@ -40,6 +43,7 @@ PAIRED_DEVICES_FILE = DATA_DIR / "ipad-paired-devices.json"
 PAIRING_LIFETIME_SECONDS = 365 * 24 * 60 * 60
 WRITE_LOCK = Lock()
 PAIRING_LOCK = Lock()
+PROJECT_INDEX_CACHE = None
 
 
 def paired_device_hash(token):
@@ -107,7 +111,9 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
                             except OSError:
                                 pass
                             break
-        if path.startswith("/api/"):
+        if path.startswith("/api/projects/") and path.endswith("/thumbnail"):
+            self.send_header("Cache-Control", "private, max-age=31536000, immutable")
+        elif path.startswith("/api/"):
             self.send_header("Cache-Control", "no-store")
         else:
             self.send_header("Cache-Control", "no-cache")
@@ -252,13 +258,36 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
             self.send_json(find_latest_download_image(parse_query(self.path).get("since", ["0"])[0]) or {"found": False})
             return
         if path == "/api/health":
-            self.send_json(health_payload(self.read_projects(), self.read_settings()))
+            with WRITE_LOCK:
+                index = read_project_index()
+            self.send_json(health_payload(index, self.read_settings()))
             return
         if path == "/api/projects/index":
-            self.send_json([summary for summary in (project_summary(project) for project in self.read_projects()) if summary])
+            with WRITE_LOCK:
+                index = read_project_index()
+            self.send_json(index)
             return
         if path == "/api/projects":
             self.send_json(self.read_projects())
+            return
+        thumbnail_id = get_thumbnail_id_from_path(path)
+        if thumbnail_id:
+            project = self.read_project(thumbnail_id)
+            thumbnail = project.get("thumbnail", "") if project else ""
+            try:
+                header, encoded = thumbnail.split(",", 1)
+                media_type = header.removeprefix("data:").split(";", 1)[0]
+                if media_type not in {"image/png", "image/jpeg", "image/webp"} or ";base64" not in header:
+                    raise ValueError("Invalid thumbnail")
+                body = base64.b64decode(encoded, validate=True)
+            except (ValueError, AttributeError, binascii.Error):
+                self.send_error(404, "Thumbnail not found")
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", media_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
         project_id = get_project_id_from_path(path)
         if project_id:
@@ -314,6 +343,7 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
             tmp = PROJECTS_FILE.with_suffix(".tmp")
             tmp.write_text(json.dumps(payload[:200], ensure_ascii=False), encoding="utf-8")
             os.replace(tmp, PROJECTS_FILE)
+            rebuild_project_index()
         self.send_json({"ok": True, "count": len(payload[:200])})
 
     def do_DELETE(self):
@@ -328,14 +358,11 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
             return
         with WRITE_LOCK:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
-            backup_projects_file()
+            index = read_project_index()
             path = project_file_path(project_id)
             if path and path.exists():
                 path.unlink()
-            remaining = [project for project in self.read_projects() if str(project.get("id")) != project_id]
-            tmp = PROJECTS_FILE.with_suffix(".tmp")
-            tmp.write_text(json.dumps(remaining[:200], ensure_ascii=False), encoding="utf-8")
-            os.replace(tmp, PROJECTS_FILE)
+            update_project_index(index, None, removed_id=project_id)
         self.send_json({"ok": True, "id": project_id})
 
     def generate_ai_image(self):
@@ -374,18 +401,17 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
             return
         with WRITE_LOCK:
             DATA_DIR.mkdir(parents=True, exist_ok=True)
-            backup_projects_file()
-            projects = merge_projects(self.read_projects(), [payload])
-            stored = find_project(projects, project_id)
+            index = read_project_index()
+            existing = self.read_project(project_id)
+            accepted = not existing or project_sort_time(payload) >= project_sort_time(existing)
+            stored = find_project(merge_projects([existing] if existing else [], [payload]), project_id)
             # Requests can finish out of order when a large project is saved
-            # repeatedly. Write the version selected by merge_projects, not
-            # the last request to reach this handler.
-            write_project_file(stored)
-            tmp = PROJECTS_FILE.with_suffix(".tmp")
-            tmp.write_text(json.dumps(projects[:200], ensure_ascii=False), encoding="utf-8")
-            os.replace(tmp, PROJECTS_FILE)
-        self.send_json({"ok": True, "id": project_id, "count": len(projects[:200]),
-                        "accepted": stored is payload,
+            # repeatedly. Keep the newer file and index when an older request arrives.
+            if accepted:
+                write_project_file(stored)
+                update_project_index(index, stored)
+        self.send_json({"ok": True, "id": project_id, "count": len(index) + (0 if existing else 1),
+                        "accepted": accepted,
                         "storedUpdatedAt": project_sort_time(stored)})
 
     def write_settings_request(self):
@@ -411,7 +437,7 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
 
     def read_projects(self):
         project_files = list_project_files()
-        if project_files:
+        if project_files or PROJECT_INDEX_FILE.exists():
             return project_files
         if not PROJECTS_FILE.exists():
             return []
@@ -534,6 +560,67 @@ def list_project_files():
     return sorted(projects, key=project_sort_time, reverse=True)
 
 
+def project_file_signatures():
+    signatures = []
+    for path in list_project_paths():
+        try:
+            stat = path.stat()
+            signatures.append([path.name, stat.st_size, stat.st_mtime_ns])
+        except OSError:
+            continue
+    return sorted(signatures)
+
+
+def persist_project_index(summaries, signatures):
+    global PROJECT_INDEX_CACHE
+    PROJECT_INDEX_CACHE = (signatures, summaries)
+    path = None
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=DATA_DIR,
+                                         prefix=".qpixel-project-index-", delete=False) as file:
+            path = Path(file.name)
+            json.dump({"version": 1, "signatures": signatures, "projects": summaries}, file, ensure_ascii=False)
+        os.replace(path, PROJECT_INDEX_FILE)
+    except OSError:
+        # Project files remain authoritative when the optional index cannot be saved.
+        pass
+    finally:
+        if path:
+            path.unlink(missing_ok=True)
+
+
+def rebuild_project_index():
+    summaries = [summary for summary in (project_summary(project) for project in list_project_files()) if summary]
+    persist_project_index(summaries, project_file_signatures())
+    return summaries
+
+
+def read_project_index():
+    global PROJECT_INDEX_CACHE
+    signatures = project_file_signatures()
+    if PROJECT_INDEX_CACHE and PROJECT_INDEX_CACHE[0] == signatures:
+        return PROJECT_INDEX_CACHE[1]
+    try:
+        saved = json.loads(PROJECT_INDEX_FILE.read_text(encoding="utf-8"))
+        if saved.get("version") == 1 and saved.get("signatures") == signatures and isinstance(saved.get("projects"), list):
+            PROJECT_INDEX_CACHE = (signatures, saved["projects"])
+            return saved["projects"]
+    except (OSError, ValueError, AttributeError):
+        pass
+    return rebuild_project_index()
+
+
+def update_project_index(previous, project=None, removed_id=None):
+    summaries = [item for item in previous if item.get("id") not in {removed_id, project.get("id") if project else None}]
+    if project:
+        summary = project_summary(project)
+        if summary:
+            summaries.append(summary)
+    summaries.sort(key=project_sort_time, reverse=True)
+    persist_project_index(summaries, project_file_signatures())
+
+
 def write_project_file(project):
     project = normalize_project(project)
     path = project_file_path(project.get("id") if project else "")
@@ -564,12 +651,12 @@ def project_summary(project):
     payload = project.get("payload") if isinstance(project.get("payload"), dict) else {}
     pattern = payload.get("pattern") if isinstance(payload.get("pattern"), dict) else {}
     history = project.get("history") if isinstance(project.get("history"), list) else []
-    summary = {key: value for key, value in project.items() if key not in {"payload", "history"}}
+    summary = {key: value for key, value in project.items() if key not in {"payload", "history", "thumbnail"}}
     summary["hasPayload"] = bool(project.get("payload"))
+    summary["hasThumbnail"] = bool(project.get("thumbnail"))
     summary["historyCount"] = len(history)
     summary["width"] = summary.get("width") or pattern.get("width") or 0
     summary["height"] = summary.get("height") or pattern.get("height") or 0
-    summary["payloadSize"] = len(json.dumps(project.get("payload") or {}, ensure_ascii=False))
     return summary
 
 
@@ -579,6 +666,13 @@ def get_project_id_from_path(path):
         return ""
     project_id = unquote(path[len(prefix):].strip("/"))
     return project_id if project_id and "/" not in project_id else ""
+
+
+def get_thumbnail_id_from_path(path):
+    suffix = "/thumbnail"
+    if not path.endswith(suffix):
+        return ""
+    return get_project_id_from_path(path[:-len(suffix)])
 
 
 def parse_query(path):
@@ -635,9 +729,11 @@ def merge_projects(existing, incoming):
                 pass
         current = merged.get(project["id"])
         if current is None or project_sort_time(project) >= project_sort_time(current):
-            if current and not project.get("payload") and current.get("payload"):
+            if current and any(not project.get(key) and current.get(key) for key in ("payload", "thumbnail", "history")):
                 project = dict(project)
-                project["payload"] = current.get("payload")
+                for key in ("payload", "thumbnail", "history"):
+                    if not project.get(key) and current.get(key):
+                        project[key] = current[key]
             merged[project["id"]] = project
     return sorted(merged.values(), key=project_sort_time, reverse=True)
 
@@ -692,7 +788,7 @@ def cleanup_backups():
 
 
 def migrate_projects_if_needed():
-    if list_project_paths() or not PROJECTS_FILE.exists():
+    if list_project_paths() or PROJECT_INDEX_FILE.exists() or not PROJECTS_FILE.exists():
         return
     try:
         data = json.loads(PROJECTS_FILE.read_text(encoding="utf-8"))

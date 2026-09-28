@@ -12474,14 +12474,25 @@
   function ingestRemoteTrash(projects) {
     const remoteTrash = (projects || []).filter(isDeletedProject);
     if (!remoteTrash.length) return;
-    setTrashProjects([...remoteTrash, ...getTrashProjects()]);
+    const localById = new Map(getTrashProjects().map((project) => [project.id, project]));
+    const combined = remoteTrash.map((project) => {
+      const local = localById.get(project.id);
+      localById.delete(project.id);
+      return local && local.payload && projectSortTime(local) >= projectSortTime(project) ? local : project;
+    });
+    setTrashProjects([...combined, ...localById.values()]);
   }
 
   function setProjects(projects, options = {}) {
     const normalized = projects.map(normalizeProject).slice(0, 120);
+    const previous = new Map(getProjects().map((project) => [project.id, project]));
+    const changed = normalized.filter((project) => {
+      const old = previous.get(project.id);
+      return !old || old.updatedAt !== project.updatedAt || old.title !== project.title || old.folderId !== project.folderId;
+    });
     const localResult = storeProjectsLocally(normalized);
     if (options.remote === false) return Promise.resolve({ ok: true, localOnly: true, count: normalized.length });
-    return saveProjectsToRemote(normalized).then((result) => result || Object.assign({ ok: false }, localResult));
+    return saveProjectsToRemote(changed).then((result) => result || Object.assign({ ok: false }, localResult));
   }
 
   function isInternalTestProject(project) {
@@ -12756,26 +12767,15 @@
       });
   }
 
-  function saveProjectsToRemote(projects) {
-    if (!window.fetch) return Promise.resolve(null);
-    const outgoing = projects
-      .map(prepareProjectForRemote)
-      .filter((project) => !isInternalTestProject(project))
-      .slice(0, 120);
-    return fetch(`${syncApiBase}/api/projects`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(outgoing)
-    }).then((response) => {
-      if (!response.ok) throw new Error(`sync ${response.status}`);
-      return response.json().catch(() => ({ ok: true })).then((result) => {
-        markProjectsSynced(outgoing);
-        return result;
-      });
-    }).catch(() => {
-      setMessage("电脑同步服务暂时不可用，已先保存到当前设备。", true);
-      return null;
-    });
+  async function saveProjectsToRemote(projects) {
+    if (!window.fetch) return null;
+    const outgoing = projects.filter((project) => !isInternalTestProject(project));
+    let saved = 0;
+    for (let index = 0; index < outgoing.length; index += 2) {
+      const results = await Promise.all(outgoing.slice(index, index + 2).map(saveProjectToRemote));
+      saved += results.filter((result) => result && result.ok && result.accepted !== false).length;
+    }
+    return { ok: saved === outgoing.length, count: saved };
   }
 
   // 同步节流：避免保存→同步→重渲染→列表跳变；同一时间只允许一个同步在飞。
@@ -12806,18 +12806,24 @@
     try {
       const health = manual ? await fetchSyncHealth().catch(() => null) : null;
       const remoteProjects = await fetchRemoteProjects();
-      const remoteTrash = await Promise.all(remoteProjects.filter(isDeletedProject).map(async (project) => {
-        try {
-          const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(project.id)}`, { cache: "no-store" });
-          return response.ok ? normalizeProject(await response.json()) : project;
-        } catch {
-          return project;
-        }
-      }));
-      ingestRemoteTrash(remoteTrash);
-      const merged = mergeProjects(localProjects, remoteProjects);
+      ingestRemoteTrash(remoteProjects);
+      const remoteById = new Map(remoteProjects.map((project) => [project.id, project]));
+      const localTrash = getTrashProjects().filter((project) => {
+        const remote = remoteById.get(project.id);
+        return !remote || isDeletedProject(remote) || projectSortTime(project) > projectSortTime(remote);
+      });
+      if (localTrash.length !== getTrashProjects().length) setTrashProjects(localTrash);
+      const merged = mergeProjects([...localProjects, ...localTrash], remoteProjects);
+      const changed = merged.filter((project) => {
+        const remote = remoteById.get(project.id);
+        return remote ? projectSortTime(project) > projectSortTime(remote) : Boolean(project.payload);
+      });
+      const pendingTrash = localTrash.filter((project) => {
+        const remote = remoteById.get(project.id);
+        return !remote || projectSortTime(project) > projectSortTime(remote);
+      });
       const localResult = storeProjectsLocally(merged);
-      if (merged.length && projectsDifferForSync(merged, remoteProjects) && merged.every((project) => project.payload)) saveProjectsToRemote(merged);
+      if (changed.length || pendingTrash.length) saveProjectsToRemote([...changed, ...pendingTrash]);
       renderHomeProjects();
       renderProjectList();
       const healthText = health ? `${formatSyncHealthMessage(health)} ` : "";
@@ -13265,9 +13271,12 @@
         </div>
       `;
       const thumbnail = card.querySelector(".home-project-thumb");
+      thumbnail.loading = "lazy";
+      thumbnail.decoding = "async";
       const showThumbnailFallback = () => { thumbnail.hidden = true; card.classList.add("thumb-missing"); };
       thumbnail.addEventListener("error", showThumbnailFallback, { once: true });
-      if (project.thumbnail) thumbnail.src = project.thumbnail;
+      const thumbnailSrc = projectThumbnailSrc(project);
+      if (thumbnailSrc) thumbnail.src = thumbnailSrc;
       else showThumbnailFallback();
       card.querySelector(".home-project-title").textContent = project.title || "未命名";
       card.querySelector(".home-project-meta").innerHTML = "";
@@ -13299,11 +13308,18 @@
 
   }
 
+  function projectThumbnailSrc(project) {
+    if (project && project.thumbnail) return project.thumbnail;
+    if (!project || !project.hasThumbnail || !project.id) return "";
+    const version = encodeURIComponent(project.updatedAt || project.savedAt || "");
+    return `${syncApiBase}/api/projects/${encodeURIComponent(project.id)}/thumbnail?v=${version}`;
+  }
+
   function openProjectActionModal(id) {
     const project = getProjects().find((item) => item.id === id);
     if (!project || !els.projectActionModal) return;
     state.activeActionProjectId = id;
-    if (els.projectActionThumb) els.projectActionThumb.src = project.thumbnail || "";
+    if (els.projectActionThumb) els.projectActionThumb.src = projectThumbnailSrc(project);
     if (els.projectActionTitle) els.projectActionTitle.textContent = project.title || "未命名";
     if (els.projectActionCreated) els.projectActionCreated.textContent = formatDateTime(project.createdAt || project.savedAt);
     if (els.projectActionUpdated) els.projectActionUpdated.textContent = formatDateTime(project.updatedAt || project.savedAt);
@@ -13548,7 +13564,10 @@
         <button class="mini-button" type="button" data-action="restore">恢复</button>
         <button class="mini-button danger" type="button" data-action="delete">永久删除</button>
       `;
-      row.querySelector("img").src = project.thumbnail || "";
+      const thumbnail = row.querySelector("img");
+      thumbnail.loading = "lazy";
+      thumbnail.decoding = "async";
+      thumbnail.src = projectThumbnailSrc(project);
       row.querySelector("strong").textContent = project.title || "未命名";
       row.querySelector("em").textContent = `删除于 ${formatShortDate(project.deletedAt)}`;
       row.querySelector('[data-action="restore"]').addEventListener("click", () => restoreTrashProject(project.id));
@@ -13566,11 +13585,22 @@
     if (els.trashModal) els.trashModal.classList.add("hidden");
   }
 
-  function restoreTrashProject(id) {
+  async function restoreTrashProject(id) {
     const trash = getTrashProjects();
     const project = trash.find((item) => item.id === id);
     if (!project) return;
-    const restored = Object.assign({}, project);
+    let complete = project;
+    if (!complete.payload) {
+      try {
+        const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(id)}`, { cache: "no-store" });
+        if (response.ok) complete = normalizeProject(await response.json());
+      } catch (_) {}
+    }
+    if (!complete.payload) {
+      setMessage("恢复需要读取完整工程，请连接电脑创作空间后重试。", true);
+      return;
+    }
+    const restored = Object.assign({}, complete);
     delete restored.deletedAt;
     delete restored.deleted;
     const now = new Date().toISOString();
@@ -13937,7 +13967,10 @@
           <button class="mini-button" type="button" data-action="delete">删除</button>
         </div>
       `;
-      card.querySelector(".project-thumb").src = project.thumbnail || "";
+      const thumbnail = card.querySelector(".project-thumb");
+      thumbnail.loading = "lazy";
+      thumbnail.decoding = "async";
+      thumbnail.src = projectThumbnailSrc(project);
       card.querySelector(".project-title").textContent = project.title || "未命名";
       card.querySelector(".project-meta").innerHTML = "";
       card.querySelector(".project-meta").append(
@@ -13988,7 +14021,10 @@
         <img alt="">
         <span><strong></strong><em></em></span>
       `;
-      button.querySelector("img").src = project.thumbnail || "";
+      const thumbnail = button.querySelector("img");
+      thumbnail.loading = "lazy";
+      thumbnail.decoding = "async";
+      thumbnail.src = projectThumbnailSrc(project);
       button.querySelector("strong").textContent = project.title || "未命名";
       button.querySelector("em").textContent = `${project.width || "-"} x ${project.height || "-"} · ${formatShortDate(project.updatedAt || project.savedAt)}`;
       button.addEventListener("click", async () => {

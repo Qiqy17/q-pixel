@@ -1,4 +1,5 @@
 import http.client
+import base64
 import json
 import os
 import ssl
@@ -163,6 +164,51 @@ class LocalServerSecurityTest(unittest.TestCase):
         status, _, body = self.request(False, self.local_port, "GET", f"/api/projects/{project_id}")
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)["payload"], newest["payload"])
+
+    def test_project_index_and_thumbnails_update_without_rewriting_other_projects(self):
+        thumbnail = b"\x89PNG\r\n\x1a\nthumbnail"
+        first = {"id": "first", "updatedAt": "2026-09-28T00:00:00Z", "payload": {"value": 1},
+                 "thumbnail": "data:image/png;base64," + base64.b64encode(thumbnail).decode("ascii")}
+        second = {"id": "second", "updatedAt": "2026-09-28T00:00:00Z", "payload": {"value": 2}}
+        for project in (first, second):
+            status, _, _ = self.request(False, self.local_port, "POST", f"/api/projects/{project['id']}",
+                                        json.dumps(project), {"Content-Type": "application/json"})
+            self.assertEqual(status, 200)
+        second_path = Path(self.temp.name) / "projects" / "second.json"
+        original_mtime = second_path.stat().st_mtime_ns
+        first["updatedAt"] = "2026-09-28T00:01:00Z"
+        status, _, _ = self.request(False, self.local_port, "POST", "/api/projects/first",
+                                    json.dumps(first), {"Content-Type": "application/json"})
+        self.assertEqual(status, 200)
+        self.assertEqual(second_path.stat().st_mtime_ns, original_mtime)
+        status, _, body = self.request(False, self.local_port, "GET", "/api/projects/index")
+        self.assertEqual(status, 200)
+        index = json.loads(body)
+        self.assertEqual([item["id"] for item in index], ["first", "second"])
+        self.assertTrue(index[0]["hasThumbnail"])
+        self.assertNotIn("thumbnail", index[0])
+        self.assertNotIn("payload", index[0])
+        status, headers, body = self.request(False, self.local_port, "GET", "/api/projects/first/thumbnail")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Content-Type"], "image/png")
+        self.assertEqual(body, thumbnail)
+        metadata_only = {"id": "first", "title": "Moved", "updatedAt": "2026-09-28T00:02:00Z"}
+        status, _, body = self.request(False, self.local_port, "POST", "/api/projects/first",
+                                       json.dumps(metadata_only), {"Content-Type": "application/json"})
+        self.assertEqual(status, 200)
+        self.assertTrue(json.loads(body)["accepted"])
+        status, _, body = self.request(False, self.local_port, "GET", "/api/projects/first")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["payload"], first["payload"])
+        self.assertEqual(json.loads(body)["thumbnail"], first["thumbnail"])
+        self.assertTrue((Path(self.temp.name) / "qpixel-project-index-v1.json").exists())
+        (Path(self.temp.name) / "qpixel-projects.json").write_text(json.dumps([first, second]), encoding="utf-8")
+        for project_id in ("first", "second"):
+            status, _, _ = self.request(False, self.local_port, "DELETE", f"/api/projects/{project_id}")
+            self.assertEqual(status, 200)
+        status, _, body = self.request(False, self.local_port, "GET", "/api/projects")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body), [])
 
 
 if __name__ == "__main__":
