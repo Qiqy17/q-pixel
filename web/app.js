@@ -546,7 +546,7 @@
       "homeNewFolderButton", "homeFolderBar", "homeFolderBackButton", "homeFolderName", "homeFolderCount",
       "homeOpenProjectButton", "homeProjectSearch", "homeProjectSort",
       "editorTopbar", "editorWorkspace", "controlPanel", "topbarCollapseButton", "topbarExpandButton",
-      "sidePanelCollapseButton", "sidePanelExpandButton", "backHomeButton", "saveTopButton", "saveStatus", "aiGenerateTopButton", "autoDraftIntervalSelect", "openCurrentHistoryButton",
+      "sidePanelCollapseButton", "sidePanelExpandButton", "backHomeButton", "saveTopButton", "saveAsTopButton", "saveStatus", "aiGenerateTopButton", "autoDraftIntervalSelect", "openCurrentHistoryButton",
       "fileInput", "dropZone", "previewCanvas", "emptyState", "emptyTitle",
       "emptyDescription", "imageStatus", "canvasSize", "renderHint", "message",
       "precisionRange", "precisionNumber", "gapRange", "gapNumber", "radiusRange",
@@ -623,6 +623,7 @@
       "styleTextApplyButton", "styleTextRemoveButton", "stylePresetNameInput", "stylePresetSaveButton", "stylePresetList",
       "toolRailGrip", "toolRailBGrip", "toolRailCollapseButton", "toolRailBCollapseButton", "colorStripGrip", "projectActionModal", "projectActionCloseButton",
       "projectActionThumb", "projectActionTitle", "projectActionCreated", "projectActionUpdated",
+      "saveAsModal", "saveAsCloseButton", "saveAsMergeMode", "saveAsLayersMode", "saveAsMergePanel", "saveAsMergeName", "saveAsLayersPanel", "saveAsSelectAllButton", "saveAsClearButton", "saveAsLayerList", "saveAsError", "saveAsCancelButton", "saveAsCreateButton", "saveAsResults",
       "projectActionOpenButton", "projectActionHistoryButton", "projectActionMoveButton", "projectActionTemplateButton", "projectActionRenameButton", "projectActionDuplicateButton", "projectActionDeleteButton",
       "folderActionModal", "folderActionCloseButton", "folderActionName", "folderActionCount", "folderActionOpenButton", "folderActionRenameButton", "folderActionDeleteButton",
       "folderPickerModal", "folderPickerCloseButton", "folderPickerSubtitle", "folderPickerList", "folderPickerNewButton", "folderPickerRootButton",
@@ -13891,6 +13892,133 @@
     }
   }
 
+  let saveAsMode = "merge";
+
+  function setSaveAsError(message) {
+    els.saveAsError.textContent = message || "";
+    els.saveAsError.classList.toggle("hidden", !message);
+  }
+
+  function setSaveAsMode(mode) {
+    saveAsMode = mode;
+    const merge = mode === "merge";
+    els.saveAsMergePanel.classList.toggle("hidden", !merge);
+    els.saveAsLayersPanel.classList.toggle("hidden", merge);
+    els.saveAsMergeMode.classList.toggle("active", merge);
+    els.saveAsLayersMode.classList.toggle("active", !merge);
+    els.saveAsMergeMode.setAttribute("aria-pressed", String(merge));
+    els.saveAsLayersMode.setAttribute("aria-pressed", String(!merge));
+    setSaveAsError("");
+  }
+
+  function openSaveAsModal() {
+    if (!state.beads.pattern || !state.beads.layers.length) {
+      setMessage("请先创建有图层的设计。", true);
+      return;
+    }
+    els.saveAsMergeName.value = `${state.beads.projectTitle || "未命名"} 合并`;
+    els.saveAsLayerList.replaceChildren();
+    state.beads.layers.slice().reverse().forEach((layer) => {
+      const row = document.createElement("div");
+      row.className = "save-as-layer-row";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = layer.id;
+      checkbox.checked = layer.id === state.beads.activeLayerId;
+      checkbox.setAttribute("aria-label", `另存图层 ${layer.name}`);
+      const label = document.createElement("span");
+      label.textContent = `${layer.name}${layer.visible ? "" : "（隐藏）"}${layer.tileRegion ? ` · ${layer.tileRegion.width} × ${layer.tileRegion.height}` : ""}`;
+      const name = document.createElement("input");
+      name.type = "text";
+      name.maxLength = 100;
+      name.value = `${state.beads.projectTitle || "未命名"} · ${layer.name}`;
+      name.disabled = !checkbox.checked;
+      name.setAttribute("aria-label", `${layer.name} 的新设计文件名`);
+      checkbox.addEventListener("change", () => { name.disabled = !checkbox.checked; setSaveAsError(""); });
+      row.append(checkbox, label, name);
+      els.saveAsLayerList.appendChild(row);
+    });
+    els.saveAsResults.replaceChildren();
+    els.saveAsResults.classList.add("hidden");
+    els.saveAsCreateButton.disabled = false;
+    els.saveAsCreateButton.classList.remove("hidden");
+    setSaveAsMode("merge");
+    els.saveAsModal.classList.remove("hidden");
+    els.saveAsMergeName.focus();
+  }
+
+  function closeSaveAsModal() {
+    if (els.saveAsCreateButton.disabled) return;
+    els.saveAsModal.classList.add("hidden");
+  }
+
+  function saveAsChoices() {
+    if (saveAsMode === "merge") return [{ title: els.saveAsMergeName.value.trim() }];
+    return Array.from(els.saveAsLayerList.querySelectorAll(".save-as-layer-row"))
+      .filter((row) => row.querySelector('input[type="checkbox"]').checked)
+      .map((row) => ({ layerId: row.querySelector('input[type="checkbox"]').value,
+        title: row.querySelector('input[type="text"]').value.trim() }));
+  }
+
+  async function createSavedAsProjects() {
+    const choices = saveAsChoices();
+    if (!choices.length) { setSaveAsError("请至少选择一个图层。"); return; }
+    if (choices.some((choice) => !choice.title)) { setSaveAsError("每个新设计都需要文件名。"); return; }
+    if (new Set(choices.map((choice) => choice.title.toLocaleLowerCase())).size !== choices.length) {
+      setSaveAsError("新设计文件名不能重复。"); return;
+    }
+    const existing = getProjects();
+    if (existing.length + choices.length > 120) {
+      setSaveAsError("作品列表最多保存 120 个设计，请先整理旧文件。"); return;
+    }
+    const source = makeProjectPayload();
+    if (!source || !window.QPixelDesignSaveAs) { setSaveAsError("无法读取当前设计，请重试。"); return; }
+    let payloads;
+    try {
+      payloads = choices.map((choice) => window.QPixelDesignSaveAs.createPayload(source, choice, makeId(), undefined, bounds.beadSize.min));
+    } catch (error) { setSaveAsError(error.message || "生成新设计失败。"); return; }
+    const records = payloads.map((payload) => ({
+      id: payload.id, title: payload.title, createdAt: payload.createdAt, savedAt: payload.savedAt,
+      updatedAt: payload.savedAt, width: payload.pattern.width, height: payload.pattern.height,
+      thumbnail: makeProjectThumbnail(payload.pattern), versionSource: "manual",
+      editSeconds: 0, openCount: 0, designDates: {}, payload
+    }));
+    els.saveAsCreateButton.disabled = true;
+    setSaveAsError("");
+    const localResult = storeProjectsLocally([...records, ...existing]);
+    renderProjectList();
+    renderHomeProjects();
+    const remoteResults = [];
+    for (let index = 0; index < records.length; index += 2) {
+      remoteResults.push(...await Promise.all(records.slice(index, index + 2).map(saveProjectToRemote)));
+    }
+    const remoteCount = remoteResults.filter((result) => result && result.ok && result.accepted !== false).length;
+    els.saveAsResults.replaceChildren();
+    const summary = document.createElement("strong");
+    summary.textContent = localResult.localStorage
+      ? `已生成 ${records.length} 个新设计，可在作品列表中打开。`
+      : remoteCount === records.length
+        ? `已生成 ${records.length} 个新设计并同步到电脑。`
+        : `有 ${records.length - remoteCount} 个设计未持久保存，请立即下载 .qpx。`;
+    els.saveAsResults.appendChild(summary);
+    records.forEach((record) => {
+      const row = document.createElement("div");
+      row.className = "save-as-result";
+      const label = document.createElement("span");
+      label.textContent = `${record.title} · ${record.width} × ${record.height}`;
+      const download = document.createElement("button");
+      download.type = "button";
+      download.textContent = "下载 .qpx";
+      download.addEventListener("click", () => saveTextFile(JSON.stringify(record.payload), `${safeFileName(record.title)}.qpx`, "application/json", "源文件已导出。"));
+      row.append(label, download);
+      els.saveAsResults.appendChild(row);
+    });
+    els.saveAsResults.classList.remove("hidden");
+    els.saveAsCreateButton.disabled = false;
+    els.saveAsCreateButton.classList.add("hidden");
+    setMessage(summary.textContent, !localResult.localStorage && remoteCount !== records.length);
+  }
+
   async function saveCurrentProject() {
     ensureBlankPatternForSave();
     const payload = makeProjectPayload();
@@ -14369,6 +14497,19 @@
     if (els.sidePanelCollapseButton) els.sidePanelCollapseButton.addEventListener("click", () => setSidePanelCollapsed(true));
     if (els.sidePanelExpandButton) els.sidePanelExpandButton.addEventListener("click", () => setSidePanelCollapsed(false));
     els.saveTopButton.addEventListener("click", saveCurrentProject);
+    els.saveAsTopButton.addEventListener("click", openSaveAsModal);
+    els.saveAsCloseButton.addEventListener("click", closeSaveAsModal);
+    els.saveAsCancelButton.addEventListener("click", closeSaveAsModal);
+    els.saveAsModal.addEventListener("click", (event) => { if (event.target === els.saveAsModal) closeSaveAsModal(); });
+    els.saveAsMergeMode.addEventListener("click", () => setSaveAsMode("merge"));
+    els.saveAsLayersMode.addEventListener("click", () => setSaveAsMode("layers"));
+    els.saveAsSelectAllButton.addEventListener("click", () => {
+      els.saveAsLayerList.querySelectorAll('input[type="checkbox"]').forEach((input) => { input.checked = true; input.dispatchEvent(new Event("change")); });
+    });
+    els.saveAsClearButton.addEventListener("click", () => {
+      els.saveAsLayerList.querySelectorAll('input[type="checkbox"]').forEach((input) => { input.checked = false; input.dispatchEvent(new Event("change")); });
+    });
+    els.saveAsCreateButton.addEventListener("click", createSavedAsProjects);
     if (els.autoDraftIntervalSelect) {
       els.autoDraftIntervalSelect.value = String(draftInterval);
       els.autoDraftIntervalSelect.addEventListener("change", () => {

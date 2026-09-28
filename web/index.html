@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.svg">
-  <link rel="stylesheet" href="./styles.css?v=20260927-export-zoom-34">
+  <link rel="stylesheet" href="./styles.css?v=20260928-save-as-44">
   <link rel="stylesheet" href="./studio/studio.css?v=20260927-tile-workspace-31">
 </head>
 <body>
@@ -91,6 +91,7 @@
       </nav>
 
       <div class="top-actions">
+        <button class="text-button secondary" id="saveAsTopButton" type="button">另存为</button>
         <button class="text-button secondary" id="chooseTopButton" type="button">导入</button>
         <button class="text-button secondary" id="saveTopButton" type="button">保存</button>
         <span class="save-status" id="saveStatus">已保存</span>
@@ -1441,6 +1442,23 @@
     </div>
   </section>
 
+  <section class="project-action-modal hidden" id="saveAsModal" aria-label="设计文件另存为">
+    <div class="project-action-card save-as-card">
+      <button class="project-action-close" id="saveAsCloseButton" type="button" title="关闭">×</button>
+      <h2>设计文件另存为</h2>
+      <p class="panel-caption">生成独立、可继续编辑的新设计；当前设计不会改变。</p>
+      <div class="save-as-modes" role="group" aria-label="另存方式">
+        <button id="saveAsMergeMode" class="active" type="button" aria-pressed="true">合并为一个设计</button>
+        <button id="saveAsLayersMode" type="button" aria-pressed="false">图层逐个另存</button>
+      </div>
+      <div id="saveAsMergePanel"><label class="save-as-name">新设计文件名<input id="saveAsMergeName" type="text" maxlength="100"></label><p class="panel-caption">按图层顺序合并全部图层，包括隐藏图层。</p></div>
+      <div id="saveAsLayersPanel" class="hidden"><div class="save-as-list-head"><strong>选择图层并命名</strong><button id="saveAsSelectAllButton" type="button">全选</button><button id="saveAsClearButton" type="button">清空</button></div><div id="saveAsLayerList" class="save-as-layer-list"></div></div>
+      <p id="saveAsError" class="save-as-error hidden" role="alert"></p>
+      <div class="save-as-footer"><button id="saveAsCancelButton" class="text-button secondary" type="button">取消</button><button id="saveAsCreateButton" class="text-button" type="button">生成新设计</button></div>
+      <div id="saveAsResults" class="save-as-results hidden" aria-live="polite"></div>
+    </div>
+  </section>
+
   <section class="project-action-modal hidden" id="projectActionModal" aria-label="设计文件操作">
     <div class="project-action-card">
       <button class="project-action-close" id="projectActionCloseButton" type="button" title="关闭">×</button>
@@ -1547,6 +1565,7 @@
   <script src="./module-loader.js"></script>
   <script src="./core/project-model.js"></script>
   <script src="./core/project-store.js"></script>
+  <script src="./core/design-save-as.js"></script>
   <script src="./core/auto-draft.js"></script>
   <script src="./core/editor-performance.js"></script>
   <script src="./core/workspace-state.js"></script>
@@ -1566,6 +1585,6 @@
   <script src="./3d/finish-workbench.js?v=20260926-continuous-preview-27"></script>
   <script src="./import-engine.js"></script>
   <script src="./import-processing.js"></script>
-  <script src="./app.js?v=20260928-preview-layers-43"></script>
+  <script src="./app.js?v=20260928-save-as-44"></script>
 </body>
 </html>

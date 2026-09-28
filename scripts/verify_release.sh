@@ -19,6 +19,7 @@ node --check "$RESOURCES_DIR/core/project-model.js"
 node --check "$RESOURCES_DIR/core/workspace-state.js"
 node --check "$RESOURCES_DIR/core/dom-utils.js"
 node --check "$RESOURCES_DIR/core/project-store.js"
+node --check "$RESOURCES_DIR/core/design-save-as.js"
 node --check "$RESOURCES_DIR/core/editor-performance.js"
 node --check "$RESOURCES_DIR/workspaces/quality-checks.js"
 node --check "$RESOURCES_DIR/workspaces/context-inspector.js"
@@ -44,6 +45,7 @@ node "$REPO_DIR/tests/pattern-rebuild.test.js"
 node "$REPO_DIR/tests/inventory-engine.test.js"
 node "$REPO_DIR/tests/board-planner.test.js"
 node "$REPO_DIR/tests/project-store.test.js"
+node "$REPO_DIR/tests/design-save-as.test.js"
 node "$REPO_DIR/tests/background-engine.test.js"
 node "$REPO_DIR/tests/tile-project.test.js"
 node "$REPO_DIR/tests/finish-core.test.js"
@@ -62,7 +64,7 @@ done
 cmp -s "$RESOURCES_DIR/run_ipad_server.sh" "$REPO_DIR/scripts/run_ipad_server.sh"
 zsh -n "$RESOURCES_DIR/run_ipad_server.sh"
 
-for file in project-model.js workspace-state.js dom-utils.js project-store.js editor-performance.js; do
+for file in project-model.js workspace-state.js dom-utils.js project-store.js design-save-as.js editor-performance.js; do
   cmp -s "$RESOURCES_DIR/core/$file" "$REPO_DIR/web/core/$file"
 done
 

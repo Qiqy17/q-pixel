@@ -1,16 +1,17 @@
 importScripts("./studio/scene-material-library.js");
-const CACHE_NAME = "q-pixel-v20260928-preview-layers-43";
+const CACHE_NAME = "q-pixel-v20260928-save-as-44";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
-  "./styles.css?v=20260927-export-zoom-34",
+  "./styles.css?v=20260928-save-as-44",
   "./feature-flags.js",
   "./module-loader.js",
   "./core/project-model.js",
   "./core/workspace-state.js",
   "./core/dom-utils.js",
   "./core/project-store.js",
+  "./core/design-save-as.js",
   "./core/auto-draft.js",
   "./core/editor-performance.js",
   "./color/palette-registry.js",
@@ -52,7 +53,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20260928-preview-layers-43",
+  "./app.js?v=20260928-save-as-44",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"

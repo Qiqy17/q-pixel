@@ -3522,6 +3522,38 @@ body[data-mode="beads"] #paletteGrid {
   box-shadow: 0 30px 90px rgba(0, 0, 0, .34);
 }
 
+.save-as-card {
+  width: min(680px, 100%);
+  max-height: min(800px, calc(100vh - 32px));
+  overflow: auto;
+}
+
+.save-as-card h2 { margin: 0; padding-right: 40px; }
+.save-as-card .panel-caption { margin: 0; }
+.save-as-modes, .save-as-footer, .save-as-list-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.save-as-modes button, .save-as-list-head button, .save-as-results button {
+  border: 1px solid var(--panel-line); border-radius: 8px; background: #fff;
+  color: var(--ink); padding: 9px 12px; cursor: pointer;
+}
+.save-as-modes button.active { background: #397e76; color: #fff; border-color: #397e76; }
+.save-as-name { display: grid; gap: 8px; font-weight: 700; }
+.save-as-name input, .save-as-layer-row input[type="text"] {
+  min-width: 0; width: 100%; box-sizing: border-box; border: 1px solid var(--panel-line);
+  border-radius: 8px; padding: 10px 12px; font: inherit;
+}
+.save-as-list-head strong { margin-right: auto; }
+.save-as-layer-list { display: grid; gap: 8px; max-height: 320px; overflow: auto; margin-top: 10px; }
+.save-as-layer-row { display: grid; grid-template-columns: 24px minmax(100px, 1fr) minmax(130px, 1.3fr); gap: 10px; align-items: center; padding: 8px; border: 1px solid var(--panel-line); border-radius: 8px; }
+.save-as-layer-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.save-as-layer-row input[type="text"]:disabled { opacity: .55; }
+.save-as-footer { justify-content: flex-end; }
+.save-as-error { color: #b42336; margin: 0; font-weight: 700; }
+.save-as-results { display: grid; gap: 8px; border-top: 1px solid var(--panel-line); padding-top: 14px; }
+.save-as-result { display: flex; gap: 10px; justify-content: space-between; align-items: center; }
+.save-as-result span { overflow-wrap: anywhere; }
+.save-as-card .hidden { display: none; }
+@media (max-width: 560px) { .save-as-layer-row { grid-template-columns: 24px 1fr; } .save-as-layer-row input[type="text"] { grid-column: 2; } }
+
 .project-action-close {
   position: absolute;
   top: 18px;
