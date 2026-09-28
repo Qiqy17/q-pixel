@@ -1,5 +1,5 @@
 importScripts("./studio/scene-material-library.js");
-const CACHE_NAME = "q-pixel-v20260928-save-as-45";
+const CACHE_NAME = "q-pixel-v20260928-portrait-panel-47";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -19,7 +19,7 @@ const APP_SHELL = [
   "./make/board-planner.js",
   "./make/build-navigation.js",
   "./studio/studio.css",
-  "./studio/studio.css?v=20260927-dual-tool-rails-30",
+  "./studio/studio.css?v=20260928-portrait-panel-47",
   "./studio/background-engine.js",
   "./studio/background-tool.js",
   "./studio/surface-engine.js",
@@ -53,7 +53,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20260928-save-as-45",
+  "./app.js?v=20260928-portrait-panel-47",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"

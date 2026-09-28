@@ -773,6 +773,15 @@
     }
     if (!options.skipSave) saveCollapseState(sidePanelCollapsedStorageKey, collapsed);
     requestAnimationFrame(render);
+    if (!options.skipSave && window.matchMedia("(max-width: 820px) and (orientation: portrait)").matches) {
+      requestAnimationFrame(() => {
+        const target = collapsed ? els.dropZone : els.controlPanel;
+        if (target) {
+          const headerBottom = els.editorTopbar ? els.editorTopbar.getBoundingClientRect().bottom : 0;
+          window.scrollTo(0, Math.max(0, window.scrollY + target.getBoundingClientRect().top - headerBottom - 12));
+        }
+      });
+    }
   }
 
   function restoreChromeCollapseState() {
