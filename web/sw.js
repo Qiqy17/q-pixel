@@ -1,5 +1,5 @@
 importScripts("./studio/scene-material-library.js");
-const CACHE_NAME = "q-pixel-v20260928-save-status-35";
+const CACHE_NAME = "q-pixel-v20260928-preview-layers-42";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -38,7 +38,7 @@ const APP_SHELL = [
   "./3d/finish-workbench.js",
   "./3d/finish-workbench.js?v=20260926-continuous-preview-27",
   "./generated/finish-viewer.bundle.js",
-  "./generated/finish-viewer.bundle.js?v=20260926-editor-visibility-17",
+  "./generated/finish-viewer.bundle.js?v=20260928-preview-layers-42",
   "./workspaces/quality-checks.js",
   "./workspaces/context-inspector.js",
   "./workspaces/workspace-controller.js",
@@ -52,7 +52,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20260928-save-status-35",
+  "./app.js?v=20260928-preview-layers-42",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"

@@ -296,8 +296,86 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   regroup();
   const beadMeshes = [];
   const dummy = new THREE.Object3D(), tint = new THREE.Color();
+  const largeOverview = count > 20000;
+  let detailReady = !largeOverview, detailBuilding = false, detailGeneration = 0, detailBuildPromise = Promise.resolve();
+  let overviewTexture = null, overviewMesh = null;
+  function refreshOverview() {
+    if (!largeOverview) return;
+    const image = document.createElement("canvas");
+    image.width = width;
+    image.height = height;
+    const context = image.getContext("2d");
+    const colors = new Map();
+    for (let row = 0; row < height; row += 1) for (let col = 0; col < width; col += 1) {
+      const code = cells[row] && cells[row][col];
+      if (!code) continue;
+      if (!colors.has(code)) colors.set(code, colorOf(code) || "#aaaaaa");
+      context.fillStyle = colors.get(code);
+      context.fillRect(col, row, 1, 1);
+    }
+    if (overviewTexture) overviewTexture.dispose();
+    overviewTexture = new THREE.CanvasTexture(image);
+    overviewTexture.colorSpace = THREE.SRGBColorSpace;
+    overviewTexture.magFilter = THREE.NearestFilter;
+    overviewTexture.minFilter = THREE.LinearFilter;
+    if (!overviewMesh) {
+      overviewMesh = new THREE.Mesh(new THREE.PlaneGeometry(width * 5, height * 5),
+        new THREE.MeshBasicMaterial({ transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+      overviewMesh.rotation.x = -Math.PI / 2;
+      scene.add(overviewMesh);
+    }
+    overviewMesh.material.map = overviewTexture;
+    overviewMesh.material.needsUpdate = true;
+    overviewMesh.position.y = core.profile(settings.profile).height + .2;
+  }
+  refreshOverview();
   function ensureBeadMeshes() {
-    if (beadMeshes.length) return;
+    if (detailBuilding) return detailBuildPromise;
+    if (beadMeshes.length && detailReady) return Promise.resolve();
+    if (largeOverview) {
+      detailBuilding = true;
+      const generation = detailGeneration;
+      const entries = Object.entries(groups).filter(([, positions]) => positions.length);
+      let groupIndex = 0, offset = 0;
+      detailBuildPromise = new Promise((resolve) => {
+      const buildChunk = () => {
+        if (disposed || generation !== detailGeneration) { detailBuilding = false; resolve(); return; }
+        if (groupIndex >= entries.length) {
+          detailBuilding = false;
+          detailReady = true;
+          updateTopology(core.profile(settings.profile));
+          if (core.profile(settings.profile).frontTopology === "fused" || core.profile(settings.profile).backTopology === "fused") rebuildSurfaces();
+          invalidate();
+          resolve();
+          return;
+        }
+        const [kind, positions] = entries[groupIndex];
+        const chunk = positions.slice(offset, offset + 4000);
+        const mesh = new THREE.InstancedMesh(beadGeometry(core.profile(settings.profile), segmentsFor(currentQuality)), beadMaterials[kind], chunk.length);
+        mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+        mesh.userData.positions = chunk;
+        mesh.castShadow = kind !== "clear";
+        chunk.forEach(({ row, col, code }, index) => {
+          dummy.position.set(col * 5 - centerX, 0, row * 5 - centerZ);
+          dummy.scale.set(1, 1, 1);
+          dummy.rotation.set(0, 0, 0);
+          dummy.updateMatrix();
+          mesh.setMatrixAt(index, dummy.matrix);
+          mesh.setColorAt(index, tint.set(colorOf(code) || "#aaaaaa"));
+        });
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        mesh.visible = false;
+        scene.add(mesh);
+        beadMeshes.push(mesh);
+        offset += chunk.length;
+        if (offset >= positions.length) { groupIndex += 1; offset = 0; }
+        setTimeout(buildChunk, 0);
+      };
+      setTimeout(buildChunk, 0);
+      });
+      return detailBuildPromise;
+    }
     Object.entries(groups).filter(([, positions]) => positions.length).forEach(([kind, positions]) => {
       const mesh = new THREE.InstancedMesh(beadGeometry(core.profile(settings.profile), segmentsFor(currentQuality)), beadMaterials[kind], positions.length);
       mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
@@ -351,11 +429,12 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   function updateTopology(profile) {
     const frontFused = profile.frontTopology === "fused";
     const backFused = profile.backTopology === "fused";
-    if (!frontFused || !backFused) ensureBeadMeshes();
-    beadMeshes.forEach((mesh) => { mesh.visible = !frontFused; });
-    fusedGroups.front.visible = frontFused;
-    fusedGroups.back.visible = backFused;
-    fusedGroups.side.visible = frontFused || backFused;
+    if (!largeOverview && (!frontFused || !backFused)) ensureBeadMeshes();
+    const detailVisible = !largeOverview || (detailReady && !overviewMesh.visible);
+    beadMeshes.forEach((mesh) => { mesh.visible = detailVisible && !frontFused; });
+    fusedGroups.front.visible = detailVisible && frontFused;
+    fusedGroups.back.visible = detailVisible && backFused;
+    fusedGroups.side.visible = detailVisible && (frontFused || backFused);
     Object.values(fusedGroups).forEach((group) => { group.scale.y = profile.height; });
   }
   async function buildFusedSurfaces(generation) {
@@ -381,6 +460,14 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
     invalidate();
   }
   function rebuildSurfaces() {
+    if (largeOverview && !detailReady) {
+      fusedGeneration += 1;
+      fusedReady = false;
+      fusedStarted = false;
+      fusedBuildPromise = Promise.resolve();
+      fusedMeshes.splice(0).forEach((mesh) => { mesh.parent.remove(mesh); mesh.geometry.dispose(); });
+      return Promise.resolve();
+    }
     fusedStarted = true;
     fusedGeneration += 1;
     fusedReady = false;
@@ -584,6 +671,23 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   function draw() {
     if (disposed || contextLost) return;
     controls.update();
+    if (largeOverview && overviewMesh) {
+      const distance = camera.position.distanceTo(controls.target);
+      const cellPixels = 5 * Math.max(1, canvas.clientHeight) / (2 * distance * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+      if (cellPixels >= 3.5 && !detailReady) {
+        const profile = core.profile(settings.profile);
+        if (profile.frontTopology === "fused" && profile.backTopology === "fused") {
+          detailReady = true;
+          rebuildSurfaces();
+        } else ensureBeadMeshes();
+      }
+      const detailed = cellPixels >= 3.5 && detailReady &&
+        ((core.profile(settings.profile).frontTopology !== "fused" && core.profile(settings.profile).backTopology !== "fused") || fusedReady);
+      if (overviewMesh.visible === detailed) {
+        overviewMesh.visible = !detailed;
+        updateTopology(core.profile(settings.profile));
+      }
+    }
     board.visible = settings.boardMode !== "transparent" && boardMaterial.opacity > 0 && viewSide !== "back" && camera.position.y >= 0;
     renderer.render(scene, camera);
     drawOverlay();
@@ -715,6 +819,11 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   function setProfile(id) {
     const next = core.profile(id);
     settings.profile = next.id;
+    if (largeOverview && (next.frontTopology !== "fused" || next.backTopology !== "fused") && !beadMeshes.length) {
+      detailReady = false;
+      if (overviewMesh) overviewMesh.visible = true;
+    }
+    if (overviewMesh) overviewMesh.position.y = next.height + .2;
     updateTopology(next);
     beadMeshes.forEach((mesh) => { mesh.geometry.dispose(); mesh.geometry = beadGeometry(next, segmentsFor(currentQuality)); });
     const previousMaps = maps;
@@ -802,8 +911,13 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
     cells = next.cells;
     const adjacent = core.analyze(cells);
     count = adjacent.count;
+    detailGeneration += 1;
+    detailBuilding = false;
+    detailReady = !largeOverview;
     beadMeshes.splice(0).forEach((mesh) => { scene.remove(mesh); mesh.geometry.dispose(); });
     regroup();
+    refreshOverview();
+    if (overviewMesh) overviewMesh.visible = true;
     updateTopology(core.profile(settings.profile));
     if (bridgeMesh) { scene.remove(bridgeMesh); bridgeMesh.geometry.dispose(); bridgeMesh = null; }
     const totalBridges = adjacent.horizontal + adjacent.vertical;
@@ -886,7 +1000,15 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   // 4K 分块导出：分块尺寸适配设备纹理上限，输出始终保持请求尺寸。
   async function exportPng({ size = 4096, onProgress } = {}) {
     exportCancelled = false;
+    if (largeOverview) {
+      const profile = core.profile(settings.profile);
+      if (profile.frontTopology === "fused" && profile.backTopology === "fused") detailReady = true;
+      else await ensureBeadMeshes();
+      if (!fusedStarted) rebuildSurfaces();
+    }
     if (!fusedReady && settings.profile !== "raw" && settings.profile !== "light") await fusedBuildPromise;
+    const overviewWasVisible = overviewMesh && overviewMesh.visible;
+    if (overviewMesh) { overviewMesh.visible = false; updateTopology(core.profile(settings.profile)); }
     const maxTexture = renderer.capabilities ? renderer.capabilities.maxTextureSize : 4096;
     const targetSize = size;
     const output = document.createElement("canvas");
@@ -918,6 +1040,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
       drawOverlay(output, targetSize, targetSize);
       return await new Promise((resolve, reject) => output.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("PNG 编码失败"))), "image/png"));
     } finally {
+      if (overviewMesh) { overviewMesh.visible = overviewWasVisible; updateTopology(core.profile(settings.profile)); }
       camera.clearViewOffset();
       camera.aspect = before.aspect;
       camera.updateProjectionMatrix();
@@ -947,6 +1070,8 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
     if (bridgeMesh) bridgeMesh.geometry.dispose();
     bridgeMaterial.dispose();
     boardGeometry.dispose();
+    if (overviewMesh) { overviewMesh.geometry.dispose(); overviewMesh.material.dispose(); }
+    if (overviewTexture) overviewTexture.dispose();
     if (boardTexture) boardTexture.dispose();
     boardMaterial.dispose();
     envMap.dispose();

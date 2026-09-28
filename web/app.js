@@ -1140,12 +1140,12 @@
     state.view.panY = 0;
     state.view.isPanning = false;
     state.view.panStart = null;
-    render();
+    render(true);
   }
 
   function zoomView(multiplier) {
     state.view.zoom = Math.max(0.25, Math.min(8, state.view.zoom * multiplier));
-    render();
+    render(true);
   }
 
   function getCanvasPoint(event) {
@@ -1985,7 +1985,7 @@
   }
 
   function renderBeadMode(compositeCurrent) {
-    syncControls();
+    if (!compositeCurrent) syncControls();
     resizePreviewCanvas();
     if (!compositeCurrent) syncCompositePattern();
     const canvas = els.previewCanvas;
@@ -2108,7 +2108,47 @@
     ctx.restore();
   }
 
+  let overviewRaster = null;
+
+  function invalidateOverviewRaster() {
+    overviewRaster = null;
+  }
+
+  function drawOverviewRaster(ctx, pattern, x, y, cellSize) {
+    const baseColor = getBaseboardColor();
+    if (!overviewRaster || overviewRaster.pattern !== pattern || overviewRaster.cells !== pattern.cells || overviewRaster.baseColor !== baseColor) {
+      const canvas = document.createElement("canvas");
+      canvas.width = pattern.width;
+      canvas.height = pattern.height;
+      const raster = canvas.getContext("2d");
+      const colors = new Map();
+      if (baseColor) {
+        raster.fillStyle = baseColor;
+        raster.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      for (let row = 0; row < pattern.height; row += 1) {
+        for (let col = 0; col < pattern.width; col += 1) {
+          const code = pattern.cells[row][col];
+          if (!code || code === "H1") continue;
+          if (!colors.has(code)) colors.set(code, getPaletteColor(code).hex);
+          raster.fillStyle = colors.get(code);
+          raster.fillRect(col, row, 1, 1);
+        }
+      }
+      overviewRaster = { pattern, cells: pattern.cells, baseColor, canvas };
+    }
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.globalAlpha = state.beads.sourceCompareEnabled ? 0.78 : 1;
+    ctx.drawImage(overviewRaster.canvas, x, y, pattern.width * cellSize, pattern.height * cellSize);
+    ctx.restore();
+  }
+
   function drawPatternGrid(ctx, pattern, x, y, cellSize, options) {
+    if (!options.export && cellSize < 3 && pattern.width * pattern.height >= 10000) {
+      drawOverviewRaster(ctx, pattern, x, y, cellSize);
+      return;
+    }
     const showCodes = options.showCodes !== false;
     const showGrid = options.showGrid !== false;
     const showCenterLines = options.showCenterLines !== false;
@@ -5755,6 +5795,7 @@
     const target = pattern || state.beads.pattern;
     if (!target || row < 0 || col < 0 || row >= target.height || col >= target.width) return false;
     target.cells[row][col] = code;
+    if (overviewRaster && overviewRaster.pattern === target) invalidateOverviewRaster();
     return true;
   }
 
@@ -5968,6 +6009,7 @@
       }
     });
     pattern.cells = composite;
+    invalidateOverviewRaster();
   }
 
   function syncCompositeCell(row, col) {
@@ -5976,6 +6018,13 @@
       if (layer.visible && layer.cells[row] && layer.cells[row][col]) code = layer.cells[row][col];
     }
     state.beads.pattern.cells[row][col] = code;
+    if (overviewRaster && overviewRaster.pattern === state.beads.pattern) {
+      const raster = overviewRaster.canvas.getContext("2d");
+      raster.clearRect(col, row, 1, 1);
+      if (code && code !== "H1") raster.fillStyle = getPaletteColor(code).hex;
+      else raster.fillStyle = overviewRaster.baseColor;
+      if ((code && code !== "H1") || overviewRaster.baseColor) raster.fillRect(col, row, 1, 1);
+    }
   }
 
   function cloneLayerState() {
@@ -8223,7 +8272,7 @@
         state.view.zoom = Math.max(0.25, Math.min(8, state.view.pinchStart.zoom * ratio));
         state.view.panX = state.view.pinchStart.panX + midpoint.x - state.view.pinchStart.midpoint.x;
         state.view.panY = state.view.pinchStart.panY + midpoint.y - state.view.pinchStart.midpoint.y;
-        render();
+        render(true);
         return;
       }
     }
@@ -8235,7 +8284,7 @@
       const point = getCanvasPoint(event);
       state.view.panX = state.view.panStart.panX + point.x - state.view.panStart.point.x;
       state.view.panY = state.view.panStart.panY + point.y - state.view.panStart.point.y;
-      render();
+      render(true);
       return;
     }
 
@@ -8426,6 +8475,11 @@
       width = Math.round(width * settings._renderScale);
       height = Math.round(height * settings._renderScale);
     }
+    if (settings._previewMaxSide) {
+      const fit = Math.min(1, settings._previewMaxSide / Math.max(width, height));
+      width = Math.max(1, Math.round(width * fit));
+      height = Math.max(1, Math.round(height * fit));
+    }
     return { width, height };
   }
 
@@ -8448,8 +8502,11 @@
     const margin = clamp(settings.exportMargin || 42 * scale, 12 * scale, 160 * scale);
     const headerHeight = settings.showInfo || settings.showAppInfo ? 78 * scale : 18 * scale;
     let cellSize = settings.exportAutoCellSize === false
-      ? clamp(settings.exportCellSize || 22, 8, Math.round(44 * (settings._renderScale || 1)))
+      ? clamp(settings.exportCellSize || 22, settings._previewMaxSide ? 1 : 8, Math.round(44 * (settings._renderScale || 1)))
       : getDefaultExportCellSize(pattern);
+    if (settings._previewMaxSide) {
+      cellSize = Math.min(cellSize, Math.max(1, Math.floor((settings._previewMaxSide - margin * 2 - headerHeight - 100) / Math.max(pattern.width, pattern.height))));
+    }
     let axisSize = getAxisSize(cellSize, settings);
     let paper = getPaperPresetSize(settings);
     let gridWidth = pattern.width * cellSize;
@@ -8463,7 +8520,7 @@
         paper.height - margin * 2 - headerHeight - axisSize * 2 - (usageMetrics.height ? usageMetrics.height + 18 : 0)
       );
       const fitCell = Math.floor(Math.min(availableWidth / pattern.width, availableHeight / pattern.height));
-      cellSize = Math.max(4, Math.min(cellSize, fitCell));
+      cellSize = Math.max(settings._previewMaxSide ? 1 : 4, Math.min(cellSize, fitCell));
       axisSize = getAxisSize(cellSize, settings);
       gridWidth = pattern.width * cellSize;
       usageMetrics = settings.showUsage ? measureUsageFooter(usage, contentWidth, settings) : { height: 0 };
@@ -8491,8 +8548,8 @@
       };
     }
 
-    const maxSide = 22000;
-    const maxCellBySide = Math.max(4, Math.floor((maxSide - margin * 2 - axisSize * 2) / Math.max(pattern.width, pattern.height)));
+    const maxSide = settings._previewMaxSide || 22000;
+    const maxCellBySide = Math.max(settings._previewMaxSide ? 1 : 4, Math.floor((maxSide - margin * 2 - axisSize * 2) / Math.max(pattern.width, pattern.height)));
     cellSize = Math.min(cellSize, maxCellBySide);
     axisSize = getAxisSize(cellSize, settings);
     gridWidth = pattern.width * cellSize;
@@ -8980,7 +9037,7 @@
   function stitchRegionCanvases(canvases, title, settings) {
     const pages = canvases.filter(Boolean);
     if (!pages.length) return null;
-    const maxSide = 22000;
+    const maxSide = settings && settings._previewMaxSide ? settings._previewMaxSide : 22000;
     const columns = getBestRegionPreviewColumns(pages, settings || state.beads.exportSettings);
     const gap = 42;
     const padding = 42;
@@ -9225,15 +9282,15 @@
     setMessage(`已微调 ${regions[index].name}。`, false);
   }
 
-  function makeRegionsExportCanvasByIds(ids) {
+  function makeRegionsExportCanvasByIds(ids, overrideSettings) {
     if (!state.beads.pattern) return null;
     const regions = getExportRegions(state.beads.pattern);
     const selectedIds = new Set(ids && ids.length ? ids : regions.map((region) => region.id));
     const selectedRegions = regions.filter((region) => selectedIds.has(region.id));
     if (!selectedRegions.length) return null;
-    if (selectedRegions.length === 1) return makeRegionCanvas(state.beads.pattern, selectedRegions[0], 0);
-    const pages = selectedRegions.map((region, index) => makeRegionCanvas(state.beads.pattern, region, index));
-    return stitchRegionCanvases(pages, `${state.beads.projectTitle || "Q像素图纸"} · 已选区域`, state.beads.exportSettings);
+    if (selectedRegions.length === 1) return makeRegionCanvas(state.beads.pattern, selectedRegions[0], 0, overrideSettings);
+    const pages = selectedRegions.map((region, index) => makeRegionCanvas(state.beads.pattern, region, index, overrideSettings));
+    return stitchRegionCanvases(pages, `${state.beads.projectTitle || "Q像素图纸"} · 已选区域`, Object.assign({}, state.beads.exportSettings, overrideSettings || {}));
   }
 
   function getExportRegionsByIds(ids) {
@@ -9739,19 +9796,28 @@
     saveBlobFile(makePdfFromCanvases(pages), `Q像素-逐板图纸-${formatStamp(new Date())}.pdf`, "application/pdf", `已导出 ${pages.length} 页逐板图纸。`);
   }
 
-  function makeCurrentExportCanvas() {
+  function makeCurrentExportCanvas(overrideSettings) {
     if (!state.beads.pattern) return null;
     const regions = getExportRegions(state.beads.pattern);
     if (state.beads.exportSettings.regionEnabled && regions.length) {
-      if (state.beads.tileLayout) return makeRegionsExportCanvasByIds(selectedTilePreviewIds(regions));
-      return makeRegionPreviewCanvas(state.beads.pattern);
+      if (state.beads.tileLayout) return makeRegionsExportCanvasByIds(selectedTilePreviewIds(regions), overrideSettings);
+      return makeRegionPreviewCanvas(state.beads.pattern, overrideSettings);
     }
-    return makeBeadExportCanvas(state.beads.pattern);
+    return makeBeadExportCanvas(state.beads.pattern, overrideSettings);
   }
 
   function drawExportPreview() {
     if (!els.exportPreviewCanvas) return false;
-    const source = makeCurrentExportCanvas();
+    const regions = state.beads.pattern && state.beads.exportSettings.regionEnabled ? getExportRegions(state.beads.pattern) : [];
+    const selectedCount = state.beads.tileLayout ? selectedTilePreviewIds(regions).length : regions.length;
+    const pageBudget = Math.max(256, Math.floor(2048 / Math.sqrt(Math.max(1, selectedCount))));
+    const source = makeCurrentExportCanvas({
+      _previewMaxSide: pageBudget,
+      exportScale: 1,
+      exportAutoCellSize: false,
+      exportCellSize: Math.max(1, Math.min(state.beads.exportSettings.exportCellSize || getDefaultExportCellSize(state.beads.pattern),
+        Math.floor((pageBudget - 200) / Math.max(1, state.beads.pattern.width, state.beads.pattern.height))))
+    });
     if (!source) return false;
     const canvas = els.exportPreviewCanvas;
     canvas.width = source.width;
@@ -16131,7 +16197,7 @@
           return { changed: changed > 0 };
         },
         onHistory: (action) => action === "undo" ? undoEdit() : redoEdit(),
-        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js?v=20260926-editor-visibility-17"),
+        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js?v=20260928-preview-layers-42"),
         onSettings: (settings) => { state.beads.finish3d = settings; markUnsavedChanges(); },
         onExport: (blob) => saveBlobFile(blob, `Q像素-成品3D-${formatStamp(new Date())}.png`, "image/png", "3D 成品预览已导出。")
       });
