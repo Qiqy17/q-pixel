@@ -151,6 +151,19 @@ class LocalServerSecurityTest(unittest.TestCase):
                                     headers={"Cookie": cookie})
         self.assertEqual(status, 401)
 
+    def test_older_save_cannot_replace_newer_project_file(self):
+        project_id = "save-order-test"
+        newest = {"id": project_id, "updatedAt": "2026-09-28T00:02:00Z", "payload": {"value": "new"}}
+        older = {"id": project_id, "updatedAt": "2026-09-28T00:01:00Z", "payload": {"value": "old"}}
+        for project, accepted in ((newest, True), (older, False)):
+            status, _, body = self.request(False, self.local_port, "POST", f"/api/projects/{project_id}",
+                                           json.dumps(project), {"Content-Type": "application/json"})
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(body)["accepted"], accepted)
+        status, _, body = self.request(False, self.local_port, "GET", f"/api/projects/{project_id}")
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["payload"], newest["payload"])
+
 
 if __name__ == "__main__":
     unittest.main()

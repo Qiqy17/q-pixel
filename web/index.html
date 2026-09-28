@@ -11,7 +11,7 @@
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.svg">
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=20260927-export-zoom-34">
   <link rel="stylesheet" href="./studio/studio.css?v=20260927-tile-workspace-31">
 </head>
 <body>
@@ -978,11 +978,11 @@
       </header>
       <div class="export-preview-body">
         <div class="export-preview-stage">
-          <div class="preview-zoom-bar">
-            <button id="exportPreviewZoomOutButton" type="button">-</button>
-            <button id="exportPreviewZoomFitButton" type="button">适应</button>
-            <button id="exportPreviewZoomInButton" type="button">+</button>
-            <output id="exportPreviewZoomLabel" aria-live="polite">100%</output>
+          <div class="preview-zoom-bar export-preview-zoom-bar" role="group" aria-label="导出预览缩放">
+            <button id="exportPreviewZoomOutButton" type="button" aria-label="缩小预览">−</button>
+            <button id="exportPreviewZoomFitButton" type="button" aria-pressed="false" title="完整显示图纸">适应</button>
+            <button id="exportPreviewZoomInButton" type="button" aria-label="放大预览">+</button>
+            <span class="export-preview-zoom-readout"><span>缩放</span><output id="exportPreviewZoomLabel" aria-live="polite">100%</output></span>
           </div>
           <canvas id="exportPreviewCanvas" width="900" height="620" aria-label="导出预览画布"></canvas>
         </div>
@@ -1566,6 +1566,6 @@
   <script src="./3d/finish-workbench.js?v=20260926-continuous-preview-27"></script>
   <script src="./import-engine.js"></script>
   <script src="./import-processing.js"></script>
-  <script src="./app.js?v=20260927-large-canvas-33"></script>
+  <script src="./app.js?v=20260928-save-status-35"></script>
 </body>
 </html>

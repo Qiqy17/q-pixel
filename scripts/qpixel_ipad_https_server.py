@@ -376,11 +376,17 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
             DATA_DIR.mkdir(parents=True, exist_ok=True)
             backup_projects_file()
             projects = merge_projects(self.read_projects(), [payload])
-            write_project_file(payload)
+            stored = find_project(projects, project_id)
+            # Requests can finish out of order when a large project is saved
+            # repeatedly. Write the version selected by merge_projects, not
+            # the last request to reach this handler.
+            write_project_file(stored)
             tmp = PROJECTS_FILE.with_suffix(".tmp")
             tmp.write_text(json.dumps(projects[:200], ensure_ascii=False), encoding="utf-8")
             os.replace(tmp, PROJECTS_FILE)
-        self.send_json({"ok": True, "id": project_id, "count": len(projects[:200])})
+        self.send_json({"ok": True, "id": project_id, "count": len(projects[:200]),
+                        "accepted": stored is payload,
+                        "storedUpdatedAt": project_sort_time(stored)})
 
     def write_settings_request(self):
         length = int(self.headers.get("Content-Length") or "0")

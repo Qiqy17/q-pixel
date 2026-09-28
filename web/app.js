@@ -19,6 +19,9 @@
   let draftRevision = 0;
   let persistedDraftRevision = 0;
   let draftWriteQueue = Promise.resolve();
+  let saveAttempt = 0;
+  let pendingSaveAttempt = 0;
+  let pendingSaveRevision = -1;
   const workspaceStateModule = window.QPixelWorkspaceState || null;
   const domUtils = window.QPixelDomUtils || null;
   const paletteRegistryModule = window.QPixelPaletteRegistry || null;
@@ -10797,7 +10800,13 @@
       if (kind === "export") state.beads.exportPreviewAutoFit = false;
     }
     applyPreviewZoom(canvas, state.beads[key]);
-    if (kind === "export" && els.exportPreviewZoomLabel) els.exportPreviewZoomLabel.textContent = `${Math.max(0.01, Math.round(state.beads[key] * 10000) / 100)}%`;
+    if (kind === "export") {
+      const percent = state.beads[key] * 100;
+      if (els.exportPreviewZoomLabel) {
+        els.exportPreviewZoomLabel.textContent = percent < 0.01 ? "<0.01%" : `${Number(percent.toFixed(percent < 1 ? 2 : percent < 100 ? 1 : 0))}%`;
+      }
+      if (els.exportPreviewZoomFitButton) els.exportPreviewZoomFitButton.setAttribute("aria-pressed", String(state.beads.exportPreviewAutoFit));
+    }
     if (action === "fit") { canvas.parentElement.scrollLeft = 0; canvas.parentElement.scrollTop = 0; }
   }
 
@@ -12722,11 +12731,14 @@
     }).then((response) => {
       if (!response.ok) throw new Error(`project-save ${response.status}`);
       return response.json().catch(() => ({ ok: true })).then((result) => {
-        markProjectsSynced([outgoing]);
+        if (result && result.ok && result.accepted !== false) {
+          try { markProjectsSynced([outgoing]); }
+          catch (error) { console.warn("Q像素同步元数据缓存更新失败", error); }
+        }
         return result;
       });
     }).catch(() => {
-      setMessage("电脑同步服务暂时不可用，已先保存到当前设备。", true);
+      setMessage("电脑同步服务暂时不可用。", true);
       return null;
     });
   }
@@ -12842,8 +12854,9 @@
 
   function updateDirtyStatus() {
     const dirty = Boolean(state.hasUnsavedChanges);
+    const saving = dirty && pendingSaveAttempt && pendingSaveRevision === draftRevision;
     if (els.saveStatus) {
-      els.saveStatus.textContent = dirty ? "未保存" : "已保存";
+      els.saveStatus.textContent = saving ? "保存中" : dirty ? "未保存" : "已保存";
       els.saveStatus.classList.toggle("dirty", dirty);
     }
     if (els.saveTopButton) els.saveTopButton.title = dirty ? "保存未保存修改" : "当前没有未保存修改";
@@ -13787,60 +13800,73 @@
     const payload = makeProjectPayload();
     if (!payload) {
       setMessage("保存失败，请先创建画布。", true);
-      return;
+      return false;
     }
     const savingRevision = draftRevision;
-    const existing = getProjects().find((item) => item.id === payload.id);
-    let previousProject = existing;
-    if (existing && draftVault && normalizeProjectHistory(existing.history).length < Number(existing.historyCount || 0)) {
-      const history = normalizeProjectHistory(await draftVault.loadHistory(existing.id));
-      if (history.length) previousProject = Object.assign({}, existing, { history, historyCount: Math.max(history.length, existing.historyCount || 0) });
-    }
-    const sessionSeconds = consumeSessionSeconds();
-    const today = dateKey(payload.savedAt);
-    const designDates = Object.assign({}, previousProject && previousProject.designDates);
-    designDates[today] = Math.max(0, Number(designDates[today] || 0)) + Math.max(1, sessionSeconds);
-    state.beads.projectId = payload.id;
-    const projects = getProjects().filter((item) => item.id !== payload.id);
-    const nextProject = withProjectHistory({
-      id: payload.id,
-      title: payload.title,
-      createdAt: (previousProject && previousProject.createdAt) || payload.createdAt || payload.savedAt,
-      savedAt: payload.savedAt,
-      updatedAt: payload.savedAt,
-      width: payload.pattern.width,
-      height: payload.pattern.height,
-      thumbnail: makeProjectThumbnail(state.beads.pattern),
-      versionSource: "manual",
-      editSeconds: Math.max(0, Number(previousProject && previousProject.editSeconds || 0)) + Math.max(1, sessionSeconds),
-      openCount: Math.max(0, Number(previousProject && previousProject.openCount || 0)),
-      designDates,
-      payload
-    }, previousProject);
-    projects.unshift(nextProject);
-    const localResult = storeProjectsLocally(projects);
-    if (localResult.localStorage && savingRevision === draftRevision) { markSaved(); clearRecoveryDraft(); }
-    const remoteSave = saveProjectToRemote(projects[0]).then((result) => {
-      if (result && result.ok) {
+    const attempt = ++saveAttempt;
+    pendingSaveAttempt = attempt;
+    pendingSaveRevision = savingRevision;
+    updateDirtyStatus();
+    try {
+      const existing = getProjects().find((item) => item.id === payload.id);
+      let previousProject = existing;
+      if (existing && draftVault && normalizeProjectHistory(existing.history).length < Number(existing.historyCount || 0)) {
+        const history = normalizeProjectHistory(await draftVault.loadHistory(existing.id));
+        if (history.length) previousProject = Object.assign({}, existing, { history, historyCount: Math.max(history.length, existing.historyCount || 0) });
+      }
+      const sessionSeconds = consumeSessionSeconds();
+      const today = dateKey(payload.savedAt);
+      const designDates = Object.assign({}, previousProject && previousProject.designDates);
+      designDates[today] = Math.max(0, Number(designDates[today] || 0)) + Math.max(1, sessionSeconds);
+      state.beads.projectId = payload.id;
+      const projects = getProjects().filter((item) => item.id !== payload.id);
+      const nextProject = withProjectHistory({
+        id: payload.id,
+        title: payload.title,
+        createdAt: (previousProject && previousProject.createdAt) || payload.createdAt || payload.savedAt,
+        savedAt: payload.savedAt,
+        updatedAt: payload.savedAt,
+        width: payload.pattern.width,
+        height: payload.pattern.height,
+        thumbnail: makeProjectThumbnail(state.beads.pattern),
+        versionSource: "manual",
+        editSeconds: Math.max(0, Number(previousProject && previousProject.editSeconds || 0)) + Math.max(1, sessionSeconds),
+        openCount: Math.max(0, Number(previousProject && previousProject.openCount || 0)),
+        designDates,
+        payload
+      }, previousProject);
+      projects.unshift(nextProject);
+      const localResult = storeProjectsLocally(projects);
+      if (localResult.localStorage && savingRevision === draftRevision) { markSaved(); clearRecoveryDraft(); }
+      renderProjectList();
+      renderHomeProjects();
+      const remoteResult = await saveProjectToRemote(nextProject);
+      const remoteSaved = Boolean(remoteResult && remoteResult.ok && remoteResult.accepted !== false);
+      if (remoteSaved && attempt === saveAttempt) {
         if (savingRevision === draftRevision) { markSaved(); clearRecoveryDraft(); }
-        // 远程确认成功后刷新一次列表，让 remoteUpdatedAt 落地；避免下轮同步合并时列表跳变。
         renderProjectList();
         renderHomeProjects();
       }
-      setMessage(result && result.ok
-        ? localResult.localStorage ? "已保存并同步到电脑创作空间。" : "已保存到电脑创作空间；本机浏览器缓存空间不足。"
-        : localResult.localStorage ? "已保存到当前设备，电脑同步服务暂时不可用。" : "保存未完成：本机空间不足且电脑同步服务不可用，请导出工程文件。", !(result && result.ok) && !localResult.localStorage);
-      return result;
-    });
-    renderProjectList();
-    renderHomeProjects();
-    // Large imported images can exceed the browser quota. The desktop service is
-    // durable too, so wait for its acknowledgement before rejecting a split.
-    if (!localResult.localStorage) {
-      const remoteResult = await remoteSave;
-      return Boolean(remoteResult && remoteResult.ok);
+      if (attempt === saveAttempt) {
+        setMessage(remoteSaved
+          ? localResult.localStorage ? "已保存并同步到电脑创作空间。" : "已保存到电脑创作空间；本机浏览器缓存空间不足。"
+          : localResult.localStorage ? "已保存到当前设备，电脑同步尚未完成。"
+          : remoteResult && remoteResult.accepted === false
+            ? "电脑端已有更新版本，当前修改未写入；请先导出工程文件保留修改。"
+            : "保存未完成：本机空间不足且电脑同步服务不可用，请导出工程文件。", !remoteSaved && !localResult.localStorage);
+      }
+      return Boolean(localResult.localStorage || remoteSaved);
+    } catch (error) {
+      console.error("Q像素工程保存失败", error);
+      if (attempt === saveAttempt) setMessage("保存失败，请导出工程文件保留当前修改。", true);
+      return false;
+    } finally {
+      if (pendingSaveAttempt === attempt) {
+        pendingSaveAttempt = 0;
+        pendingSaveRevision = -1;
+        updateDirtyStatus();
+      }
     }
-    return true;
   }
 
   async function loadProject(id) {
