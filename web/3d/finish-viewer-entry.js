@@ -339,7 +339,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
       let groupIndex = 0, offset = 0;
       detailBuildPromise = new Promise((resolve) => {
       const buildChunk = () => {
-        if (disposed || generation !== detailGeneration) { detailBuilding = false; resolve(); return; }
+        if (disposed || generation !== detailGeneration) { resolve(); return; }
         if (groupIndex >= entries.length) {
           detailBuilding = false;
           detailReady = true;
