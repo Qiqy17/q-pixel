@@ -1,10 +1,10 @@
 importScripts("./studio/scene-material-library.js");
-const CACHE_NAME = "q-pixel-v20260928-save-as-44";
+const CACHE_NAME = "q-pixel-v20260928-save-as-45";
 const APP_SHELL = [
   "./",
   "./index.html",
   "./styles.css",
-  "./styles.css?v=20260928-save-as-44",
+  "./styles.css?v=20260928-save-as-45",
   "./feature-flags.js",
   "./module-loader.js",
   "./core/project-model.js",
@@ -53,7 +53,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20260928-save-as-44",
+  "./app.js?v=20260928-save-as-45",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"

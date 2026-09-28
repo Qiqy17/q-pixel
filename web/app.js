@@ -13968,9 +13968,6 @@
       setSaveAsError("新设计文件名不能重复。"); return;
     }
     const existing = getProjects();
-    if (existing.length + choices.length > 120) {
-      setSaveAsError("作品列表最多保存 120 个设计，请先整理旧文件。"); return;
-    }
     const source = makeProjectPayload();
     if (!source || !window.QPixelDesignSaveAs) { setSaveAsError("无法读取当前设计，请重试。"); return; }
     let payloads;
