@@ -31,12 +31,16 @@
   const surfaceEngine = window.QPixelSurfaceEngine || null;
   const sceneCatalog = window.QPixelSceneCatalog || null;
   const editorPerformance = window.QPixelEditorPerformance || null;
+  const layerTranslate = window.QPixelLayerTranslate || null;
 
   if (!projectModelModule || typeof projectModelModule.createContext !== "function") {
     throw new Error("Q像素项目模型加载失败，已停止初始化以保护项目数据。");
   }
   if (!paletteRegistryModule || !paletteRegistryModule.defaultPalette()) {
     throw new Error("Q像素色卡未加载，已停止初始化以保护色号数据。");
+  }
+  if (!layerTranslate || typeof layerTranslate.translate !== "function") {
+    throw new Error("图层移动模块加载失败，已停止初始化以保护图层数据。");
   }
 
   // 全应用共用同一品牌色卡，避免色号数据在编辑器与库存模块中分叉。
@@ -6104,7 +6108,18 @@
           <button class="layer-mini" type="button" data-layer-action="visible" aria-pressed="${layer.visible}" title="切换图层显示">${layer.visible ? "显示中" : "已隐藏"}</button>
           <button class="layer-mini" type="button" data-layer-action="lock" aria-pressed="${layer.locked}" title="切换图层锁定">${layer.locked ? "已锁定" : "未锁定"}</button>
           <button class="layer-mini ${layer.alphaLocked ? "alpha-active" : ""}" type="button" data-layer-action="alpha" aria-pressed="${layer.alphaLocked}" title="透明锁定：只改已有格，不增删格">透明锁定${layer.alphaLocked ? "开" : "关"}</button>
-          <details class="layer-more"><summary>更多</summary><div><button type="button" data-layer-action="duplicate">复制图层</button><button type="button" data-layer-action="mirror">镜像图层</button></div></details>
+          <details class="layer-more"><summary>更多</summary><div class="layer-more-content">
+            <div class="layer-more-actions"><button type="button" data-layer-action="duplicate">复制图层</button><button type="button" data-layer-action="mirror">镜像图层</button></div>
+            <div class="layer-translate-controls" role="group" aria-label="移动此图层">
+              <label>移动格数 <input class="layer-translate-steps" type="number" min="1" max="500" step="1" value="1" inputmode="numeric" aria-label="移动格数"></label>
+              <div class="layer-direction-buttons">
+                <button type="button" data-layer-shift="up" aria-label="图层上移">↑ 上</button>
+                <button type="button" data-layer-shift="down" aria-label="图层下移">↓ 下</button>
+                <button type="button" data-layer-shift="left" aria-label="图层左移">← 左</button>
+                <button type="button" data-layer-shift="right" aria-label="图层右移">→ 右</button>
+              </div>
+            </div>
+          </div></details>
         </div>
       `;
       const input = row.querySelector(".layer-name");
@@ -6119,6 +6134,10 @@
         const detail = row.querySelector(".tile-usage-list");
         detail.textContent = Object.entries(usage).sort((a, b) => b[1] - a[1]).map(([code, count]) => `${code} ${count}`).join(" · ") || "暂无拼豆";
         row.querySelectorAll('.layer-more button').forEach((button) => { button.disabled = true; button.title = "分区工程固定每块一个图层"; });
+      }
+      if (region || state.beads.tileLayout || layer.locked) {
+        row.querySelectorAll('[data-layer-shift]').forEach((button) => { button.disabled = true; });
+        row.querySelector('.layer-translate-steps').disabled = true;
       }
       input.addEventListener("change", () => {
         layer.name = input.value.replace(/·.*$/, "").trim() || "图层";
@@ -6160,8 +6179,53 @@
         if (!changed) state.beads.undoStack.pop();
         setMessage(changed ? "图层已镜像。" : "图层未变化或已锁定。", !changed);
       });
+      const stepInput = row.querySelector('.layer-translate-steps');
+      row.querySelectorAll('[data-layer-shift]').forEach((button) => {
+        button.addEventListener("click", () => {
+          const steps = Number(stepInput.value);
+          if (!Number.isInteger(steps) || steps < 1 || steps > 500) {
+            setMessage("请输入 1 至 500 的整数格数。", true);
+            stepInput.focus();
+            return;
+          }
+          const vectors = { up: [0, -steps], down: [0, steps], left: [-steps, 0], right: [steps, 0] };
+          const names = { up: "上", down: "下", left: "左", right: "右" };
+          const direction = button.dataset.layerShift;
+          const vector = vectors[direction];
+          if (vector) translateLayer(layer, vector[0], vector[1], names[direction], steps);
+        });
+      });
       els.layerList.appendChild(row);
     });
+  }
+
+  function translateLayer(layer, dx, dy, direction, steps) {
+    if (!state.beads.pattern || !state.beads.layers.includes(layer)) return false;
+    if (state.beads.tileLayout || layer.tileRegion) {
+      setMessage("分区工程的图层边界固定，不能移动。", true);
+      return false;
+    }
+    if (layer.locked) {
+      setMessage("图层已锁定，请先解锁。", true);
+      return false;
+    }
+    const result = layerTranslate.translate(layer.cells, state.beads.pattern.width, state.beads.pattern.height, dx, dy);
+    if (!result.moved && !result.clipped) {
+      setMessage("当前图层没有可移动的格子。", true);
+      return false;
+    }
+    if (result.clipped && !window.confirm(`移动“${layer.name}”后，将裁掉画布外的 ${result.clipped} 格。确定继续吗？`)) return false;
+    state.beads.activeLayerId = layer.id;
+    pushHistory();
+    layer.cells = result.cells;
+    syncCompositePattern();
+    render(true);
+    renderLayerList();
+    renderSelectionColorPanel();
+    renderUsage();
+    refreshExportPreviewIfOpen();
+    setMessage(`“${layer.name}”已向${direction}移动 ${steps} 格${result.clipped ? `，裁掉 ${result.clipped} 格` : ""}。`, false);
+    return true;
   }
 
   function addLayer(name, cells, options = {}) {
