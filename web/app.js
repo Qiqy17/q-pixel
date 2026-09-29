@@ -612,7 +612,7 @@
       "exportPreviewZoomOutButton", "exportPreviewZoomFitButton", "exportPreviewZoomInButton", "exportPreviewZoomLabel",
       "materialPreviewModal", "materialPreviewCloseButton", "materialPreviewCanvas", "materialModeSelect",
       "materialBaseSelect", "materialIntensityRange", "materialIntensityLabel", "materialBackgroundSelect", "materialCategoryList", "materialOptionList", "materialColorPresetList", "materialCustomColorInput", "materialPickerSummary", "materialLightSelect", "materialDecorSelect", "materialQualityCheckButton", "materialQualitySummary", "materialExportButton",
-      "styleRatioSelect", "styleBackgroundColorInput", "styleBackgroundAlphaRange", "styleBackgroundAlphaLabel", "styleBackgroundImageInput",
+      "styleRatioSelect", "styleBackgroundColorInput", "styleBackgroundAlphaRange", "styleBackgroundAlphaLabel", "styleH1OpacityRange", "styleH1OpacityLabel", "styleBackgroundImageInput",
       "styleOrientationSelect", "styleCustomWidthInput", "styleCustomHeightInput", "styleBackgroundImageButton", "styleBackgroundImageName",
       "styleCustomSizeFields", "styleCoverLayoutSelect", "styleCoverTitleInput", "styleCoverSubtitleInput", "styleBorderOptions", "styleBorderGroupSummary", "styleShadowGroupSummary", "styleLightGroupSummary",
       "styleBorderSizeRange", "styleBorderSizeLabel", "styleBorderColorInput", "styleShadowColorInput", "styleShadowBlurRange",
@@ -890,6 +890,8 @@
     state.beads.exportSettings.exportH1Opacity = clamp(state.beads.exportSettings.exportH1Opacity == null ? 0 : state.beads.exportSettings.exportH1Opacity, 0, 100);
     if (els.exportH1OpacityRange) els.exportH1OpacityRange.value = String(state.beads.exportSettings.exportH1Opacity);
     if (els.exportH1OpacityLabel) els.exportH1OpacityLabel.textContent = `${state.beads.exportSettings.exportH1Opacity}%`;
+    if (els.styleH1OpacityRange) els.styleH1OpacityRange.value = String(state.beads.exportSettings.exportH1Opacity);
+    if (els.styleH1OpacityLabel) els.styleH1OpacityLabel.textContent = `${state.beads.exportSettings.exportH1Opacity}%`;
     if (els.albumOverviewToggle) els.albumOverviewToggle.checked = state.beads.exportSettings.albumIncludeOverview !== false;
     if (els.albumPageTitleToggle) els.albumPageTitleToggle.checked = state.beads.exportSettings.albumShowPageTitle !== false;
     if (els.exportMirrorToggle) els.exportMirrorToggle.checked = state.beads.exportSettings.exportMirror;
@@ -10597,6 +10599,7 @@
       materialColorPreset: state.beads.styleMaterialColorPreset || "natural",
       materialColorHex: els.styleBackgroundColorInput && els.styleBackgroundColorInput.value,
       backgroundAlpha: els.styleBackgroundAlphaRange && els.styleBackgroundAlphaRange.value,
+      h1Opacity: state.beads.exportSettings.exportH1Opacity,
       backgroundType: els.materialBackgroundSelect && els.materialBackgroundSelect.value,
       backgroundImageData: state.beads.styleBackgroundImageData || "",
       backgroundImageName: state.beads.styleBackgroundImageName || "",
@@ -10636,6 +10639,10 @@
       : "natural";
     setValue(els.styleBackgroundColorInput, settings.materialColorHex || settings.backgroundColor);
     setValue(els.styleBackgroundAlphaRange, settings.backgroundAlpha);
+    if (settings.h1Opacity != null) {
+      state.beads.exportSettings.exportH1Opacity = clamp(settings.h1Opacity, 0, 100);
+      syncBeadControls();
+    }
     setValue(els.materialBackgroundSelect, settings.backgroundType);
     syncMaterialPickerFromControls();
     setValue(els.materialModeSelect, settings.materialMode);
@@ -10923,11 +10930,21 @@
         const code = pattern.cells[row][col];
         if (!code) continue;
         const color = getPaletteColor(code);
+        ctx.globalAlpha = code === "H1" ? clamp(state.beads.exportSettings.exportH1Opacity, 0, 100) / 100 : 1;
         ctx.fillStyle = mode === "black-glitter" && colorBrightness(color.rgb) < 150 ? "#07080b" : color.hex;
         ctx.fillRect(col * cell, row * cell, cell, cell);
       }
     }
+    ctx.globalAlpha = 1;
     return art;
+  }
+
+  function setH1Opacity(value) {
+    state.beads.exportSettings.exportH1Opacity = clamp(value, 0, 100);
+    syncBeadControls();
+    markUnsavedChanges();
+    if (els.materialPreviewModal && !els.materialPreviewModal.classList.contains("hidden")) drawMaterialPreview();
+    refreshExportPreviewIfOpen();
   }
 
   function drawStyleCoverLayout(ctx, canvas, art, layout, borderSize) {
@@ -14818,6 +14835,7 @@
       if (!input) return;
       input.addEventListener(input.type === "range" || input.type === "color" || input.type === "text" ? "input" : "change", drawMaterialPreview);
     });
+    if (els.styleH1OpacityRange) els.styleH1OpacityRange.addEventListener("input", () => setH1Opacity(els.styleH1OpacityRange.value));
     if (els.styleBackgroundImageButton && els.styleBackgroundImageInput) {
       els.styleBackgroundImageButton.addEventListener("click", () => els.styleBackgroundImageInput.click());
     }
@@ -15709,8 +15727,7 @@
       ["watermarkRowGap", els.watermarkRowGapRange],
       ["watermarkColGap", els.watermarkColGapRange],
       ["watermarkOffsetX", els.watermarkOffsetXRange],
-      ["watermarkOffsetY", els.watermarkOffsetYRange],
-      ["exportH1Opacity", els.exportH1OpacityRange]
+      ["watermarkOffsetY", els.watermarkOffsetYRange]
     ].forEach(([key, input]) => {
       if (!input) return;
       input.addEventListener("input", () => {
@@ -15720,6 +15737,7 @@
         refreshExportPreviewIfOpen();
       });
     });
+    if (els.exportH1OpacityRange) els.exportH1OpacityRange.addEventListener("input", () => setH1Opacity(els.exportH1OpacityRange.value));
     els.paperPresetSelect.addEventListener("change", () => {
       state.beads.exportSettings.paperPreset = els.paperPresetSelect.value || "auto";
       syncBeadControls();
@@ -16296,6 +16314,8 @@
       deleteColorEverywhere,
       selectBeadColor,
       drawMaterialPreview,
+      makeSolidPixelArt,
+      setH1Opacity,
       makeStyleMaterialContactSheet,
       getStyleBackgroundMaterials: () => styleBackgroundMaterials.map((material) => ({
         value: material.value,

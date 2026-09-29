@@ -105,6 +105,7 @@
   <script src="./core/workspace-state.js"></script>
   <script src="./core/dom-utils.js"></script>
   <script src="./core/editor-performance.js"></script>
+  <script src="./core/layer-translate.js"></script>
   <script src="./color/palette-registry.js"></script>
   <script src="./import-engine.js"></script>
   <script src="./import-processing.js"></script>
@@ -277,12 +278,19 @@
         const stylePattern = await window.QPixelTest.activateSyntheticBeadPattern(16, 16);
         window.QPixelTest.setPatternCell(0, 0, "H1", stylePattern.pattern);
         window.QPixelTest.setPatternCell(0, 1, "H2", stylePattern.pattern);
-        if (!window.QPixelTest.drawMaterialPreview()) throw new Error("style preview draw failed");
-        const styleCanvas = document.getElementById("materialPreviewCanvas");
-        const sample = styleCanvas.getContext("2d").getImageData(68, 68, 1, 1).data;
-        if (sample[0] < 245 || sample[1] < 245 || sample[2] < 245 || sample[3] !== 255) {
-          throw new Error(`style preview H1 not opaque white: ${sample[0]},${sample[1]},${sample[2]},${sample[3]}`);
+        const h1StylePattern = { width: 2, height: 1, cells: [["H1", "H2"]] };
+        const styleAlpha = (opacity, x) => {
+          window.QPixelTest.setH1Opacity(opacity);
+          const canvas = window.QPixelTest.makeSolidPixelArt(h1StylePattern, 8, "normal");
+          return canvas.getContext("2d").getImageData(x, 4, 1, 1).data[3];
+        };
+        if (styleAlpha(0, 4) !== 0 || Math.abs(styleAlpha(20, 4) - 51) > 1 || styleAlpha(100, 4) !== 255) {
+          throw new Error("style H1 opacity failed");
         }
+        if (styleAlpha(0, 12) !== 255 || styleAlpha(20, 12) !== 255 || styleAlpha(100, 12) !== 255) {
+          throw new Error("style H2 must remain opaque");
+        }
+        if (!window.QPixelTest.drawMaterialPreview()) throw new Error("style preview draw failed");
         await window.QPixelTest.activateSyntheticBeadPattern(30, 28);
         const rectChanged = window.QPixelTest.applyRectEdit({ row: 1, col: 1 }, { row: 3, col: 4 }, "A1");
         if (rectChanged <= 0) throw new Error("rect edit failed");

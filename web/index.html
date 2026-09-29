@@ -667,6 +667,7 @@
           <div class="panel-card studio-output-card" data-studio-stages="output">
             <div class="panel-section compact"><h2>交付与成品预览</h2><p class="panel-caption">图纸、材料和成品效果分别导出，文件中保留当前色号。</p></div>
             <button type="button" id="studioOutputPreviewButton">打开图纸导出预览</button>
+            <button type="button" id="materialPreviewButton">打开样式预览</button>
             <button type="button" id="studioOutputBoardPdfButton">逐板图纸 PDF</button>
             <button type="button" id="studioOutputMaterialsButton">材料清单 CSV</button>
             <button type="button" id="studioOutput3dButton">进入成品 3D</button>
@@ -751,6 +752,9 @@
           </div>
           <label>背景透明度 <strong id="styleBackgroundAlphaLabel">100</strong>
             <input id="styleBackgroundAlphaRange" type="range" min="0" max="100" value="100">
+          </label>
+          <label>H1 白色不透明度 <strong id="styleH1OpacityLabel">0%</strong>
+            <input id="styleH1OpacityRange" type="range" min="0" max="100" value="0" step="1" aria-label="H1 白色不透明度">
           </label>
           <div class="material-picker" id="materialPicker">
             <div class="material-picker-heading">
@@ -1002,7 +1006,7 @@
             <label class="switch-row"><span><strong>图纸外框</strong><em>导出时加清晰外边框</em></span><input id="exportOuterBorderToggle" type="checkbox" checked></label>
             <label class="switch-row"><span><strong>展示图纸信息</strong><em>作品名、尺寸、总颗数</em></span><input id="exportInfoToggle" type="checkbox" checked></label>
             <label class="switch-row"><span><strong>显示应用信息</strong><em>显示 Q像素与色号品牌信息</em></span><input id="exportAppInfoToggle" type="checkbox" checked></label>
-            <div class="range-setting"><label>H1 白色色号透明度 <strong id="exportH1OpacityLabel">0%</strong></label><input id="exportH1OpacityRange" type="range" min="0" max="100" value="0" step="1" aria-label="H1 白色色号透明度"></div>
+            <div class="range-setting"><label>H1 白色不透明度 <strong id="exportH1OpacityLabel">0%</strong></label><input id="exportH1OpacityRange" type="range" min="0" max="100" value="0" step="1" aria-label="H1 白色不透明度"></div>
 
             <h3>纸张与比例</h3>
             <div class="inline-setting">
@@ -1587,6 +1591,6 @@
   <script src="./3d/finish-workbench.js?v=20260926-continuous-preview-27"></script>
   <script src="./import-engine.js"></script>
   <script src="./import-processing.js"></script>
-  <script src="./app.js?v=20260929-offcanvas-layers-52"></script>
+  <script src="./app.js?v=20260929-h1-opacity-53"></script>
 </body>
 </html>
