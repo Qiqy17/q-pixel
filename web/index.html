@@ -95,6 +95,7 @@
         <button class="text-button secondary" id="chooseTopButton" type="button">导入</button>
         <button class="text-button secondary" id="saveTopButton" type="button">保存</button>
         <span class="save-status" id="saveStatus">已保存</span>
+        <button class="text-button secondary" id="exportProjectTopButton" type="button" title="下载当前可编辑工程文件">备份 .qpx</button>
         <button class="text-button secondary" id="unifiedPreviewButton" type="button">预览</button>
         <button class="text-button" id="exportTopButton" type="button">导出</button>
         <details class="top-action-menu"><summary class="text-button secondary" aria-label="更多工具">更多</summary><div><button class="text-button secondary" id="aiGenerateTopButton" type="button">AI 灵感</button><button type="button" id="openCurrentHistoryButton">版本与恢复</button><label class="autosave-menu-label" for="autoDraftIntervalSelect">自动保存草稿<select id="autoDraftIntervalSelect" aria-label="自动保存草稿间隔"><option value="0">关闭</option><option value="15000">15 秒</option><option value="30000">30 秒</option><option value="60000">1 分钟</option><option value="180000" selected>3 分钟</option><option value="300000">5 分钟</option></select></label></div></details>
@@ -1008,8 +1009,8 @@
               <label>纸张规格</label>
               <select id="paperPresetSelect" class="full-input">
                 <option value="auto">自动贴合内容</option>
-                <option value="a4">A4 竖版图纸</option>
-                <option value="a3">A3 大幅图纸</option>
+                <option value="a4">A4 图纸</option>
+                <option value="a3">A3 图纸</option>
                 <option value="square">正方形分享图</option>
                 <option value="long">长图预览</option>
               </select>
@@ -1585,6 +1586,6 @@
   <script src="./3d/finish-workbench.js?v=20260926-continuous-preview-27"></script>
   <script src="./import-engine.js"></script>
   <script src="./import-processing.js"></script>
-  <script src="./app.js?v=20260928-portrait-panel-47"></script>
+  <script src="./app.js?v=20260929-backup-a4-48"></script>
 </body>
 </html>

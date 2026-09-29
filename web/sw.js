@@ -1,5 +1,5 @@
 importScripts("./studio/scene-material-library.js");
-const CACHE_NAME = "q-pixel-v20260928-portrait-panel-47";
+const CACHE_NAME = "q-pixel-v20260929-backup-a4-48";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -53,7 +53,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20260928-portrait-panel-47",
+  "./app.js?v=20260929-backup-a4-48",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"

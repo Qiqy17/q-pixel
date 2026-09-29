@@ -546,7 +546,7 @@
       "homeNewFolderButton", "homeFolderBar", "homeFolderBackButton", "homeFolderName", "homeFolderCount",
       "homeOpenProjectButton", "homeProjectSearch", "homeProjectSort",
       "editorTopbar", "editorWorkspace", "controlPanel", "topbarCollapseButton", "topbarExpandButton",
-      "sidePanelCollapseButton", "sidePanelExpandButton", "backHomeButton", "saveTopButton", "saveAsTopButton", "saveStatus", "aiGenerateTopButton", "autoDraftIntervalSelect", "openCurrentHistoryButton",
+      "sidePanelCollapseButton", "sidePanelExpandButton", "backHomeButton", "saveTopButton", "saveAsTopButton", "saveStatus", "exportProjectTopButton", "aiGenerateTopButton", "autoDraftIntervalSelect", "openCurrentHistoryButton",
       "fileInput", "dropZone", "previewCanvas", "emptyState", "emptyTitle",
       "emptyDescription", "imageStatus", "canvasSize", "renderHint", "message",
       "precisionRange", "precisionNumber", "gapRange", "gapNumber", "radiusRange",
@@ -9582,7 +9582,7 @@
     return new Blob(parts, { type: "application/zip" });
   }
 
-  function makePdfFromCanvases(canvases) {
+  function makePdfFromCanvases(canvases, settings = {}) {
     const pages = canvases.filter(Boolean);
     if (!pages.length) return null;
     const parts = [];
@@ -9602,11 +9602,20 @@
       const imageName = `Im${index}`;
       const img = canvas.toDataURL("image/jpeg", 0.92).split(",")[1];
       const imgBytes = atob(img);
-      const pageWidth = canvas.width;
-      const pageHeight = canvas.height;
+      const paperPoints = {
+        a4: [595.28, 841.89],
+        a3: [841.89, 1190.55]
+      }[settings.paperPreset];
+      let [pageWidth, pageHeight] = paperPoints || [canvas.width, canvas.height];
+      if (paperPoints && settings.paperOrientation === "landscape") [pageWidth, pageHeight] = [pageHeight, pageWidth];
+      const fit = Math.min(pageWidth / canvas.width, pageHeight / canvas.height);
+      const imageWidth = Number((canvas.width * fit).toFixed(2));
+      const imageHeight = Number((canvas.height * fit).toFixed(2));
+      const imageX = Number(((pageWidth - imageWidth) / 2).toFixed(2));
+      const imageY = Number(((pageHeight - imageHeight) / 2).toFixed(2));
       push(`${pageObjectId} 0 obj<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Resources << /XObject << /${imageName} ${imageObjectId} 0 R >> >> /Contents ${contentObjectId} 0 R >>endobj\n`);
       push(`${imageObjectId} 0 obj<< /Type /XObject /Subtype /Image /Width ${canvas.width} /Height ${canvas.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${imgBytes.length} >>stream\n${imgBytes}\nendstream endobj\n`);
-      const content = `q ${pageWidth} 0 0 ${pageHeight} 0 0 cm /${imageName} Do Q`;
+      const content = `q ${imageWidth} 0 0 ${imageHeight} ${imageX} ${imageY} cm /${imageName} Do Q`;
       push(`${contentObjectId} 0 obj<< /Length ${content.length} >>stream\n${content}\nendstream endobj\n`);
     });
     const xrefStart = parts.reduce((sum, part) => sum + part.length, 0);
@@ -9709,7 +9718,7 @@
         }));
       }
       saveBlobFile(
-        makePdfFromCanvases(pdfPages),
+        makePdfFromCanvases(pdfPages, state.beads.exportSettings),
         `Q像素-${kind}-${formatStamp(new Date())}.pdf`,
         "application/pdf",
         `${kind} PDF 已保存。`
@@ -9769,7 +9778,7 @@
       }));
     }
     saveBlobFile(
-      makePdfFromCanvases(pages),
+      makePdfFromCanvases(pages, state.beads.exportSettings),
       `Q像素-拼豆图纸-${formatStamp(new Date())}.pdf`,
       "application/pdf",
       "拼豆图纸 PDF 已保存。"
@@ -9803,7 +9812,7 @@
       ctx.restore();
       return canvas;
     });
-    saveBlobFile(makePdfFromCanvases(pages), `Q像素-逐板图纸-${formatStamp(new Date())}.pdf`, "application/pdf", `已导出 ${pages.length} 页逐板图纸。`);
+    saveBlobFile(makePdfFromCanvases(pages, { paperPreset: "a4", paperOrientation: state.beads.exportSettings.paperOrientation }), `Q像素-逐板图纸-${formatStamp(new Date())}.pdf`, "application/pdf", `已导出 ${pages.length} 页逐板图纸。`);
   }
 
   function makeCurrentExportCanvas(overrideSettings) {
@@ -14082,13 +14091,13 @@
           ? localResult.localStorage ? "已保存并同步到电脑创作空间。" : "已保存到电脑创作空间；本机浏览器缓存空间不足。"
           : localResult.localStorage ? "已保存到当前设备，电脑同步尚未完成。"
           : remoteResult && remoteResult.accepted === false
-            ? "电脑端已有更新版本，当前修改未写入；请先导出工程文件保留修改。"
-            : "保存未完成：本机空间不足且电脑同步服务不可用，请导出工程文件。", !remoteSaved && !localResult.localStorage);
+            ? "电脑端已有更新版本，当前修改未写入；请点顶部“备份 .qpx”保留修改。"
+            : "保存未完成：本机空间不足且电脑同步服务不可用，请点顶部“备份 .qpx”。", !remoteSaved && !localResult.localStorage);
       }
       return Boolean(localResult.localStorage || remoteSaved);
     } catch (error) {
       console.error("Q像素工程保存失败", error);
-      if (attempt === saveAttempt) setMessage("保存失败，请导出工程文件保留当前修改。", true);
+      if (attempt === saveAttempt) setMessage("保存失败，请点顶部“备份 .qpx”保留当前修改。", true);
       return false;
     } finally {
       if (pendingSaveAttempt === attempt) {
@@ -14278,28 +14287,25 @@
 
   function saveTextFile(text, fileName, mime, message) {
     const blob = new Blob([text], { type: mime || "application/json" });
-    const dataUrlPromise = new Promise((resolve, reject) => {
+    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.exportFile) {
       const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(reader.error);
-      reader.readAsDataURL(blob);
-    });
-    dataUrlPromise.then((dataUrl) => {
-      if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.exportFile) {
+      reader.onload = () => {
         state.pendingSaveMessage = message || "文件已保存。";
-        window.webkit.messageHandlers.exportFile.postMessage({ fileName, dataUrl });
+        window.webkit.messageHandlers.exportFile.postMessage({ fileName, dataUrl: reader.result });
         setMessage("请选择保存位置。", false);
-        return;
-      }
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      setTimeout(() => URL.revokeObjectURL(link.href), 500);
-      setMessage(message || "文件已导出。", false);
-    }).catch(() => setMessage("导出源文件失败。", true));
+      };
+      reader.onerror = () => setMessage("导出源文件失败。", true);
+      reader.readAsDataURL(blob);
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 500);
+    setMessage(message || "文件已导出。", false);
   }
 
   function exportCurrentProjectFile() {
@@ -14312,7 +14318,7 @@
       JSON.stringify(payload),
       `${safeFileName(payload.title)}.qpx`,
       "application/json",
-      "源文件已导出。"
+      state.hasUnsavedChanges ? "源文件已导出；当前工程仍未自动保存。" : "源文件已导出。"
     );
   }
 
@@ -14503,6 +14509,7 @@
     if (els.sidePanelCollapseButton) els.sidePanelCollapseButton.addEventListener("click", () => setSidePanelCollapsed(true));
     if (els.sidePanelExpandButton) els.sidePanelExpandButton.addEventListener("click", () => setSidePanelCollapsed(false));
     els.saveTopButton.addEventListener("click", saveCurrentProject);
+    els.exportProjectTopButton.addEventListener("click", exportCurrentProjectFile);
     els.saveAsTopButton.addEventListener("click", openSaveAsModal);
     els.saveAsCloseButton.addEventListener("click", closeSaveAsModal);
     els.saveAsCancelButton.addEventListener("click", closeSaveAsModal);
