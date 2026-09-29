@@ -39,7 +39,7 @@
   if (!paletteRegistryModule || !paletteRegistryModule.defaultPalette()) {
     throw new Error("Q像素色卡未加载，已停止初始化以保护色号数据。");
   }
-  if (!layerTranslate || typeof layerTranslate.translate !== "function") {
+  if (!layerTranslate || typeof layerTranslate.project !== "function" || typeof layerTranslate.reconcile !== "function") {
     throw new Error("图层移动模块加载失败，已停止初始化以保护图层数据。");
   }
 
@@ -3187,6 +3187,16 @@
     ensureLayers();
     state.beads.layers.forEach((layer) => {
       if (layer.locked) return;
+      if (layer.contentCells) {
+        commitLayerView(layer);
+        layer.contentCells.forEach((row) => row.forEach((current, col) => {
+          if (!mapping.has(current)) return;
+          const next = resolveSimilarTarget(current, mapping);
+          if (next !== current) { row[col] = next; changed += 1; }
+        }));
+        projectLayerContent(layer);
+        return;
+      }
       for (let row = 0; row < layer.cells.length; row += 1) {
         for (let col = 0; col < layer.cells[row].length; col += 1) {
           const current = layer.cells[row][col];
@@ -4667,18 +4677,21 @@
     const sourceWidth = session.image.naturalWidth || session.image.width;
     const sourceHeight = session.image.naturalHeight || session.image.height;
     const calibration = state.importCalibration && state.importCalibration.enabled ? state.importCalibration : null;
+    const layerSize = session.mode === "layer" ? layerImageDimensions(session.image, session) : null;
+    const targetWidth = layerSize?.width || state.beads.width || 48;
+    const targetHeight = layerSize?.height || state.beads.height || 48;
     const key = JSON.stringify({
       version: session.processingVersion || 0,
-      width: state.beads.width || 48,
-      height: state.beads.height || 48,
+      width: targetWidth,
+      height: targetHeight,
       calibration
     });
     let rawPattern = session.patternCache && session.patternCache.key === key ? session.patternCache.rawPattern : null;
     let processedSource = session.patternCache && session.patternCache.key === key ? session.patternCache.processedSource : null;
     if (!rawPattern) {
       const result = await runImportPatternTask(session, {
-        targetWidth: state.beads.width || 48,
-        targetHeight: state.beads.height || 48,
+        targetWidth,
+        targetHeight,
         calibration,
         maxSide: 1800
       });
@@ -5159,16 +5172,15 @@
   }
 
   function importPatternAsLayer(pattern, name) {
-    if (!pattern || !ensurePatternForCanvasEdit()) {
+    if (!pattern || !ensurePatternForCanvasEdit() || state.beads.tileLayout) {
       setMessage("请先生成图纸或可编辑像素画，再导入图层。", true);
       return false;
     }
     pushHistory();
-    const layer = makeLayer(name || "导入图片", cloneCells(pattern.cells), true, false, "");
-    state.beads.layers.push(layer);
-    state.beads.activeLayerId = layer.id;
-    syncCompositePattern();
-    render();
+    addLayer(name || "导入图片", pattern.cells, {
+      originCol: Math.floor((state.beads.pattern.width - pattern.width) / 2),
+      originRow: Math.floor((state.beads.pattern.height - pattern.height) / 2)
+    });
     setMessage(`“${name || "导入图片"}”已作为新图层导入。`, false);
     markUnsavedChanges();
     return true;
@@ -5366,8 +5378,30 @@
       setMessage("请先生成图纸或可编辑像素画，再导入图层。", true);
       return false;
     }
-    const pattern = createPatternFromSource(image, state.beads.pattern.width, state.beads.pattern.height, name || "导入图片图层");
+    const size = layerImageDimensions(image);
+    const pattern = createPatternFromSource(image, size.width, size.height, name || "导入图片图层");
     return importPatternAsLayer(pattern, name || "导入图片");
+  }
+
+  function layerImageDimensions(image, session = null) {
+    const sourceWidth = image.naturalWidth || image.width || 1;
+    const sourceHeight = image.naturalHeight || image.height || 1;
+    const isPixelArt = session && getEffectiveImportType(session) === "pixelArt";
+    const estimate = isPixelArt ? estimatePixelArtGrid(image) : null;
+    if (estimate) return {
+      width: clamp(estimate.width, 1, bounds.beadSize.max),
+      height: clamp(estimate.height, 1, bounds.beadSize.max)
+    };
+    if (isPixelArt && sourceWidth <= bounds.beadSize.max && sourceHeight <= bounds.beadSize.max) {
+      return { width: sourceWidth, height: sourceHeight };
+    }
+    let width = clamp(state.beads.width || state.beads.pattern?.width || 48, 1, bounds.beadSize.max);
+    let height = Math.max(1, Math.round(width * sourceHeight / sourceWidth));
+    if (height > bounds.beadSize.max) {
+      height = bounds.beadSize.max;
+      width = Math.max(1, Math.round(height * sourceWidth / sourceHeight));
+    }
+    return { width, height };
   }
 
   function makeImportRecipe(session, mode) {
@@ -5390,15 +5424,21 @@
     let width = targetWidth;
     let height = targetHeight;
     if (!width || !height) {
-      const gridEstimate = getEffectiveImportType(session) === "pixelArt" ? estimatePixelArtGrid(session.image) : null;
-      if (gridEstimate) {
-        width = gridEstimate.width;
-        height = gridEstimate.height;
+      if (session.mode === "layer") {
+        const size = layerImageDimensions(session.image, session);
+        width = size.width;
+        height = size.height;
       } else {
-        const sourceWidth = session.image.naturalWidth || session.image.width;
-        const sourceHeight = session.image.naturalHeight || session.image.height;
-        width = clamp(state.beads.width || 48, bounds.beadSize.min, bounds.beadSize.max);
-        height = clamp(Math.round(width * sourceHeight / Math.max(1, sourceWidth)), bounds.beadSize.min, bounds.beadSize.max);
+        const gridEstimate = getEffectiveImportType(session) === "pixelArt" ? estimatePixelArtGrid(session.image) : null;
+        if (gridEstimate) {
+          width = gridEstimate.width;
+          height = gridEstimate.height;
+        } else {
+          const sourceWidth = session.image.naturalWidth || session.image.width;
+          const sourceHeight = session.image.naturalHeight || session.image.height;
+          width = clamp(state.beads.width || 48, bounds.beadSize.min, bounds.beadSize.max);
+          height = clamp(Math.round(width * sourceHeight / Math.max(1, sourceWidth)), bounds.beadSize.min, bounds.beadSize.max);
+        }
       }
     }
     const result = await runImportPatternTask(session, { targetWidth: width, targetHeight: height, maxSide: 1800 });
@@ -5412,7 +5452,7 @@
     const session = state.importSession;
     if (!session) return;
     try {
-      const result = await buildQuickImportPattern(session, session.mode === "layer" && state.beads.pattern && state.beads.pattern.width, session.mode === "layer" && state.beads.pattern && state.beads.pattern.height);
+      const result = await buildQuickImportPattern(session);
       const pattern = result.pattern;
       if (session.mode === "layer") {
         importPatternAsLayer(pattern, session.name);
@@ -5658,23 +5698,7 @@
         previousCalibrationBeforeRecalibration = null;
         return;
       }
-      const placed = placeSourceCellsIntoCurrentPattern(pattern.cells, pattern.width, pattern.height);
-      if (!placed.count) {
-        setMessage("校准图片尺寸与当前画布没有重叠区域，无法作为图层导入。", true);
-        URL.revokeObjectURL(session.url);
-        state.importSession = null;
-        state.importCalibration = null;
-        recalibrationSession = false;
-        previousCalibrationBeforeRecalibration = null;
-        return;
-      }
-      pushHistory();
-      const layer = makeLayer(session.name || "校准图片", placed.cells, true, false, "");
-      state.beads.layers.push(layer);
-      state.beads.activeLayerId = layer.id;
-      syncCompositePattern();
-      render();
-      setMessage("校准图片已作为新图层导入。", false);
+      importPatternAsLayer(pattern, session.name || "校准图片");
       URL.revokeObjectURL(session.url);
       state.importSession = null;
       state.importCalibration = null;
@@ -5821,7 +5845,11 @@
     if (!state.beads.pattern) return;
     ensureLayers();
     state.beads.undoStack.push(cloneLayerState());
-    const limit = editorPerformance.historySnapshotLimit(state.beads.pattern.width, state.beads.pattern.height, state.beads.layers.length);
+    const canvasCells = state.beads.pattern.width * state.beads.pattern.height;
+    const snapshotCells = state.beads.layers.reduce((sum, layer) =>
+      sum + canvasCells + (layer.contentCells ? layer.contentCells.length * layer.contentCells[0].length : 0), 0);
+    const limit = editorPerformance.historySnapshotLimit(state.beads.pattern.width, state.beads.pattern.height,
+      Math.max(1, Math.ceil(snapshotCells / canvasCells)));
     while (state.beads.undoStack.length > limit) state.beads.undoStack.shift();
     state.beads.redoStack = [];
     updateHistoryButtons();
@@ -5928,7 +5956,13 @@
     updateHistoryButtons();
   }
 
-  function makeLayer(name, cells, visible, locked, groupName, alphaLocked) {
+  function makeLayer(name, cells, visible, locked, groupName, alphaLocked, position = {}) {
+    const source = cells ? cloneCells(cells) : makeEmptyCells(state.beads.height, state.beads.width);
+    const originCol = Number.isInteger(position.originCol) ? position.originCol : 0;
+    const originRow = Number.isInteger(position.originRow) ? position.originRow : 0;
+    const width = state.beads.pattern?.width || state.beads.width;
+    const height = state.beads.pattern?.height || state.beads.height;
+    const extended = originCol !== 0 || originRow !== 0 || source.length !== height || source[0]?.length !== width;
     return {
       id: makeId(),
       name: name || "图层",
@@ -5936,8 +5970,29 @@
       locked: Boolean(locked),
       alphaLocked: Boolean(alphaLocked),
       groupName: groupName || "",
-      cells: cells ? cloneCells(cells) : makeEmptyCells(state.beads.height, state.beads.width)
+      cells: extended ? layerTranslate.project(source, originCol, originRow, width, height) : source,
+      ...(extended ? { contentCells: source, originCol, originRow } : {})
     };
+  }
+
+  function commitLayerView(layer) {
+    if (!layer?.contentCells || !layer.viewDirty) return;
+    const result = layerTranslate.reconcile(layer.contentCells, layer.originCol, layer.originRow, layer.cells);
+    layer.contentCells = result.contentCells;
+    layer.originCol = result.originCol;
+    layer.originRow = result.originRow;
+    layer.viewDirty = false;
+  }
+
+  function commitLayerViews() {
+    state.beads.layers.forEach(commitLayerView);
+  }
+
+  function projectLayerContent(layer) {
+    if (!layer.contentCells || !state.beads.pattern) return;
+    layer.cells = layerTranslate.project(layer.contentCells, layer.originCol, layer.originRow,
+      state.beads.pattern.width, state.beads.pattern.height);
+    layer.viewDirty = false;
   }
 
   function makeEmptyCells(height, width) {
@@ -5996,7 +6051,10 @@
 
   function getEditableCells() {
     const layer = getActiveLayer();
-    if (layer && !layer.locked) return layer.cells;
+    if (layer && !layer.locked) {
+      if (layer.contentCells) layer.viewDirty = true;
+      return layer.cells;
+    }
     return null;
   }
 
@@ -6012,6 +6070,7 @@
     const pattern = state.beads.pattern;
     if (!pattern) return;
     ensureLayers();
+    commitLayerViews();
     const composite = makeEmptyCells(pattern.height, pattern.width);
     state.beads.layers.forEach((layer) => {
       if (!layer.visible) return;
@@ -6042,6 +6101,7 @@
   }
 
   function cloneLayerState() {
+    commitLayerViews();
     return {
       width: state.beads.pattern ? state.beads.pattern.width : state.beads.width,
       height: state.beads.pattern ? state.beads.pattern.height : state.beads.height,
@@ -6053,7 +6113,8 @@
         alphaLocked: Boolean(layer.alphaLocked),
         groupName: layer.groupName || "",
         tileRegion: layer.tileRegion ? Object.assign({}, layer.tileRegion) : null,
-        cells: cloneCells(layer.cells)
+        cells: cloneCells(layer.cells),
+        ...(layer.contentCells ? { contentCells: cloneCells(layer.contentCells), originCol: layer.originCol, originRow: layer.originRow } : {})
       })),
       activeLayerId: state.beads.activeLayerId
     };
@@ -6075,7 +6136,8 @@
       alphaLocked: Boolean(layer.alphaLocked),
       groupName: layer.groupName || "",
       tileRegion: layer.tileRegion ? Object.assign({}, layer.tileRegion) : null,
-      cells: cloneCells(layer.cells)
+      cells: cloneCells(layer.cells),
+      ...(layer.contentCells ? { contentCells: cloneCells(layer.contentCells), originCol: layer.originCol, originRow: layer.originRow } : {})
     }));
     state.beads.activeLayerId = snapshot.activeLayerId || (state.beads.layers[0] && state.beads.layers[0].id) || "";
     syncCompositePattern();
@@ -6129,7 +6191,9 @@
       const total = usage ? Object.values(usage).reduce((sum, count) => sum + count, 0) : 0;
       row.querySelector(".layer-meta").textContent = region
         ? `${region.width} × ${region.height} 格 · ${total} 颗 · ${Object.keys(usage).length} 色${layer.groupName ? ` · ${layer.groupName}` : ""}`
-        : `${state.beads.pattern.width} × ${state.beads.pattern.height} 格${layer.groupName ? ` · ${layer.groupName}` : ""}`;
+        : layer.contentCells
+          ? `完整内容 ${layer.contentCells[0].length} × ${layer.contentCells.length} 格 · 位置 ${layer.originCol}, ${layer.originRow} · 画布外已保留${layer.groupName ? ` · ${layer.groupName}` : ""}`
+          : `${state.beads.pattern.width} × ${state.beads.pattern.height} 格${layer.groupName ? ` · ${layer.groupName}` : ""}`;
       if (region) {
         const detail = row.querySelector(".tile-usage-list");
         detail.textContent = Object.entries(usage).sort((a, b) => b[1] - a[1]).map(([code, count]) => `${code} ${count}`).join(" · ") || "暂无拼豆";
@@ -6209,22 +6273,25 @@
       setMessage("图层已锁定，请先解锁。", true);
       return false;
     }
-    const result = layerTranslate.translate(layer.cells, state.beads.pattern.width, state.beads.pattern.height, dx, dy);
-    if (!result.moved && !result.clipped) {
+    commitLayerView(layer);
+    const content = layer.contentCells || layer.cells;
+    if (!layerTranslate.occupied(content)) {
       setMessage("当前图层没有可移动的格子。", true);
       return false;
     }
-    if (result.clipped && !window.confirm(`移动“${layer.name}”后，将裁掉画布外的 ${result.clipped} 格。确定继续吗？`)) return false;
     state.beads.activeLayerId = layer.id;
     pushHistory();
-    layer.cells = result.cells;
+    if (!layer.contentCells) layer.contentCells = cloneCells(layer.cells);
+    layer.originCol = (layer.originCol || 0) + dx;
+    layer.originRow = (layer.originRow || 0) + dy;
+    projectLayerContent(layer);
     syncCompositePattern();
     render(true);
     renderLayerList();
     renderSelectionColorPanel();
     renderUsage();
     refreshExportPreviewIfOpen();
-    setMessage(`“${layer.name}”已向${direction}移动 ${steps} 格${result.clipped ? `，裁掉 ${result.clipped} 格` : ""}。`, false);
+    setMessage(`“${layer.name}”已向${direction}移动 ${steps} 格；画布外内容已保留。`, false);
     return true;
   }
 
@@ -6232,7 +6299,7 @@
     if (!state.beads.pattern) return null;
     if (state.beads.tileLayout) { setMessage("分区工程每块固定对应一个图层，请先回到普通工程操作图层结构。", true); return null; }
     ensureLayers();
-    const layer = makeLayer(name || `图层 ${state.beads.layers.length + 1}`, cells, true, false, "", options.alphaLocked);
+    const layer = makeLayer(name || `图层 ${state.beads.layers.length + 1}`, cells, true, false, "", options.alphaLocked, options);
     state.beads.layers.push(layer);
     state.beads.activeLayerId = layer.id;
     syncCompositePattern();
@@ -6243,7 +6310,9 @@
   function duplicateActiveLayer() {
     const layer = getActiveLayer();
     if (!layer) return null;
-    return addLayer(`${layer.name} 副本`, layer.cells, { alphaLocked: layer.alphaLocked });
+    commitLayerView(layer);
+    return addLayer(`${layer.name} 副本`, layer.contentCells || layer.cells,
+      { alphaLocked: layer.alphaLocked, originCol: layer.originCol || 0, originRow: layer.originRow || 0 });
   }
 
   function mergeVisibleLayers() {
@@ -6272,6 +6341,19 @@
     const layer = getActiveLayer();
     if (!layer || layer.locked) return 0;
     if (state.beads.tileLayout) { setMessage("分区图层不能整体镜像，以免跨越画布边界。", true); return 0; }
+    commitLayerView(layer);
+    if (layer.contentCells) {
+      const beforeOrigin = layer.originCol;
+      const width = layer.contentCells[0].length;
+      const changed = layer.contentCells.reduce((count, row) => count + (row.some((code, col) => code !== row[width - col - 1]) ? 1 : 0), 0);
+      layer.contentCells.forEach((row) => row.reverse());
+      layer.originCol = state.beads.pattern.width - beforeOrigin - width;
+      projectLayerContent(layer);
+      syncCompositePattern();
+      render();
+      renderSelectionColorPanel();
+      return changed || Number(beforeOrigin !== layer.originCol);
+    }
     let changed = 0;
     for (let row = 0; row < layer.cells.length; row += 1) {
       const before = layer.cells[row].join("|");
@@ -6296,8 +6378,21 @@
     if (!state.beads.pattern) return 0;
     if (state.beads.tileLayout) { setMessage("分区工程不能全图镜像；可在原工程修改后重新划分。", true); return 0; }
     ensureLayers();
+    commitLayerViews();
     let changed = 0;
     state.beads.layers.forEach((layer) => {
+      if (layer.contentCells) {
+        const beforeOrigin = layer.originCol;
+        const width = layer.contentCells[0].length;
+        layer.contentCells.forEach((row) => {
+          if (row.some((code, col) => code !== row[width - col - 1])) changed += 1;
+          row.reverse();
+        });
+        layer.originCol = state.beads.pattern.width - beforeOrigin - width;
+        if (beforeOrigin !== layer.originCol) changed += 1;
+        projectLayerContent(layer);
+        return;
+      }
       for (let row = 0; row < layer.cells.length; row += 1) {
         const before = layer.cells[row].join("|");
         layer.cells[row].reverse();
@@ -6328,10 +6423,17 @@
     const nextHeight = state.beads.pattern.height + (direction === "up" || direction === "down" ? safeAmount : 0);
     if (nextWidth > bounds.beadSize.max || nextHeight > bounds.beadSize.max) return 0;
     ensureLayers();
-    state.beads.layers.forEach((layer) => {
-      layer.cells = expandLayerCells(layer.cells, direction, safeAmount);
-    });
+    commitLayerViews();
     setPatternDimensions(nextWidth, nextHeight);
+    state.beads.layers.forEach((layer) => {
+      if (layer.contentCells) {
+        if (direction === "left") layer.originCol += safeAmount;
+        if (direction === "up") layer.originRow += safeAmount;
+        projectLayerContent(layer);
+      } else {
+        layer.cells = expandLayerCells(layer.cells, direction, safeAmount);
+      }
+    });
     syncCompositePattern();
     render();
     return safeAmount;
@@ -6367,6 +6469,10 @@
     ensureLayers();
     state.beads.layers.forEach((layer) => {
       layer.cells = layer.cells.slice(minRow, maxRow + 1).map((row) => row.slice(minCol, maxCol + 1));
+      delete layer.contentCells;
+      delete layer.originCol;
+      delete layer.originRow;
+      delete layer.viewDirty;
     });
     setPatternDimensions(width, height);
     state.beads.selectedCells = [];
@@ -6583,10 +6689,22 @@
     const nextHeight = clamp(Math.round(state.beads.pattern.height * safeFactor), bounds.beadSize.min, bounds.beadSize.max);
     if (nextWidth === state.beads.pattern.width && nextHeight === state.beads.pattern.height) return 0;
     ensureLayers();
-    state.beads.layers.forEach((layer) => {
-      layer.cells = resizeLayerCellsNearest(layer.cells, nextWidth, nextHeight);
-    });
+    commitLayerViews();
+    const scaleX = nextWidth / state.beads.pattern.width;
+    const scaleY = nextHeight / state.beads.pattern.height;
     setPatternDimensions(nextWidth, nextHeight);
+    state.beads.layers.forEach((layer) => {
+      if (layer.contentCells) {
+        layer.contentCells = resizeLayerCellsNearest(layer.contentCells,
+          Math.max(1, Math.round(layer.contentCells[0].length * scaleX)),
+          Math.max(1, Math.round(layer.contentCells.length * scaleY)));
+        layer.originCol = Math.round(layer.originCol * scaleX);
+        layer.originRow = Math.round(layer.originRow * scaleY);
+        projectLayerContent(layer);
+      } else {
+        layer.cells = resizeLayerCellsNearest(layer.cells, nextWidth, nextHeight);
+      }
+    });
     state.beads.selectedCells = [];
     syncCompositePattern();
     render();
@@ -6640,17 +6758,19 @@
       setMessage("这个设计文件没有可导入的图层内容。", true);
       return false;
     }
-    const placed = placeSourceCellsIntoCurrentPattern(source.cells, source.width, source.height);
-    if (!placed.count) {
-      setMessage("源文件尺寸与当前画布没有重叠区域，无法作为图层导入。", true);
+    if (state.beads.tileLayout) {
+      setMessage("分区工程每块固定对应一个图层，请在普通工程中导入。", true);
       return false;
     }
     pushHistory();
     const title = source.title || fallbackName || "导入源文件";
-    addLayer(`${title} 图层`, placed.cells);
+    addLayer(`${title} 图层`, source.cells, {
+      originCol: Math.floor((state.beads.pattern.width - source.canvasWidth) / 2) + source.originCol,
+      originRow: Math.floor((state.beads.pattern.height - source.canvasHeight) / 2) + source.originRow
+    });
     const sizeNote = source.width === state.beads.pattern.width && source.height === state.beads.pattern.height
       ? ""
-      : `，已居中贴入当前 ${state.beads.pattern.width} x ${state.beads.pattern.height} 画布`;
+      : `，完整内容已居中放置，画布外格子已保留`;
     setMessage(`已将设计作为新图层导入${sizeNote}。`, false);
     return true;
   }
@@ -6658,7 +6778,7 @@
   function normalizeImportedCode(code) {
     if (!code) return null;
     if (code === "H1") return "H1";
-    return beadPalette.some((color) => color.code === code) ? code : null;
+    return beadPaletteByCode.has(code) ? code : null;
   }
 
   function normalizeProjectCells(cells, width, height) {
@@ -6676,48 +6796,42 @@
     const sourceHeight = Math.round(height);
     const baseCells = normalizeProjectCells(payload.pattern.cells, sourceWidth, sourceHeight);
     if (!baseCells) return null;
-    const composite = makeEmptyCells(sourceHeight, sourceWidth);
-    let usedLayer = false;
+    const visibleLayers = [];
     if (Array.isArray(payload.layers) && payload.layers.length) {
-      payload.layers.forEach((layer) => {
-        if (layer && layer.visible === false) return;
-        const layerCells = normalizeProjectCells(layer && layer.cells, sourceWidth, sourceHeight);
-        if (!layerCells) return;
-        usedLayer = true;
-        for (let row = 0; row < sourceHeight; row += 1) {
-          for (let col = 0; col < sourceWidth; col += 1) {
-            if (layerCells[row][col]) composite[row][col] = layerCells[row][col];
-          }
-        }
-      });
-    }
-    const cells = usedLayer ? composite : baseCells;
-    const filled = cells.reduce((sum, row) => sum + row.filter(Boolean).length, 0);
-    return filled
-      ? { width: sourceWidth, height: sourceHeight, cells, title: payload.title || payload.sourceLabel || "导入源文件" }
-      : null;
-  }
-
-  function placeSourceCellsIntoCurrentPattern(sourceCells, sourceWidth, sourceHeight) {
-    const targetWidth = state.beads.pattern.width;
-    const targetHeight = state.beads.pattern.height;
-    const cells = makeEmptyCells(targetHeight, targetWidth);
-    const offsetCol = Math.floor((targetWidth - sourceWidth) / 2);
-    const offsetRow = Math.floor((targetHeight - sourceHeight) / 2);
-    let count = 0;
-    for (let row = 0; row < sourceHeight; row += 1) {
-      const targetRow = row + offsetRow;
-      if (targetRow < 0 || targetRow >= targetHeight) continue;
-      for (let col = 0; col < sourceWidth; col += 1) {
-        const targetCol = col + offsetCol;
-        if (targetCol < 0 || targetCol >= targetWidth) continue;
-        const code = sourceCells[row][col];
-        if (!code) continue;
-        cells[targetRow][targetCol] = code;
-        count += 1;
+      try {
+        payload.layers.forEach((layer) => {
+          if (layer && layer.visible === false) return;
+          const extended = Array.isArray(layer?.contentCells) && Number.isInteger(layer.originCol) && Number.isInteger(layer.originRow);
+          const content = extended ? layer.contentCells : layer?.cells;
+          const contentSize = extended ? layerTranslate.dimensions(content) : { width: sourceWidth, height: sourceHeight };
+          const layerCells = normalizeProjectCells(content, contentSize.width, contentSize.height);
+          if (!layerCells) return;
+          visibleLayers.push({ cells: layerCells, width: contentSize.width, height: contentSize.height,
+            originCol: extended ? layer.originCol : 0, originRow: extended ? layer.originRow : 0 });
+        });
+      } catch {
+        return null;
       }
     }
-    return { cells, count };
+    if (!visibleLayers.length) visibleLayers.push({ cells: baseCells, width: sourceWidth, height: sourceHeight, originCol: 0, originRow: 0 });
+    const minCol = Math.min(0, ...visibleLayers.map((layer) => layer.originCol));
+    const minRow = Math.min(0, ...visibleLayers.map((layer) => layer.originRow));
+    const maxCol = Math.max(sourceWidth, ...visibleLayers.map((layer) => layer.originCol + layer.width));
+    const maxRow = Math.max(sourceHeight, ...visibleLayers.map((layer) => layer.originRow + layer.height));
+    const cells = makeEmptyCells(maxRow - minRow, maxCol - minCol);
+    visibleLayers.forEach((layer) => {
+      for (let row = 0; row < layer.height; row += 1) {
+        for (let col = 0; col < layer.width; col += 1) {
+          const code = layer.cells[row][col];
+          if (code) cells[layer.originRow + row - minRow][layer.originCol + col - minCol] = code;
+        }
+      }
+    });
+    const filled = cells.reduce((sum, row) => sum + row.filter(Boolean).length, 0);
+    return filled
+      ? { width: maxCol - minCol, height: maxRow - minRow, cells, canvasWidth: sourceWidth, canvasHeight: sourceHeight,
+          originCol: minCol, originRow: minRow, title: payload.title || payload.sourceLabel || "导入源文件" }
+      : null;
   }
 
   function getNormalizedRect(a, b) {
@@ -8139,6 +8253,14 @@
     let changed = 0;
     state.beads.layers.forEach((layer) => {
       if (layer.locked) return;
+      if (layer.contentCells) {
+        commitLayerView(layer);
+        layer.contentCells.forEach((row) => row.forEach((code, col) => {
+          if (code === fromCode) { row[col] = toCode; changed += 1; }
+        }));
+        projectLayerContent(layer);
+        return;
+      }
       for (let row = 0; row < layer.cells.length; row += 1) {
         for (let col = 0; col < layer.cells[row].length; col += 1) {
           if (layer.cells[row][col] === fromCode && canWriteLayerCell(layer, row, col, toCode)) {
@@ -8162,6 +8284,7 @@
       if (layer.cells[cell.row] && layer.cells[cell.row][cell.col]) {
         if (layer.cells[cell.row][cell.col] === targetCode) return 0;
         layer.cells[cell.row][cell.col] = targetCode;
+        if (layer.contentCells) layer.viewDirty = true;
         state.beads.activeLayerId = layer.id;
         syncCompositePattern();
         return 1;
@@ -12289,7 +12412,9 @@
         alphaLocked: Boolean(layer.alphaLocked),
         groupName: layer.groupName || "",
         tileRegion: layer.tileRegion ? Object.assign({}, layer.tileRegion) : null,
-        cells: layer.cells
+        cells: layer.cells,
+        ...(layer.contentCells ? { contentCells: layer.contentCells,
+          originCol: layer.originCol, originRow: layer.originRow } : {})
       })),
       activeLayerId: state.beads.activeLayerId,
       tileLayout: state.beads.tileLayout ? Object.assign({}, state.beads.tileLayout) : null,
@@ -12330,6 +12455,18 @@
       setMessage("源文件里的图纸尺寸不匹配。", true);
       return false;
     }
+    if (Array.isArray(payload.layers)) {
+      try {
+        payload.layers.forEach((layer) => {
+          if (!layer?.contentCells) return;
+          if (!Number.isInteger(layer.originCol) || !Number.isInteger(layer.originRow)) throw new TypeError();
+          layerTranslate.dimensions(layer.contentCells);
+        });
+      } catch {
+        setMessage("源文件里的完整图层内容无效。", true);
+        return false;
+      }
+    }
     state.beads.pattern = {
       width,
       height,
@@ -12340,16 +12477,22 @@
     state.beads.width = width;
     state.beads.height = height;
     if (Array.isArray(payload.layers) && payload.layers.length) {
-      state.beads.layers = payload.layers.map((layer) => ({
-        id: layer.id || makeId(),
-        name: layer.name || "图层",
-        visible: layer.visible !== false,
-        locked: Boolean(layer.locked),
-        alphaLocked: Boolean(layer.alphaLocked),
-        groupName: layer.groupName || "",
-        tileRegion: layer.tileRegion ? Object.assign({}, layer.tileRegion) : null,
-        cells: Array.isArray(layer.cells) ? layer.cells.map((row) => row.map((code) => code && getPaletteColor(code).code === code ? code : null)) : makeEmptyCells(height, width)
-      }));
+      state.beads.layers = payload.layers.map((layer) => {
+        const contentCells = layer.contentCells?.map((row) => row.map((code) => code && getPaletteColor(code).code === code ? code : null));
+        return {
+          id: layer.id || makeId(),
+          name: layer.name || "图层",
+          visible: layer.visible !== false,
+          locked: Boolean(layer.locked),
+          alphaLocked: Boolean(layer.alphaLocked),
+          groupName: layer.groupName || "",
+          tileRegion: layer.tileRegion ? Object.assign({}, layer.tileRegion) : null,
+          cells: contentCells
+            ? layerTranslate.project(contentCells, layer.originCol, layer.originRow, width, height)
+            : Array.isArray(layer.cells) ? layer.cells.map((row) => row.map((code) => code && getPaletteColor(code).code === code ? code : null)) : makeEmptyCells(height, width),
+          ...(contentCells ? { contentCells, originCol: layer.originCol, originRow: layer.originRow } : {})
+        };
+      });
       state.beads.activeLayerId = payload.activeLayerId || state.beads.layers[0].id;
     } else {
       state.beads.layers = [];
@@ -16181,7 +16324,6 @@
       },
       makeStickerItemFromFile,
       makeLayerCellsFromProjectPayload,
-      placeSourceCellsIntoCurrentPattern,
       importProjectAsLayer,
       importLayerFile,
       applySelectionEdit,
@@ -16455,7 +16597,10 @@
           if (!changed) return 0;
           pushHistory();
           for (const layer of editable) for (let row = 0; row < height; row += 1) for (let col = 0; col < width; col += 1) {
-            if (mask[row * width + col] && layer.cells[row]) layer.cells[row][col] = null;
+            if (mask[row * width + col] && layer.cells[row]) {
+              layer.cells[row][col] = null;
+              if (layer.contentCells) layer.viewDirty = true;
+            }
           }
           syncCompositePattern(); markUnsavedChanges(); render(); renderUsage();
           setMessage(`已清除 ${changed} 个背景像素，可撤销。`);

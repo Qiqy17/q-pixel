@@ -68,7 +68,12 @@
       pattern: { ...pattern },
       layers: [{ id: layerId, name: selected ? selected.name || title : "合并图层",
         visible: true, locked: false, alphaLocked: false, groupName: "", tileRegion: null,
-        cells: pattern.cells.map((row) => row.slice()) }],
+        cells: pattern.cells.map((row) => row.slice()),
+        ...(selected?.contentCells ? {
+          contentCells: selected.contentCells.map((row) => row.slice()),
+          originCol: selected.originCol,
+          originRow: selected.originRow
+        } : {}) }],
       activeLayerId: layerId,
       tileLayout: null,
       exportRegions: [],
