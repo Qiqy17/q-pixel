@@ -67,6 +67,18 @@ plutil -lint "$TEMP_DIR/com.qpixel.localserver.plist" >/dev/null
 mv "$TEMP_DIR/com.qpixel.localserver.plist" "$LAUNCH_AGENT"
 launchctl bootstrap "gui/$USER_ID" "$LAUNCH_AGENT"
 launchctl kickstart -k "gui/$USER_ID/com.qpixel.localserver"
+LOCAL_SERVER_READY=0
+for _ in {1..30}; do
+  if /usr/bin/curl -fsS --max-time 1 http://127.0.0.1:8766/api/health >/dev/null 2>&1; then
+    LOCAL_SERVER_READY=1
+    break
+  fi
+  sleep 0.2
+done
+if [ "$LOCAL_SERVER_READY" -ne 1 ]; then
+  echo "电脑创作空间服务未就绪，平板服务暂未启动。" >&2
+  exit 6
+fi
 cp "$REPO_DIR/macos/com.qpixel.ipadserver.plist" "$TEMP_DIR/com.qpixel.ipadserver.plist"
 sed -i '' -e "s|__RESOURCES__|$RESOURCES_DIR|g" "$TEMP_DIR/com.qpixel.ipadserver.plist"
 plutil -lint "$TEMP_DIR/com.qpixel.ipadserver.plist" >/dev/null
