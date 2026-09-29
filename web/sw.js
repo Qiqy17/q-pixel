@@ -1,5 +1,5 @@
 importScripts("./studio/scene-material-library.js");
-const CACHE_NAME = "q-pixel-v20260929-backup-a4-48";
+const CACHE_NAME = "q-pixel-v20260929-layer-move-51";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -14,12 +14,13 @@ const APP_SHELL = [
   "./core/design-save-as.js",
   "./core/auto-draft.js",
   "./core/editor-performance.js",
+  "./core/layer-translate.js",
   "./color/palette-registry.js",
   "./color/inventory-engine.js",
   "./make/board-planner.js",
   "./make/build-navigation.js",
   "./studio/studio.css",
-  "./studio/studio.css?v=20260928-portrait-panel-47",
+  "./studio/studio.css?v=20260929-layer-move-50",
   "./studio/background-engine.js",
   "./studio/background-tool.js",
   "./studio/surface-engine.js",
@@ -53,7 +54,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20260929-backup-a4-48",
+  "./app.js?v=20260929-layer-move-50",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"
