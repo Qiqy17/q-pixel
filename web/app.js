@@ -16473,7 +16473,7 @@
           syncCompositePattern();
           return state.beads.pattern;
         },
-        getSettings: () => state.beads.finish3d,
+        getSettings: () => ({ ...(state.beads.finish3d || {}), h1Opacity: state.beads.exportSettings.exportH1Opacity }),
         getCanvasSize: () => state.beads.pattern ? { width: state.beads.pattern.width, height: state.beads.pattern.height } : null,
         getBackground: () => ({
           type: els.materialBackgroundSelect?.value || "felt",
@@ -16577,7 +16577,8 @@
           return { changed: changed > 0 };
         },
         onHistory: (action) => action === "undo" ? undoEdit() : redoEdit(),
-        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js?v=20260928-preview-layers-43"),
+        loadViewer: () => moduleLoader.loadScript("./generated/finish-viewer.bundle.js?v=20260929-h1-3d-opacity-54"),
+        onH1Opacity: setH1Opacity,
         onSettings: (settings) => { state.beads.finish3d = settings; markUnsavedChanges(); },
         onExport: (blob) => saveBlobFile(blob, `Q像素-成品3D-${formatStamp(new Date())}.png`, "image/png", "3D 成品预览已导出。")
       });

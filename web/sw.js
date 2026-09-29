@@ -1,5 +1,5 @@
 importScripts("./studio/scene-material-library.js");
-const CACHE_NAME = "q-pixel-v20260929-h1-opacity-53";
+const CACHE_NAME = "q-pixel-v20260929-h1-3d-opacity-54";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -38,9 +38,9 @@ const APP_SHELL = [
   "./3d/calibration-manifest.json",
   "./3d/webgl-support.js",
   "./3d/finish-workbench.js",
-  "./3d/finish-workbench.js?v=20260926-continuous-preview-27",
+  "./3d/finish-workbench.js?v=20260929-h1-3d-opacity-54",
   "./generated/finish-viewer.bundle.js",
-  "./generated/finish-viewer.bundle.js?v=20260928-preview-layers-43",
+  "./generated/finish-viewer.bundle.js?v=20260929-h1-3d-opacity-54",
   "./workspaces/quality-checks.js",
   "./workspaces/context-inspector.js",
   "./workspaces/workspace-controller.js",
@@ -54,7 +54,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20260929-h1-opacity-53",
+  "./app.js?v=20260929-h1-3d-opacity-54",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"

@@ -274,20 +274,23 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   const segmentsFor = (level) => (level === "high" ? 24 : level === "medium" ? 12 : 8);
 
   let maps = surfaceMaps(core.profile(settings.profile), core.tuningFor(settings, settings.profile).textureOpacity / 100);
+  const initialH1Opacity = Math.max(0, Math.min(100, Number(settings.h1Opacity) || 0)) / 100;
   const beadMaterials = {
     opaque: new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: .42, normalMap: maps.normal, normalScale: new THREE.Vector2(.16, .16), envMapIntensity: .75, clearcoat: .18, clearcoatRoughness: .48 }),
     translucent: new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: .24, transmission: .36, thickness: 1.2, ior: 1.45, envMapIntensity: 1, clearcoat: .2, side: THREE.DoubleSide }),
-    clear: new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: .12, transmission: .88, thickness: 1.55, ior: 1.46, envMapIntensity: 1.25, clearcoat: .32, side: THREE.DoubleSide, depthWrite: false })
+    clear: new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: .12, transmission: .88, thickness: 1.55, ior: 1.46, envMapIntensity: 1.25, clearcoat: .32, side: THREE.DoubleSide, depthWrite: false }),
+    h1: new THREE.MeshPhysicalMaterial({ color: 0xffffff, metalness: 0, roughness: .25, transparent: true, opacity: initialH1Opacity, visible: initialH1Opacity > 0, depthWrite: true, side: THREE.DoubleSide, clearcoat: .16 })
   };
   const bridgeMaterial = new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: .52, envMapIntensity: .48, vertexColors: false });
   const palette = window.QPixelPaletteRegistry && window.QPixelPaletteRegistry.defaultPalette();
   const opticalClass = (code) => {
+    if (code === "H1") return "h1";
     const entry = palette && palette.colorOf(code);
     return entry && ["clear", "translucent"].includes(entry.opticalClass) ? entry.opticalClass : "opaque";
   };
-  let groups = { opaque: [], translucent: [], clear: [] };
+  let groups = { opaque: [], translucent: [], clear: [], h1: [] };
   function regroup() {
-    groups = { opaque: [], translucent: [], clear: [] };
+    groups = { opaque: [], translucent: [], clear: [], h1: [] };
     for (let row = 0; row < height; row += 1) for (let col = 0; col < width; col += 1) {
       const code = cells[row] && cells[row][col];
       if (code) groups[opticalClass(code)].push({ row, col, code });
@@ -311,6 +314,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
       if (!code) continue;
       if (!colors.has(code)) colors.set(code, colorOf(code) || "#aaaaaa");
       context.fillStyle = colors.get(code);
+      context.globalAlpha = code === "H1" ? Math.max(0, Math.min(100, Number(settings.h1Opacity) || 0)) / 100 : 1;
       context.fillRect(col, row, 1, 1);
     }
     if (overviewTexture) overviewTexture.dispose();
@@ -354,7 +358,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
         const mesh = new THREE.InstancedMesh(beadGeometry(core.profile(settings.profile), segmentsFor(currentQuality)), beadMaterials[kind], chunk.length);
         mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
         mesh.userData.positions = chunk;
-        mesh.castShadow = kind !== "clear";
+        mesh.castShadow = kind !== "clear" && kind !== "h1";
         chunk.forEach(({ row, col, code }, index) => {
           dummy.position.set(col * 5 - centerX, 0, row * 5 - centerZ);
           dummy.scale.set(1, 1, 1);
@@ -380,7 +384,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
       const mesh = new THREE.InstancedMesh(beadGeometry(core.profile(settings.profile), segmentsFor(currentQuality)), beadMaterials[kind], positions.length);
       mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
       mesh.userData.positions = positions;
-      mesh.castShadow = kind !== "clear";
+      mesh.castShadow = kind !== "clear" && kind !== "h1";
       positions.forEach(({ row, col, code }, index) => {
         dummy.position.set(col * 5 - centerX, 0, row * 5 - centerZ);
         dummy.scale.set(1, 1, 1);
@@ -445,7 +449,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
       const sideRoundness = profile.id === "flat" ? .09 : profile.texture === "towel" ? .42 : .28;
       fusedStripe(cells, row, Math.min(height, row + stripeHeight), centerX, centerZ, colorOf, opticalClass, core.tuningFor(settings, settings.profile).meltEdge, sideRoundness, currentQuality).forEach(({ face, kind, geometry }) => {
         const mesh = new THREE.Mesh(geometry, fusedMaterials[kind]);
-        mesh.castShadow = kind !== "clear";
+        mesh.castShadow = kind !== "clear" && kind !== "h1";
         fusedGroups[face].add(mesh);
         fusedMeshes.push(mesh);
       });
@@ -984,6 +988,15 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
     scene.background = value === "transparent" ? null : new THREE.Color(value === "dark" ? 0x1d2626 : 0xe6e9e5);
     invalidate();
   }
+  function setH1Opacity(value) {
+    settings.h1Opacity = Math.max(0, Math.min(100, Number(value) || 0));
+    beadMaterials.h1.opacity = settings.h1Opacity / 100;
+    fusedMaterials.h1.opacity = settings.h1Opacity / 100;
+    beadMaterials.h1.visible = settings.h1Opacity > 0;
+    fusedMaterials.h1.visible = settings.h1Opacity > 0;
+    if (largeOverview) refreshOverview();
+    invalidate();
+  }
   function view(side) {
     viewSide = side;
     board.visible = settings.boardMode !== "transparent" && side !== "back" && boardMaterial.opacity > 0;
@@ -1087,7 +1100,7 @@ function create({ canvas, overlay, pattern, colorOf, settings, getGuides, getSel
   setBoardBackground(settings);
   view(settings.side);
   onStatus(`${count.toLocaleString()} 颗 · ${currentQuality} 精度 · ${memory.suggestLowDetail ? "弱设备模式 · " : ""}未实物标定参考模型`);
-  return { setProfile, setTuning, setOverlay, setInteractionMode, setEditCursor, moveCamera, updatePattern, snapshot, setExposure, setLighting, setLightEffect, setBackground, setBoardBackground, view, exportPng, cancelExport, dispose, draw, getQuality: () => currentQuality };
+  return { setProfile, setTuning, setOverlay, setInteractionMode, setEditCursor, moveCamera, updatePattern, snapshot, setExposure, setLighting, setLightEffect, setBackground, setBoardBackground, setH1Opacity, view, exportPng, cancelExport, dispose, draw, getQuality: () => currentQuality };
 }
 
 export { create };

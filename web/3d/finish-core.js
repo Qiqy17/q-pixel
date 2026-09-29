@@ -121,6 +121,7 @@
       showGrid: value.showGrid !== false,
       codeOpacity: clampPercent(value.codeOpacity, 90),
       codeSize: clampPercent(value.codeSize, 50),
+      h1Opacity: clampPercent(value.h1Opacity, 0),
       profileTuning: Object.fromEntries(PROFILES.filter((item) => value.profileTuning && value.profileTuning[item.id]).map((item) => [item.id, tuningFor(value, item.id)])),
       calibrated: isCalibrated()
     };

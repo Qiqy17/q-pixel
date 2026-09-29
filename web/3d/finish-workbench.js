@@ -21,6 +21,7 @@
     '  <aside class="finish-controls"><details class="finish-control-group finish-presets" data-role="preset-group"><summary>烫法预设 · <span data-role="profile-label">未烫</span></summary><div data-role="profiles"></div><p data-role="profile-description">参考模型</p></details><strong>视角与材质</strong>',
     '    <div class="finish-view-buttons"><button type="button" data-action="angle">斜侧</button><button type="button" data-action="front">正面</button><button type="button" data-action="back">背面</button></div>',
     '    <div class="finish-view-buttons"><button type="button" data-action="rotate-left" title="左转">↶</button><button type="button" data-action="rotate-right" title="右转">↷</button><button type="button" data-action="tilt-up" title="抬高">↑</button><button type="button" data-action="tilt-down" title="降低">↓</button><button type="button" data-action="zoom-in" title="放大">＋</button><button type="button" data-action="zoom-out" title="缩小">－</button></div>',
+    '    <label>H1 白色不透明度 <output data-role="h1-opacity-label">0%</output><input data-role="h1-opacity" type="range" min="0" max="100" step="1" value="0"></label>',
     '    <details class="finish-control-group" data-role="edit-group"><summary>图纸编辑</summary><p>工具与主画布共用；选择“编辑图纸”后落笔。</p><div data-role="editor-actions"><button type="button" data-action="undo">撤销</button><button type="button" data-action="redo">重做</button></div><div data-role="color-strip"></div></details>',
     '    <details class="finish-control-group" data-role="tool-settings"><summary>工具参数与色板</summary><div data-role="tool-options"></div></details>',
     '    <details class="finish-control-group" data-role="layer-group"><summary>图层</summary><div data-role="layers"></div></details>',
@@ -326,6 +327,8 @@
       }
       dialog.querySelector('[data-role="show-codes"]').checked = settings.showCodes;
       dialog.querySelector('[data-role="show-grid"]').checked = settings.showGrid;
+      dialog.querySelector('[data-role="h1-opacity"]').value = settings.h1Opacity;
+      dialog.querySelector('[data-role="h1-opacity-label"]').textContent = `${settings.h1Opacity}%`;
       dialog.querySelector('[data-role="show-guides"]').checked = options.getGuidesVisible?.() !== false;
       dialog.querySelector('[data-role="quick-show-codes"]').checked = settings.showCodes;
       dialog.querySelector('[data-role="quick-show-grid"]').checked = settings.showGrid;
@@ -574,6 +577,13 @@
     dialog.querySelector('[data-role="exposure"]').addEventListener("input", (event) => {
       settings.exposure = Number(event.target.value) / 100;
       if (viewer) viewer.setExposure(settings.exposure);
+      saveSettings();
+    });
+    dialog.querySelector('[data-role="h1-opacity"]').addEventListener("input", (event) => {
+      settings.h1Opacity = Math.max(0, Math.min(100, Number(event.target.value) || 0));
+      if (viewer) viewer.setH1Opacity(settings.h1Opacity);
+      options.onH1Opacity?.(settings.h1Opacity);
+      syncControls();
       saveSettings();
     });
     dialog.querySelector('[data-role="light-intensity"]').addEventListener("input", (event) => {
