@@ -68,7 +68,8 @@ mv "$TEMP_DIR/com.qpixel.localserver.plist" "$LAUNCH_AGENT"
 launchctl bootstrap "gui/$USER_ID" "$LAUNCH_AGENT"
 launchctl kickstart -k "gui/$USER_ID/com.qpixel.localserver"
 LOCAL_SERVER_READY=0
-for _ in {1..30}; do
+# Existing project libraries can take several seconds to load before health responds.
+for _ in {1..150}; do
   if /usr/bin/curl -fsS --max-time 1 http://127.0.0.1:8766/api/health >/dev/null 2>&1; then
     LOCAL_SERVER_READY=1
     break
