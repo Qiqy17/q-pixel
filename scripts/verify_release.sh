@@ -22,6 +22,7 @@ node --check "$RESOURCES_DIR/core/project-store.js"
 node --check "$RESOURCES_DIR/core/design-save-as.js"
 node --check "$RESOURCES_DIR/core/editor-performance.js"
 node --check "$RESOURCES_DIR/core/layer-translate.js"
+node --check "$RESOURCES_DIR/core/layer-order.js"
 node --check "$RESOURCES_DIR/workspaces/quality-checks.js"
 node --check "$RESOURCES_DIR/workspaces/context-inspector.js"
 node --check "$RESOURCES_DIR/workspaces/workspace-controller.js"
@@ -53,6 +54,7 @@ node "$REPO_DIR/tests/finish-core.test.js"
 node "$REPO_DIR/tests/webgl-support.test.js"
 node "$REPO_DIR/tests/surface-engine.test.js"
 node "$REPO_DIR/tests/scene-catalog.test.js"
+node "$REPO_DIR/tests/layer-order.test.js"
 
 for file in index.html styles.css feature-flags.js module-loader.js import-engine.js import-processing.js import-worker.js app.js manifest.webmanifest icon.svg offline.html sw.js qpixel_ipad_https_server.py qpixel_openai.py OPENAI_SETUP.md; do
   case "$file" in
@@ -65,7 +67,7 @@ done
 cmp -s "$RESOURCES_DIR/run_ipad_server.sh" "$REPO_DIR/scripts/run_ipad_server.sh"
 zsh -n "$RESOURCES_DIR/run_ipad_server.sh"
 
-for file in project-model.js workspace-state.js dom-utils.js project-store.js design-save-as.js editor-performance.js layer-translate.js; do
+for file in project-model.js workspace-state.js dom-utils.js project-store.js design-save-as.js editor-performance.js layer-translate.js layer-order.js; do
   cmp -s "$RESOURCES_DIR/core/$file" "$REPO_DIR/web/core/$file"
 done
 

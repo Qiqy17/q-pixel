@@ -42,6 +42,7 @@ cp "$REPO_DIR/web/core/design-save-as.js" "$RESOURCES_DIR/core/design-save-as.js
 cp "$REPO_DIR/web/core/auto-draft.js" "$RESOURCES_DIR/core/auto-draft.js"
 cp "$REPO_DIR/web/core/editor-performance.js" "$RESOURCES_DIR/core/editor-performance.js"
 cp "$REPO_DIR/web/core/layer-translate.js" "$RESOURCES_DIR/core/layer-translate.js"
+cp "$REPO_DIR/web/core/layer-order.js" "$RESOURCES_DIR/core/layer-order.js"
 mkdir -p "$RESOURCES_DIR/workspaces"
 cp "$REPO_DIR/web/workspaces/quality-checks.js" "$RESOURCES_DIR/workspaces/quality-checks.js"
 cp "$REPO_DIR/web/workspaces/context-inspector.js" "$RESOURCES_DIR/workspaces/context-inspector.js"
