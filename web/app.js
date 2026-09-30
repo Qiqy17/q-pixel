@@ -32,6 +32,7 @@
   const sceneCatalog = window.QPixelSceneCatalog || null;
   const editorPerformance = window.QPixelEditorPerformance || null;
   const layerTranslate = window.QPixelLayerTranslate || null;
+  const layerOrder = window.QPixelLayerOrder || null;
 
   if (!projectModelModule || typeof projectModelModule.createContext !== "function") {
     throw new Error("Q像素项目模型加载失败，已停止初始化以保护项目数据。");
@@ -41,6 +42,9 @@
   }
   if (!layerTranslate || typeof layerTranslate.project !== "function" || typeof layerTranslate.reconcile !== "function") {
     throw new Error("图层移动模块加载失败，已停止初始化以保护图层数据。");
+  }
+  if (!layerOrder || typeof layerOrder.moveToDisplaySlot !== "function") {
+    throw new Error("图层排序模块加载失败，已停止初始化以保护图层数据。");
   }
 
   // 全应用共用同一品牌色卡，避免色号数据在编辑器与库存模块中分叉。
@@ -6146,6 +6150,91 @@
     return true;
   }
 
+  function moveLayerToDisplaySlot(layer, slot) {
+    if (!layer || state.beads.tileLayout || layer.tileRegion) return false;
+    const reordered = layerOrder.moveToDisplaySlot(state.beads.layers, layer.id, slot);
+    if (!reordered) return false;
+    pushHistory();
+    state.beads.layers = reordered;
+    syncCompositePattern();
+    markUnsavedChanges();
+    render();
+    setMessage(`已调整“${layer.name}”的图层顺序。`, false);
+    return true;
+  }
+
+  function bindLayerOrderHandle(handle, row, layer) {
+    handle.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+      event.preventDefault();
+      const displayIndex = state.beads.layers.length - 1 - state.beads.layers.indexOf(layer);
+      const nextIndex = displayIndex + (event.key === "ArrowUp" ? -1 : 1);
+      if (moveLayerToDisplaySlot(layer, nextIndex)) {
+        els.layerList.querySelectorAll(".layer-row").forEach((candidate) => {
+          if (candidate.dataset.layerId === layer.id) candidate.querySelector(".layer-reorder-handle")?.focus();
+        });
+      }
+    });
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      if (state.beads.tileLayout || state.beads.layers.length < 2) return;
+      event.preventDefault();
+      const list = els.layerList;
+      const pointerId = event.pointerId;
+      const controller = new AbortController();
+      let clientY = event.clientY;
+      let slot = state.beads.layers.length - 1 - state.beads.layers.indexOf(layer);
+      let frame = 0;
+      row.classList.add("layer-dragging");
+      list.classList.add("layer-reordering");
+      handle.setPointerCapture?.(pointerId);
+      const otherRows = () => Array.from(list.querySelectorAll(".layer-row")).filter((candidate) => candidate !== row);
+      const updateTarget = () => {
+        const candidates = otherRows();
+        candidates.forEach((candidate) => candidate.classList.remove("layer-drop-before", "layer-drop-after"));
+        slot = candidates.filter((candidate) => clientY >= candidate.getBoundingClientRect().top + candidate.getBoundingClientRect().height / 2).length;
+        const target = candidates[Math.min(slot, candidates.length - 1)];
+        if (target) target.classList.add(slot === candidates.length ? "layer-drop-after" : "layer-drop-before");
+      };
+      const autoScroll = () => {
+        const bounds = list.getBoundingClientRect();
+        const previous = list.scrollTop;
+        if (clientY < bounds.top + 30) list.scrollTop -= 8;
+        else if (clientY > bounds.bottom - 30) list.scrollTop += 8;
+        if (list.scrollTop !== previous) updateTarget();
+        frame = requestAnimationFrame(autoScroll);
+      };
+      const finish = (commit) => {
+        controller.abort();
+        cancelAnimationFrame(frame);
+        if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId);
+        row.classList.remove("layer-dragging");
+        list.classList.remove("layer-reordering");
+        otherRows().forEach((candidate) => candidate.classList.remove("layer-drop-before", "layer-drop-after"));
+        if (commit) moveLayerToDisplaySlot(layer, slot);
+      };
+      updateTarget();
+      frame = requestAnimationFrame(autoScroll);
+      window.addEventListener("pointermove", (move) => {
+        if (move.pointerId !== pointerId) return;
+        move.preventDefault();
+        clientY = move.clientY;
+        updateTarget();
+      }, { signal: controller.signal });
+      window.addEventListener("pointerup", (up) => {
+        if (up.pointerId === pointerId) finish(true);
+      }, { signal: controller.signal });
+      window.addEventListener("pointercancel", (cancel) => {
+        if (cancel.pointerId === pointerId) finish(false);
+      }, { signal: controller.signal });
+      window.addEventListener("keydown", (key) => {
+        if (key.key !== "Escape") return;
+        key.preventDefault();
+        finish(false);
+      }, { signal: controller.signal });
+    });
+  }
+
   function renderLayerList() {
     if (!els.layerList) return;
     els.layerList.innerHTML = "";
@@ -6160,9 +6249,10 @@
     state.beads.layers.slice().reverse().forEach((layer) => {
       const row = document.createElement("div");
       row.className = "layer-row";
+      row.dataset.layerId = layer.id;
       row.classList.toggle("active", layer.id === state.beads.activeLayerId);
       row.innerHTML = `
-        <button class="layer-select" type="button" data-layer-action="select" aria-label="选择图层">${layer.id === state.beads.activeLayerId ? "当前" : "选择"}</button>
+        <div class="layer-row-actions"><button class="layer-reorder-handle" type="button" aria-label="拖动调整图层顺序" title="按住拖动排序；方向键逐层调整">⠿</button><button class="layer-select" type="button" data-layer-action="select" aria-label="选择图层">${layer.id === state.beads.activeLayerId ? "当前" : "选择"}</button></div>
         <div class="layer-main">
           <input class="layer-name" aria-label="图层名称" value="">
           <div class="layer-meta"></div>
@@ -6187,6 +6277,11 @@
         </div>
       `;
       const input = row.querySelector(".layer-name");
+      const reorderHandle = row.querySelector(".layer-reorder-handle");
+      if (state.beads.tileLayout || layer.tileRegion || state.beads.layers.length < 2) {
+        reorderHandle.disabled = true;
+        reorderHandle.title = state.beads.tileLayout ? "分区工程的图层顺序固定" : "至少需要两个图层";
+      } else bindLayerOrderHandle(reorderHandle, row, layer);
       input.value = layer.name;
       const region = layer.tileRegion;
       const usage = region && window.QPixelTileProject ? window.QPixelTileProject.usage(layer.cells, region) : null;

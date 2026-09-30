@@ -108,6 +108,15 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .layer-translate-steps{width:66px;min-height:28px;padding:3px 6px;border:1px solid #cbded3;border-radius:6px;background:#fff;color:#244f44;font:inherit}
 .layer-direction-buttons button{flex:1 1 45%;min-height:30px}
 .layer-card .layer-row{height:auto;min-height:max-content;align-self:start;align-items:start}
+.layer-row{position:relative}
+.layer-row-actions{display:flex;flex-direction:column;align-items:stretch;gap:4px}
+.layer-reorder-handle{min-height:36px;border:1px solid #bed8ca;border-radius:7px;background:#f5faf6;color:#286b5e;font-size:21px;line-height:1;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+.layer-reorder-handle:active{cursor:grabbing}
+.layer-reorder-handle:disabled{opacity:.45;cursor:not-allowed}
+.layer-row.layer-dragging{opacity:.65;border-color:#247b6b;background:#eaf6ef}
+.layer-row.layer-drop-before::before,.layer-row.layer-drop-after::after{content:"";position:absolute;left:0;right:0;height:4px;border-radius:4px;background:#0d8b75;z-index:2;pointer-events:none}
+.layer-row.layer-drop-before::before{top:-5px}
+.layer-row.layer-drop-after::after{bottom:-5px}
 .layer-card .layer-name{min-height:24px;line-height:1.35}
 .layer-card .layer-meta{line-height:1.4;overflow-wrap:anywhere}
 @media(max-width:900px){.finish-body{grid-template-columns:130px minmax(0,1fr);}.finish-controls{grid-column:1/-1;display:flex;flex-direction:row;flex-wrap:wrap;max-height:155px;border-top:1px solid #dfe6de;}.finish-controls>*{max-width:180px;}.finish-stage{min-height:300px;}.finish-profiles button{font-size:11px;}.finish-profiles p{font-size:10px;}}
