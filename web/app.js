@@ -34,6 +34,7 @@
   const editorPerformance = window.QPixelEditorPerformance || null;
   const layerTranslate = window.QPixelLayerTranslate || null;
   const layerOrder = window.QPixelLayerOrder || null;
+  let cancelLayerOrderDrag = null;
 
   if (!projectModelModule || typeof projectModelModule.createContext !== "function") {
     throw new Error("Q像素项目模型加载失败，已停止初始化以保护项目数据。");
@@ -6179,6 +6180,7 @@
     handle.addEventListener("pointerdown", (event) => {
       if (event.pointerType === "mouse" && event.button !== 0) return;
       if (state.beads.tileLayout || state.beads.layers.length < 2) return;
+      if (cancelLayerOrderDrag) return;
       event.preventDefault();
       const list = els.layerList;
       const pointerId = event.pointerId;
@@ -6186,9 +6188,9 @@
       let clientY = event.clientY;
       let slot = state.beads.layers.length - 1 - state.beads.layers.indexOf(layer);
       let frame = 0;
+      let finished = false;
       row.classList.add("layer-dragging");
       list.classList.add("layer-reordering");
-      handle.setPointerCapture?.(pointerId);
       const otherRows = () => Array.from(list.querySelectorAll(".layer-row")).filter((candidate) => candidate !== row);
       const updateTarget = () => {
         const candidates = otherRows();
@@ -6206,6 +6208,9 @@
         frame = requestAnimationFrame(autoScroll);
       };
       const finish = (commit) => {
+        if (finished) return;
+        finished = true;
+        cancelLayerOrderDrag = null;
         controller.abort();
         cancelAnimationFrame(frame);
         if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId);
@@ -6214,6 +6219,9 @@
         otherRows().forEach((candidate) => candidate.classList.remove("layer-drop-before", "layer-drop-after"));
         if (commit) moveLayerToDisplaySlot(layer, slot);
       };
+      cancelLayerOrderDrag = () => finish(false);
+      try { handle.setPointerCapture?.(pointerId); }
+      catch { finish(false); return; }
       updateTarget();
       frame = requestAnimationFrame(autoScroll);
       window.addEventListener("pointermove", (move) => {
@@ -6228,6 +6236,11 @@
       window.addEventListener("pointercancel", (cancel) => {
         if (cancel.pointerId === pointerId) finish(false);
       }, { signal: controller.signal });
+      handle.addEventListener("lostpointercapture", () => finish(false), { signal: controller.signal });
+      window.addEventListener("blur", () => finish(false), { signal: controller.signal });
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) finish(false);
+      }, { signal: controller.signal });
       window.addEventListener("keydown", (key) => {
         if (key.key !== "Escape") return;
         key.preventDefault();
@@ -6238,6 +6251,7 @@
 
   function renderLayerList() {
     if (!els.layerList) return;
+    cancelLayerOrderDrag?.();
     els.layerList.innerHTML = "";
     const count = document.getElementById("layerCount");
     if (!state.beads.pattern) {

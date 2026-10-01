@@ -334,3 +334,13 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .smart-board-panel button { min-height: 40px; padding: 8px 12px; border: 1px solid #c9d8d2; border-radius: 8px; background: #f2f8f5; color: #174e43; cursor: pointer; }
 .smart-board-panel button:disabled { opacity: .5; cursor: default; }
 .smart-board-panel input[type="number"], .smart-board-panel select { min-height: 36px; border: 1px solid #c9d8d2; border-radius: 6px; padding: 4px; background: #fff; }
+
+/* Keep the entire palette inside both the canvas popover and the 3D workbench. */
+.canvas-tool-options { z-index: 10; }
+.canvas-tool-options .palette-option { width: 100%; min-width: 0; max-width: 100%; grid-template-columns: minmax(0, 1fr); }
+.canvas-tool-options .palette-option .tool-search { width: 100%; min-width: 0; box-sizing: border-box; }
+.floating-palette-grid { width: 100%; min-width: 0; grid-template-columns: repeat(auto-fit, minmax(32px, 1fr)); overflow-x: hidden; overflow-y: auto; }
+.floating-palette-grid .swatch-button { min-width: 0; }
+.layer-reorder-handle { min-height: 44px; }
+.layer-card .layer-name, .finish-workbench .layer-name { min-height: 24px; font-size: 13px; }
+.layer-card .layer-mini, .finish-workbench .layer-mini { height: 32px; }
