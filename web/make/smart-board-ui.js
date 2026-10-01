@@ -21,6 +21,7 @@
       </div><p data-board="webNote">此浏览器使用文件导出；直接蓝牙试点需使用新版Mac App。</p>`;
     const el = (name) => host.querySelector(`[data-board="${name}"]`);
     let current = null, aborter = null, busy = false, connectedSize = 0, sequence = 0;
+    let sending = false, sendCancelled = false;
     const pending = new Map(), native = window.webkit?.messageHandlers?.smartBoard;
     el("native").hidden = !native; el("webNote").hidden = !!native;
     function status(message) { el("status").textContent = message; }
@@ -61,12 +62,13 @@
         const id = ++sequence;
         const timer = setTimeout(() => { pending.delete(id); reject(new Error("设备操作超时，请断开后重连。")); }, action === "send" ? 120000 : 20000);
         pending.set(id, { resolve, reject, timer });
-        native.postMessage({ id, action, ...data });
+        try { native.postMessage({ id, action, ...data }); }
+        catch (error) { pending.delete(id); clearTimeout(timer); reject(error); }
       });
     }
     window.QPixelSmartBoardNative = (event) => {
-      if (event.type === "disconnected") { connectedSize = 0; status(event.message || "设备已断开。"); }
-      if (event.type === "progress") status(`发送中 ${event.done}/${event.total} 帧`);
+      if (event.type === "disconnected") { if (sending) sendCancelled = true; connectedSize = 0; status(event.message || "设备已断开。"); }
+      if (event.type === "progress" && sending && !sendCancelled) status(`发送中 ${event.done}/${event.total} 帧`);
       const task = pending.get(event.id);
       if (task) { pending.delete(event.id); clearTimeout(task.timer); event.error ? task.reject(new Error(event.error)) : task.resolve(event); }
     };
@@ -80,7 +82,7 @@
     ["columns", "rows", "rotation", "mirror"].forEach((key) => el(key).addEventListener("change", refresh));
     el("board").addEventListener("change", draw); el("refresh").addEventListener("click", refresh);
     host.addEventListener("toggle", () => { if (host.open && !busy) refresh(); });
-    el("cancel").addEventListener("click", () => { aborter?.abort(); if (native && busy && !aborter) callNative("cancel").catch((e) => status(e.message)); });
+    el("cancel").addEventListener("click", () => { if (sending) sendCancelled = true; aborter?.abort(); if (native && busy && !aborter) callNative("cancel").catch((e) => status(e.message)); });
     el("export").addEventListener("click", async () => {
       if (busy) return;
       const plan = refresh(); if (!plan) return;
@@ -112,16 +114,18 @@
       if (!plan || !board) return;
       if (board.columns !== connectedSize || board.rows !== connectedSize) return status("导出板尺寸与实际设备不符，请选择相同格数。");
       if (selectedColor && !board.usage.some((c) => c.code === selectedColor)) return status("图纸已变化，请重新选择颜色。");
-      setBusy(true);
+      sending = true; sendCancelled = false; setBusy(true);
+      const checkSend = () => { if (sendCancelled || !connectedSize) throw new Error("发送已取消或设备已断开。"); };
       try {
         const displayPlan = selectedColor ? { ...plan, colors: new Map(plan.colors) } : plan;
         if (selectedColor) displayPlan.colors.set(selectedColor, { code: selectedColor, rgb: { r: 255, g: 255, b: 255 }, hex: "#ffffff" });
         const bytes = connectedSize >= 78 ? window.QPixelSmartBoardExport.rgb888(displayPlan, board, selectedColor || undefined) : await window.QPixelSmartBoardPackage.png(displayPlan, board, selectedColor || undefined);
+        checkSend();
         const frames = window.QPixelPixDotProtocol.imageFrames(bytes, connectedSize).map((f) => {
           let binary = ""; for (const byte of f) binary += String.fromCharCode(byte); return btoa(binary);
         });
-        await callNative("send", { frames, size: connectedSize }); status("设备已确认接收完整预览；显示效果请检查板子。");
-      } catch (error) { status(error.message + " 画面可能未完整；重连后可重新发送。"); } finally { setBusy(false); }
+        await callNative("send", { frames, size: connectedSize }); checkSend(); status("设备已确认接收完整预览；显示效果请检查板子。");
+      } catch (error) { status(error.message + " 画面可能未完整；重连后可重新发送。"); } finally { sending = false; setBusy(false); }
     });
     return { refresh };
   } };
