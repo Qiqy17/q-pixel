@@ -27,6 +27,8 @@ const first = { savedAt: "2026-09-24T12:00:00Z", pattern: { cells: [["A1"]] } };
 (async () => {
   assert.equal(await vault.save(first), "localstorage");
   assert.deepEqual(await vault.load(), first);
+  await vault.clear({ ...first, id: "different-project" });
+  assert.deepEqual(await vault.load(), first);
   await vault.clear();
   assert.equal(await vault.load(), null);
   await assert.rejects(() => vault.save(null), /草稿内容为空/);

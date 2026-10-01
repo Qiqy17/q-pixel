@@ -74,10 +74,22 @@
       return new Date(primary.savedAt || 0) >= new Date(legacy.savedAt || 0) ? primary : legacy;
     }
 
-    async function clear() {
-      try { await transaction("drafts", "readwrite", (store) => store.delete("active")); } catch (_) {}
+    async function clear(expectedPayload) {
+      const fingerprint = options.payloadFingerprint || JSON.stringify;
+      const matches = (payload) => !expectedPayload || (payload && payload.id === expectedPayload.id && fingerprint(payload) === fingerprint(expectedPayload));
+      try {
+        await transaction("drafts", "readwrite", (store) => {
+          const request = store.get("active");
+          request.onsuccess = () => { if (matches(request.result)) store.delete("active"); };
+          return null;
+        });
+      } catch (_) {}
       if (legacyStore && storage) {
-        try { storage.removeItem(legacyStore.mainKey); storage.removeItem(legacyStore.journalKey); } catch (_) {}
+        try {
+          if (matches(legacyStore.readPayload().payload)) {
+            storage.removeItem(legacyStore.mainKey); storage.removeItem(legacyStore.journalKey);
+          }
+        } catch (_) {}
       }
     }
 

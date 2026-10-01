@@ -1,0 +1,44 @@
+(async () => {
+  const api = window.QPixelOfflineProjects;
+  const hashPayload = window.QPixelProjectModel.payloadFingerprint;
+  const dbName = `q-pixel-offline-qa-${Date.now()}`;
+  const first = api.createStore({ indexedDB, dbName, payloadFingerprint: hashPayload });
+  const second = api.createStore({ indexedDB, dbName, payloadFingerprint: hashPayload });
+  const evidence = [];
+  const check = (condition, name) => { if (!condition) throw new Error(name); evidence.push(name); };
+  const record = (id, code = "H2") => ({ id, title: id, payload: { id, title: id, pattern: { width: 1, height: 1, cells: [[code]] } } });
+  const a = (await first.save(record("a"))).record;
+  check((await second.get("a")).payload.pattern.cells[0][0] === "H2" && (await second.pending()).length === 1, "atomic body and outbox visible to second connection");
+  first.setWriteFailureForTest(true);
+  let failed = false;
+  try { await first.save(record("a", "H3")); } catch { failed = true; }
+  first.setWriteFailureForTest(false);
+  check(failed && (await first.get("a")).payload.pattern.cells[0][0] === "H2" && (await first.pending())[0].revision === 1, "failed transaction retains prior body and queue");
+  const b = (await first.save(record("a", "H3"), { expectedRevision: a.localRevision })).record;
+  const race = await second.save(record("a", "E11"), { expectedRevision: a.localRevision });
+  check(race.copies.length === 1 && race.copies[0].payload.pattern.cells[0][0] === "H3", "stale second-tab save preserves conflict copy");
+  check(!(await first.acknowledge("a", b.localRevision, b)) && (await first.pending()).some(x => x.id === "a"), "older acknowledgement cannot retire newer revision");
+  await first.receive(record("a", "H7"));
+  check((await first.get("a")).payload.pattern.cells[0][0] === "E11", "remote receive cannot replace pending body");
+  await first.resolveConflict("a", b.localRevision, record("a", "H7"));
+  check((await first.get("a")).payload.pattern.cells[0][0] === "E11", "stale conflict resolution cannot retire new edit");
+  const current = await first.get("a");
+  await first.acknowledge("a", current.localRevision, current);
+  check(!(await first.pending()).some(x => x.id === "a"), "matching readback retires exact revision");
+  await first.receive({ id: "a", title: "remote index", hasPayload: true }, { indexOnly: true });
+  check((await first.get("a")).payload.pattern.cells[0][0] === "E11", "index does not discard cached body");
+  for (let i = 0; i < 125; i++) await first.save(record(`many-${i}`));
+  check((await first.list()).length === 127 && (await first.pending()).length === 126, "more than 120 projects and pending entries retained");
+  check((await first.list()).every(x => !x.payload && !x.history), "metadata index carries no bodies or history");
+  await first.seed(record("a", "H1"));
+  check((await first.get("a")).payload.pattern.cells[0][0] === "E11", "repeated legacy migration cannot overwrite new DB content");
+  await first.seed({ ...record("legacy"), remoteSyncFingerprint: hashPayload(record("legacy").payload) });
+  check(!(await first.pending()).some(x => x.id === "legacy"), "known legacy sync baseline imports without extra upload");
+  const vault = window.QPixelAutoDraft.createVault({ indexedDB, dbName: `${dbName}-drafts`, payloadFingerprint: hashPayload });
+  await vault.save(record("draft").payload);
+  await vault.clear(record("draft", "H3").payload);
+  check((await vault.load()).pattern.cells[0][0] === "H2", "saving another revision does not clear its newer draft");
+  await vault.clear(record("draft").payload);
+  check(await vault.load() === null, "matching saved draft clears atomically");
+  return JSON.stringify({ passed: evidence.length, evidence });
+})()

@@ -1,5 +1,5 @@
 importScripts("./studio/scene-material-library.js");
-const CACHE_NAME = "q-pixel-v20261001-palette-layer-57";
+const CACHE_NAME = "q-pixel-v20261001-offline-projects-58";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -13,6 +13,7 @@ const APP_SHELL = [
   "./core/project-store.js",
   "./core/design-save-as.js",
   "./core/auto-draft.js",
+  "./core/offline-projects.js",
   "./core/editor-performance.js",
   "./core/layer-translate.js",
   "./core/layer-order.js",
@@ -25,7 +26,7 @@ const APP_SHELL = [
   "./make/smart-board-ui.js",
   "./make/build-navigation.js",
   "./studio/studio.css",
-  "./studio/studio.css?v=20261001-palette-layer-57",
+  "./studio/studio.css?v=20261001-offline-projects-58",
   "./studio/background-engine.js",
   "./studio/background-tool.js",
   "./studio/surface-engine.js",
@@ -59,7 +60,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20261001-palette-layer-57",
+  "./app.js?v=20261001-offline-projects-58",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"
@@ -89,8 +90,10 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(request)
       .then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        if (response.ok && url.origin === self.location.origin) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => {});
+        }
         return response;
       })
       .catch(() => caches.match(request).then((cached) => cached || caches.match("./offline.html")))

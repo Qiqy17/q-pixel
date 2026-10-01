@@ -11,8 +11,13 @@
   const projectModelModule = window.QPixelProjectModel;
   const projectStoreModule = window.QPixelProjectStore || null;
   const draftStore = projectStoreModule ? projectStoreModule.createStore({ storage: window.localStorage, projectId: "__autosave__", model: projectModelModule }) : null;
+  const offlineModule = window.QPixelOfflineProjects;
+  const offlineProjects = offlineModule?.createStore({ indexedDB: window.indexedDB, payloadFingerprint: (payload) => projectModelModule.payloadFingerprint(payload) });
+  let offlineReady = Promise.resolve();
+  let offlineWriteQueue = Promise.resolve();
+  const offlineRevisions = new Map();
   const autoDraftModule = window.QPixelAutoDraft || null;
-  const draftVault = autoDraftModule ? autoDraftModule.createVault({ indexedDB: window.indexedDB, storage: window.localStorage, legacyStore: draftStore }) : null;
+  const draftVault = autoDraftModule ? autoDraftModule.createVault({ indexedDB: window.indexedDB, storage: window.localStorage, legacyStore: draftStore, payloadFingerprint: (payload) => projectModelModule.payloadFingerprint(payload) }) : null;
   const draftIntervalKey = "q-pixel-auto-draft-interval";
   let draftInterval = autoDraftModule ? autoDraftModule.normalizeInterval(window.localStorage.getItem(draftIntervalKey)) : 180000;
   let draftTimer = 0;
@@ -12779,6 +12784,139 @@
     });
   }
 
+  async function refreshOfflineIndex() {
+    const records = await offlineProjects.list();
+    records.filter((record) => !offlineRevisions.has(record.id)).forEach((record) => offlineRevisions.set(record.id, record.localRevision));
+    const pending = new Set((await offlineProjects.pending()).map((entry) => entry.id));
+    const trash = records.filter((record) => isDeletedProject(record) && !record.purged);
+    // Keep tombstones and their正文 in IndexedDB; localStorage is only a compatibility index.
+    setTrashProjects(trash);
+    storeProjectsLocally(records.filter((record) => !isDeletedProject(record)).map((record) => Object.assign({}, record, { pendingSync: pending.has(record.id) })));
+  }
+
+  function rememberReceivedRevision(record) {
+    if (state.beads.projectId !== record.id || (record.payload && state.beads.projectTitle === record.title && payloadFingerprint(makeProjectPayload()) === payloadFingerprint(record.payload))) {
+      offlineRevisions.set(record.id, record.localRevision);
+    }
+    return record;
+  }
+
+  async function initializeOfflineProjects() {
+    try {
+      const legacy = [...getProjects(), ...getTrashProjects()];
+      const existingIds = new Set((await offlineProjects.list()).map((record) => record.id));
+      for (const record of legacy) {
+        if (existingIds.has(record.id)) continue;
+        if (!record.payload) {
+          try {
+            const store = projectStoreModule?.createStore({ storage: localStorage, projectId: record.id, model: projectModelModule });
+            store?.recover();
+            record.payload = store?.readPayload().payload || JSON.parse(localStorage.getItem(`${projectPayloadStoragePrefix}${record.id}`) || "null");
+          } catch (_) {}
+        }
+        await offlineProjects.seed(record);
+        if (record.payload) {
+          const stored = await offlineProjects.get(record.id);
+          if (!stored?.payload || offlineProjects.hash(stored) !== offlineProjects.hash(record)) throw new Error("旧作品迁移回读不一致，旧副本已保留");
+        }
+      }
+      await refreshOfflineIndex();
+    } catch (error) {
+      console.warn("本机作品库未就绪，保留旧数据", error);
+      // Keep the editor usable for .qpx recovery; saves will report the actual DB failure.
+    }
+  }
+
+  function persistOfflineChanges(records) {
+    const snapshots = records.map((record) => JSON.parse(JSON.stringify(record)));
+    const work = offlineWriteQueue.catch(() => {}).then(async () => {
+      await offlineReady;
+      for (const snapshot of snapshots) {
+        if (!snapshot.payload) {
+          const old = await offlineProjects.get(snapshot.id);
+          if (!old?.payload && !snapshot.deleted) throw new Error("此作品尚未下载，无法离线修改");
+          if (!snapshot.purged) snapshot.payload = old?.payload || null;
+          if (old?.history?.length && !snapshot.history?.length && !snapshot.purged) snapshot.history = old.history;
+        }
+        if (snapshot.payload) {
+          snapshot.payload.id = snapshot.id;
+          snapshot.payload.title = snapshot.title;
+        }
+        const saved = await offlineProjects.save(snapshot, { expectedRevision: offlineRevisions.get(snapshot.id) || 0 });
+        offlineRevisions.set(snapshot.id, saved.record.localRevision);
+        if (saved.copies.length) setMessage("检测到另一页面的修改，已同时保留冲突副本。", false);
+      }
+      await refreshOfflineIndex();
+      return { ok: true, indexedDB: true };
+    });
+    offlineWriteQueue = work;
+    return work;
+  }
+
+  async function syncOfflineOutbox(remoteIndex) {
+    const remoteById = new Map(remoteIndex.map((record) => [record.id, record]));
+    const pending = await offlineProjects.pending();
+    let conflicts = 0;
+    for (const entry of pending) {
+      const local = await offlineProjects.get(entry.id);
+      if (!local || local.localRevision !== entry.revision) continue;
+      let remote = null;
+      if (remoteById.has(entry.id)) {
+        const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(entry.id)}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`读取电脑作品失败 ${response.status}`);
+        remote = await response.json();
+      }
+      const decision = offlineModule.decide(local, remote, await offlineProjects.baseline(entry.id), offlineProjects.hash);
+      if (local.purged) {
+        if (remote && !remote.deleted && offlineProjects.hash(remote) !== await offlineProjects.baseline(entry.id)) throw new Error("电脑作品有未核对修改，永久删除待核对；本机删除记录已保留");
+        if (remote) {
+          const deletion = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(entry.id)}`, { method: "DELETE" });
+          if (!deletion.ok) throw new Error("电脑永久删除失败");
+          const check = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(entry.id)}`, { cache: "no-store" });
+          if (check.status !== 404) throw new Error("电脑删除未确认");
+        }
+        await offlineProjects.acknowledge(entry.id, entry.revision, local);
+        continue;
+      }
+      if (decision === "conflict") {
+        // Keep the local edit as a deterministic, retry-safe copy. Leave the computer's original intact.
+        const suffix = `${projectModelModule.payloadFingerprint(local.payload)}-${local.localRevision}`;
+        const copy = offlineModule.conflictCopy(local, suffix);
+        const oldCopy = await offlineProjects.get(copy.id);
+        const savedCopy = oldCopy || (await offlineProjects.save(copy)).record;
+        await uploadOfflineRecord(savedCopy);
+        // Confirm the remote original has not changed again before retiring this local revision.
+        const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(entry.id)}`, { cache: "no-store" });
+        if (!response.ok || offlineProjects.hash(await response.json()) !== offlineProjects.hash(remote)) throw new Error("电脑作品再次变化，请重试同步");
+        await offlineProjects.resolveConflict(entry.id, entry.revision, remote);
+        if (state.beads.projectId === entry.id && !state.hasUnsavedChanges && payloadFingerprint(makeProjectPayload()) === payloadFingerprint(local.payload)) {
+          state.beads.projectId = copy.id;
+          state.beads.projectTitle = copy.title;
+          if (els.projectTitleInput) els.projectTitleInput.value = copy.title;
+        }
+        conflicts += 1;
+      } else if (decision === "equal") await offlineProjects.acknowledge(entry.id, entry.revision, remote);
+      else await uploadOfflineRecord(local);
+    }
+    return conflicts;
+  }
+
+  async function uploadOfflineRecord(record) {
+    const outgoing = prepareProjectForRemote(record);
+    delete outgoing.localRevision; delete outgoing.pendingSync; delete outgoing.offlinePayloadFingerprint;
+    const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(record.id)}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(outgoing)
+    });
+    if (!response.ok) throw new Error(`电脑写入失败 ${response.status}`);
+    const result = await response.json();
+    if (!result.ok || result.accepted === false) throw new Error("电脑拒绝旧版本，待同步记录已保留");
+    const readback = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(record.id)}`, { cache: "no-store" });
+    if (!readback.ok) throw new Error("电脑保存回读失败");
+    const stored = await readback.json();
+    if (offlineProjects.hash(stored) !== offlineProjects.hash(record)) throw new Error("电脑回读内容不一致，待同步记录已保留");
+    await offlineProjects.acknowledge(record.id, record.localRevision, stored);
+  }
+
   function getProjects() {
     if (state.projectCacheReady) return state.projectCache.map(normalizeProject);
     try {
@@ -12798,7 +12936,7 @@
   }
 
   function storeProjectsLocally(projects) {
-    const normalized = projects.map(normalizeProject).slice(0, 120);
+    const normalized = projects.map(normalizeProject);
     normalized.forEach((project) => {
       if (project.payload) state.projectPayloadCache.set(project.id, project.payload);
       if (draftVault && Array.isArray(project.history) && project.history.length) {
@@ -12808,6 +12946,12 @@
     state.projectCache = normalized;
     state.projectCacheReady = true;
     try {
+      if (offlineProjects) {
+        localStorage.setItem(storageKey, JSON.stringify(normalized.map((project) => {
+          const index = Object.assign({}, project); delete index.payload; delete index.history; return index;
+        })));
+        return { ok: true, memoryOnly: true }; // Only an IndexedDB transaction is a durable-save acknowledgement.
+      }
       if (state.forceProjectStorageFailureForTest) throw new Error("forced project storage failure");
       normalized.forEach((project) => {
         if (project.payload && projectStoreModule) {
@@ -12904,15 +13048,18 @@
   }
 
   function setProjects(projects, options = {}) {
-    const normalized = projects.map(normalizeProject).slice(0, 120);
+    const normalized = projects.map(normalizeProject);
     const previous = new Map(getProjects().map((project) => [project.id, project]));
     const changed = normalized.filter((project) => {
       const old = previous.get(project.id);
       return !old || old.updatedAt !== project.updatedAt || old.title !== project.title || old.folderId !== project.folderId;
     });
-    const localResult = storeProjectsLocally(normalized);
-    if (options.remote === false) return Promise.resolve({ ok: true, localOnly: true, count: normalized.length });
-    return saveProjectsToRemote(changed).then((result) => result || Object.assign({ ok: false }, localResult));
+    storeProjectsLocally(normalized);
+    return persistOfflineChanges(changed).catch((error) => {
+      console.warn("本机作品保存失败", error);
+      setMessage("本机作品保存失败，请导出 .qpx 备份。", true);
+      return { ok: false };
+    });
   }
 
   function isInternalTestProject(project) {
@@ -12941,8 +13088,7 @@
     return Array.from(map.values())
       .filter((project) => !isDeletedProject(project))
       .concat(conflictCopies)
-      .sort(compareProjectsByRecency)
-      .slice(0, 120);
+      .sort(compareProjectsByRecency);
   }
 
   function normalizedProjectsForSyncCompare(projects) {
@@ -13023,6 +13169,17 @@
 
   async function fetchRemoteProjectPayload(id) {
     if (!id || !window.fetch) return null;
+    await offlineReady;
+    const persistent = await offlineProjects.get(id);
+    if (persistent?.payload && !persistent.deleted) {
+      persistent.payload.title = persistent.title;
+      persistent.payload.id = persistent.id;
+      offlineRevisions.set(id, persistent.localRevision);
+      state.projectPayloadCache.set(id, persistent.payload);
+      state.projectCache = state.projectCache.map((project) => project.id === id ? normalizeProject(persistent) : project);
+      return persistent.payload;
+    }
+    if (persistent?.deleted) return null;
     const local = getProjects().find((item) => item.id === id);
     let cachedPayload = local && local.payload ? local.payload : state.projectPayloadCache.get(id) || null;
     if (!cachedPayload && projectStoreModule) {
@@ -13062,13 +13219,17 @@
           designDates: Object.assign({}, project.designDates || {}, item.designDates || {})
         })
         : item);
-      storeProjectsLocally(projects);
+      rememberReceivedRevision(await offlineProjects.receive(project));
+      await refreshOfflineIndex();
       return project.payload;
     }
     return null;
   }
 
   async function hydrateProjectHistory(id) {
+    await offlineReady;
+    const persistent = await offlineProjects.get(id);
+    if (persistent?.history?.length) return normalizeProject(persistent);
     let local = getProjects().find((item) => item.id === id);
     if (!local) return null;
     if (normalizeProjectHistory(local.history).length >= Number(local.historyCount || 0)) return local;
@@ -13135,67 +13296,10 @@
     return outgoing;
   }
 
-  function markProjectsSynced(outgoingProjects) {
-    const synced = new Map((outgoingProjects || []).map((project) => [project.id, project]));
-    if (!synced.size) return;
-    const projects = getProjects().map((project) => {
-      const outgoing = synced.get(project.id);
-      if (!outgoing) return project;
-      return Object.assign({}, project, {
-        hasPayload: Boolean(outgoing.payload || project.hasPayload),
-        syncFingerprint: outgoing.syncFingerprint || project.syncFingerprint || "",
-        remoteSyncFingerprint: outgoing.syncFingerprint || project.remoteSyncFingerprint || "",
-        remoteUpdatedAt: outgoing.updatedAt || outgoing.savedAt || project.remoteUpdatedAt || "",
-        payloadUpdatedAt: outgoing.payloadUpdatedAt || project.payloadUpdatedAt || ""
-      });
-    });
-    storeProjectsLocally(projects);
-  }
-
-  function saveProjectToRemote(project) {
-    if (!window.fetch || !project || !project.id) return Promise.resolve(null);
-    const outgoing = prepareProjectForRemote(project);
-    return fetch(`${syncApiBase}/api/projects/${encodeURIComponent(project.id)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(outgoing)
-    }).then((response) => {
-      if (!response.ok) throw new Error(`project-save ${response.status}`);
-      return response.json().catch(() => ({ ok: true })).then((result) => {
-        if (result && result.ok && result.accepted !== false) {
-          try { markProjectsSynced([outgoing]); }
-          catch (error) { console.warn("Q像素同步元数据缓存更新失败", error); }
-        }
-        return result;
-      });
-    }).catch(() => {
-      setMessage("电脑同步服务暂时不可用。", true);
-      return null;
-    });
-  }
-
-  function deleteRemoteProject(id) {
-    if (!window.fetch || !id) return Promise.resolve(null);
-    return fetch(`${syncApiBase}/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" })
-      .then((response) => {
-        if (!response.ok) throw new Error(`project-delete ${response.status}`);
-        return response.json().catch(() => ({ ok: true }));
-      })
-      .catch(() => {
-        setMessage("远程永久删除失败，已保留本机回收站记录。", true);
-        return null;
-      });
-  }
-
-  async function saveProjectsToRemote(projects) {
-    if (!window.fetch) return null;
-    const outgoing = projects.filter((project) => !isInternalTestProject(project));
-    let saved = 0;
-    for (let index = 0; index < outgoing.length; index += 2) {
-      const results = await Promise.all(outgoing.slice(index, index + 2).map(saveProjectToRemote));
-      saved += results.filter((result) => result && result.ok && result.accepted !== false).length;
-    }
-    return { ok: saved === outgoing.length, count: saved };
+  async function queuePermanentDeletion(id) {
+    const project = await offlineProjects.get(id);
+    if (!project) return { ok: false };
+    return persistOfflineChanges([Object.assign({}, project, { deleted: true, purged: true, payload: null, history: [], deletedAt: new Date().toISOString() })]);
   }
 
   // 同步节流：避免保存→同步→重渲染→列表跳变；同一时间只允许一个同步在飞。
@@ -13219,41 +13323,40 @@
   }
 
   async function syncProjectsFromRemote(options = {}) {
-    if (!window.fetch) return;
-    const manual = Boolean(options.manual);
+    await offlineReady;
+    await offlineWriteQueue.catch(() => {});
     const localProjects = getProjects();
-    if (manual) setMessage("正在同步电脑创作空间...", false);
+    // Background calls may refresh the index, but may never upload local edits.
+    if (options.manual) setMessage("正在手动同步电脑（需要同一局域网）...", false);
     try {
-      const health = manual ? await fetchSyncHealth().catch(() => null) : null;
       const remoteProjects = await fetchRemoteProjects();
-      ingestRemoteTrash(remoteProjects);
-      const remoteById = new Map(remoteProjects.map((project) => [project.id, project]));
-      const localTrash = getTrashProjects().filter((project) => {
-        const remote = remoteById.get(project.id);
-        return !remote || isDeletedProject(remote) || projectSortTime(project) > projectSortTime(remote);
-      });
-      if (localTrash.length !== getTrashProjects().length) setTrashProjects(localTrash);
-      const merged = mergeProjects([...localProjects, ...localTrash], remoteProjects);
-      const changed = merged.filter((project) => {
-        const remote = remoteById.get(project.id);
-        return remote ? projectSortTime(project) > projectSortTime(remote) : Boolean(project.payload);
-      });
-      const pendingTrash = localTrash.filter((project) => {
-        const remote = remoteById.get(project.id);
-        return !remote || projectSortTime(project) > projectSortTime(remote);
-      });
-      const localResult = storeProjectsLocally(merged);
-      if (changed.length || pendingTrash.length) saveProjectsToRemote([...changed, ...pendingTrash]);
+      const conflicts = options.manual ? await syncOfflineOutbox(remoteProjects) : 0;
+      if (options.manual) {
+        // Download remote changes only for作品 that already have a local正文; never alter the open canvas.
+        const localIndex = new Map((await offlineProjects.list()).map((record) => [record.id, record]));
+        for (const remote of remoteProjects) {
+          const local = localIndex.get(remote.id);
+          if (!local?.hasPayload || local.purged) continue;
+          if (remote.syncFingerprint !== local.offlinePayloadFingerprint || remote.title !== local.title || (remote.folderId || "") !== (local.folderId || "") || Boolean(remote.deleted) !== Boolean(local.deleted)) {
+            const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(remote.id)}`, { cache: "no-store" });
+            if (!response.ok) throw new Error("电脑正文下载失败");
+            rememberReceivedRevision(await offlineProjects.receive(await response.json()));
+          }
+        }
+      }
+      for (const project of remoteProjects) rememberReceivedRevision(await offlineProjects.receive(project, { indexOnly: true }));
+      await refreshOfflineIndex();
+      renderHomeProjects(); renderProjectList();
+      if (options.manual) {
+        const pending = await offlineProjects.pending();
+        setMessage(pending.length ? `仍有 ${pending.length} 个作品待同步，内容已保留在本机。`
+          : conflicts ? `已同步；${conflicts} 个冲突已保留副本，电脑原稿未覆盖。` : "已核对并同步到电脑创作空间。", Boolean(pending.length));
+      }
+      return getProjects();
+    } catch (error) {
+      console.warn("手动同步未完成", error);
+      if (options.manual) setMessage("电脑未连接：本机作品已保留。当前同步需要同一局域网，跨网 iCloud 尚未配置。", true);
       renderHomeProjects();
-      renderProjectList();
-      const healthText = health ? `${formatSyncHealthMessage(health)} ` : "";
-      setMessage(localResult.memoryOnly
-        ? `${healthText}创作空间已同步：当前链接可见 ${merged.length} 个文件。本机缓存空间不足，已使用当前页面缓存。`
-        : `${healthText}创作空间已同步：当前链接可见 ${merged.length} 个文件。`, false);
-      return merged;
-    } catch {
-      renderHomeProjects();
-      if (manual) setMessage("电脑同步服务暂时不可用，已保留当前设备里的文件。", true);
       return localProjects;
     }
   }
@@ -13330,8 +13433,8 @@
     draftTimer = 0;
   }
 
-  function clearRecoveryDraft() {
-    if (draftVault) queueDraftWrite(() => draftVault.clear()).catch((error) => console.warn("Q像素清理草稿失败", error));
+  function clearRecoveryDraft(payload) {
+    if (draftVault) queueDraftWrite(() => draftVault.clear(payload)).catch((error) => console.warn("Q像素清理草稿失败", error));
   }
 
   async function offerDraftRecovery() {
@@ -13701,7 +13804,7 @@
       card.querySelector(".home-project-title").textContent = project.title || "未命名";
       card.querySelector(".home-project-meta").innerHTML = "";
       card.querySelector(".home-project-meta").append(
-        document.createTextNode(`${project.width || "-"} x ${project.height || "-"} · ${formatShortDate(project.updatedAt || project.savedAt)}`)
+        document.createTextNode(`${project.width || "-"} x ${project.height || "-"} · ${formatShortDate(project.updatedAt || project.savedAt)} · ${project.hasPayload || project.payload ? project.pendingSync ? "本机已保存·待同步" : "可离线打开" : "尚未下载到本机"}`)
       );
       const badges = makeProjectBadges(project);
       if (badges) card.appendChild(badges);
@@ -13865,10 +13968,12 @@
     }
     restored.thumbnail = makeProjectThumbnail(restored.payload.pattern);
     const projects = [restored, ...getProjects().filter((item) => item.id !== projectId)];
-    const localResult = storeProjectsLocally(projects);
+    let localResult;
+    try { localResult = await persistOfflineChanges([restored]); }
+    catch (_) { setMessage("恢复版本未能保存，请导出 .qpx。", true); return; }
     let historySaved = false;
     try { historySaved = Boolean(draftVault && await draftVault.saveHistory(projectId, restored.history)); } catch (_) {}
-    if (!localResult.localStorage) {
+    if (!localResult.indexedDB) {
       setMessage("本机空间不足，恢复内容暂存在当前页面；请导出工程文件或释放空间。", true);
       return;
     }
@@ -13878,9 +13983,7 @@
     closeProjectActionModal();
     renderProjectList();
     renderHomeProjects();
-    saveProjectToRemote(restored).then((result) => {
-      setMessage(result && result.ok ? "已恢复历史版本并同步到电脑创作空间。" : historySaved ? "已恢复到当前设备，电脑同步服务暂时不可用。" : "已恢复当前版本；本机历史记录未能写入，请导出工程文件备份。", !(result && result.ok));
-    });
+    setMessage(historySaved ? "已恢复到本机，待手动同步。" : "已恢复当前版本；历史备份写入失败，请导出 .qpx。", !historySaved);
   }
 
   async function duplicateProject(id) {
@@ -13911,7 +14014,8 @@
       copy.payload.createdAt = now;
       copy.payload.savedAt = now;
     }
-    setProjects([copy, ...getProjects()]);
+    const saved = await setProjects([copy, ...getProjects()]);
+    if (!saved.ok) return;
     closeProjectActionModal();
     renderProjectList();
     renderHomeProjects();
@@ -14009,7 +14113,7 @@
     const trash = getTrashProjects();
     const project = trash.find((item) => item.id === id);
     if (!project) return;
-    let complete = project;
+    let complete = await offlineProjects.get(id) || project;
     if (!complete.payload) {
       try {
         const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(id)}`, { cache: "no-store" });
@@ -14026,8 +14130,8 @@
     const now = new Date().toISOString();
     restored.updatedAt = now;
     restored.savedAt = now;
-    setProjects([restored, ...getProjects().filter((item) => item.id !== id)], { remote: false });
-    saveProjectToRemote(restored);
+    try { await persistOfflineChanges([restored]); }
+    catch (_) { setMessage("恢复未保存，请导出 .qpx。", true); return; }
     setTrashProjects(trash.filter((item) => item.id !== id));
     renderTrashList();
     renderHomeProjects();
@@ -14035,11 +14139,11 @@
     setMessage("已从回收站恢复。", false);
   }
 
-  function permanentlyDeleteTrashProject(id) {
-    setTrashProjects(getTrashProjects().filter((item) => item.id !== id));
-    deleteRemoteProject(id);
+  async function permanentlyDeleteTrashProject(id) {
+    try { await queuePermanentDeletion(id); }
+    catch (_) { setMessage("本机删除未保存，请重试。", true); return; }
     renderTrashList();
-    setMessage("已永久删除。", false);
+    setMessage("已从本机删除，电脑删除待手动同步。", false);
   }
 
   function makeFloatingPanelDraggable(panel, handle, options) {
@@ -14335,21 +14439,16 @@
     }));
     els.saveAsCreateButton.disabled = true;
     setSaveAsError("");
-    const localResult = storeProjectsLocally([...records, ...existing]);
+    let localResult;
+    try { localResult = await persistOfflineChanges(records); }
+    catch (_) { localResult = { ok: false }; }
     renderProjectList();
     renderHomeProjects();
-    const remoteResults = [];
-    for (let index = 0; index < records.length; index += 2) {
-      remoteResults.push(...await Promise.all(records.slice(index, index + 2).map(saveProjectToRemote)));
-    }
-    const remoteCount = remoteResults.filter((result) => result && result.ok && result.accepted !== false).length;
     els.saveAsResults.replaceChildren();
     const summary = document.createElement("strong");
-    summary.textContent = localResult.localStorage
-      ? `已生成 ${records.length} 个新设计，可在作品列表中打开。`
-      : remoteCount === records.length
-        ? `已生成 ${records.length} 个新设计并同步到电脑。`
-        : `有 ${records.length - remoteCount} 个设计未持久保存，请立即下载 .qpx。`;
+    summary.textContent = localResult.indexedDB
+      ? `已保存 ${records.length} 个新设计到本机，待手动同步。`
+      : "本机保存未完成，请逐个下载 .qpx 备份。";
     els.saveAsResults.appendChild(summary);
     records.forEach((record) => {
       const row = document.createElement("div");
@@ -14366,7 +14465,7 @@
     els.saveAsResults.classList.remove("hidden");
     els.saveAsCreateButton.disabled = false;
     els.saveAsCreateButton.classList.add("hidden");
-    setMessage(summary.textContent, !localResult.localStorage && remoteCount !== records.length);
+    setMessage(summary.textContent, !localResult.indexedDB);
   }
 
   async function saveCurrentProject() {
@@ -14410,26 +14509,11 @@
         payload
       }, previousProject);
       projects.unshift(nextProject);
-      const localResult = storeProjectsLocally(projects);
-      if (localResult.localStorage && savingRevision === draftRevision) { markSaved(); clearRecoveryDraft(); }
-      renderProjectList();
-      renderHomeProjects();
-      const remoteResult = await saveProjectToRemote(nextProject);
-      const remoteSaved = Boolean(remoteResult && remoteResult.ok && remoteResult.accepted !== false);
-      if (remoteSaved && attempt === saveAttempt) {
-        if (savingRevision === draftRevision) { markSaved(); clearRecoveryDraft(); }
-        renderProjectList();
-        renderHomeProjects();
-      }
-      if (attempt === saveAttempt) {
-        setMessage(remoteSaved
-          ? localResult.localStorage ? "已保存并同步到电脑创作空间。" : "已保存到电脑创作空间；本机浏览器缓存空间不足。"
-          : localResult.localStorage ? "已保存到当前设备，电脑同步尚未完成。"
-          : remoteResult && remoteResult.accepted === false
-            ? "电脑端已有更新版本，当前修改未写入；请点顶部“备份 .qpx”保留修改。"
-            : "保存未完成：本机空间不足且电脑同步服务不可用，请点顶部“备份 .qpx”。", !remoteSaved && !localResult.localStorage);
-      }
-      return Boolean(localResult.localStorage || remoteSaved);
+      await persistOfflineChanges([nextProject]);
+      if (attempt === saveAttempt && savingRevision === draftRevision) { markSaved(); clearRecoveryDraft(payload); }
+      renderProjectList(); renderHomeProjects();
+      if (attempt === saveAttempt) setMessage("已保存到本机，待同步；联网后点击“同步电脑文件”。", false);
+      return true;
     } catch (error) {
       console.error("Q像素工程保存失败", error);
       if (attempt === saveAttempt) setMessage("保存失败，请点顶部“备份 .qpx”保留当前修改。", true);
@@ -14469,21 +14553,16 @@
     showEditor();
   }
 
-  function deleteProject(id) {
-    const projects = getProjects();
-    const project = projects.find((item) => item.id === id);
-    if (project) {
-      const deletedAt = new Date().toISOString();
-      const tombstone = Object.assign({}, project, { deleted: true, deletedAt, updatedAt: deletedAt, savedAt: deletedAt });
-      setTrashProjects([tombstone, ...getTrashProjects().filter((item) => item.id !== id)]);
-      saveProjectToRemote(tombstone);
-    }
-    setProjects(projects.filter((item) => item.id !== id), { remote: false });
+  async function deleteProject(id) {
+    const project = getProjects().find((item) => item.id === id);
+    if (!project) return;
+    const deletedAt = new Date().toISOString();
+    const tombstone = Object.assign({}, project, { deleted: true, deletedAt, updatedAt: deletedAt, savedAt: deletedAt });
+    try { await persistOfflineChanges([tombstone]); }
+    catch (_) { setMessage("删除未能保存，作品已保留。", true); return; }
     if (state.beads.projectId === id) state.beads.projectId = null;
-    setMessage("已移入回收站，近 90 天内可恢复。", false);
-    closeProjectActionModal();
-    renderProjectList();
-    renderHomeProjects();
+    setMessage("已移入本机回收站，电脑删除待手动同步。", false);
+    closeProjectActionModal(); renderProjectList(); renderHomeProjects();
   }
 
   function renderProjectList() {
@@ -14518,7 +14597,7 @@
       card.querySelector(".project-title").textContent = project.title || "未命名";
       card.querySelector(".project-meta").innerHTML = "";
       card.querySelector(".project-meta").append(
-        document.createTextNode(`${project.width || "-"} x ${project.height || "-"} · ${formatShortDate(project.updatedAt || project.savedAt)}`)
+        document.createTextNode(`${project.width || "-"} x ${project.height || "-"} · ${formatShortDate(project.updatedAt || project.savedAt)} · ${project.hasPayload || project.payload ? project.pendingSync ? "本机已保存·待同步" : "可离线打开" : "尚未下载到本机"}`)
       );
       const badges = makeProjectBadges(project);
       if (badges) card.querySelector(".project-meta").appendChild(badges);
@@ -16328,6 +16407,10 @@
       locateNextBuildCellForTest: locateNextBuildCell,
       buildAiGenerationRequestForTest: buildAiGenerationRequest,
       applyAiImageDataUrlForTest: applyAiImageDataUrl,
+      getOfflineStoreForTest: () => offlineProjects,
+      flushOfflineWritesForTest: () => offlineWriteQueue,
+      syncOfflineForTest: () => syncProjectsFromRemoteThrottled({ manual: true }),
+      setOfflineWriteFailureForTest: (value) => offlineProjects.setWriteFailureForTest(value),
       setProjectStorageFailureForTest: (enabled) => {
         state.forceProjectStorageFailureForTest = Boolean(enabled);
         return state.forceProjectStorageFailureForTest;
@@ -16544,10 +16627,12 @@
     };
   }
 
-  function init() {
+  async function init() {
     bindElements();
     exposeTestHooks();
     if (!els.previewCanvas) return;
+    offlineReady = initializeOfflineProjects();
+    await offlineReady;
     restoreChromeCollapseState();
     loadInventory();
     applySavedWatermarkSettings();
@@ -16759,15 +16844,29 @@
   }
 
   function registerOfflineApp() {
-    if (!("serviceWorker" in navigator)) return;
+    const status = document.getElementById("offlineAvailability");
+    if (!("serviceWorker" in navigator) || !window.isSecureContext) {
+      if (status) status.textContent = "此入口暂不支持离线启动；可导出 .qpx 备份。";
+      return;
+    }
     if (!window.isSecureContext) {
       console.info("Q像素离线安装需要 HTTPS 或 localhost。");
       return;
     }
+    const updateStatus = async () => {
+      const cached = await caches.match(new URL("./index.html", location.href));
+      if (status && cached && navigator.serviceWorker.controller) status.textContent = "此入口可离线打开 · 已保存作品保存在本机";
+    };
+    navigator.serviceWorker.addEventListener("controllerchange", () => updateStatus().catch(() => {}));
     navigator.serviceWorker.register("./sw.js")
-      .then((registration) => registration.update())
+      .then(async (registration) => {
+        await registration.update().catch(() => {});
+        await navigator.serviceWorker.ready;
+        await updateStatus();
+      })
       .catch((error) => {
         console.warn("Q像素离线缓存注册失败", error);
+        if (status) status.textContent = "离线入口准备未完成；请联网重试，或导出 .qpx 备份。";
       });
   }
 
