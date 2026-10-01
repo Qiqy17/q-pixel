@@ -1,0 +1,66 @@
+[
+  {
+    "name": "Q像素-智能板-1790848768611.zip",
+    "sha256": "d59dd587d6daf4888d7919f0886b303f3190ec1e0aeeaee0b449cdc1bb7f2639",
+    "columns": 52,
+    "rows": 52,
+    "rotation": 0,
+    "mirror": false,
+    "boards": 1,
+    "files": 6,
+    "usage": [
+      {
+        "code": "E11",
+        "count": 1
+      }
+    ]
+  },
+  {
+    "name": "Q像素-智能板-1790848913451.zip",
+    "sha256": "b3ee1b1632c37010f88ee48b924b39368bef503ed05b0b7fb58ffc49dca6cb05",
+    "columns": 32,
+    "rows": 32,
+    "rotation": 90,
+    "mirror": true,
+    "boards": 4,
+    "files": 12,
+    "usage": [
+      {
+        "code": "E11",
+        "count": 1
+      }
+    ]
+  },
+  {
+    "name": "Q像素-智能板-1790848973912.zip",
+    "sha256": "a5101adaae71276d5cbc251cc926e50789e934de4cd721b74ea3916ed87fde14",
+    "columns": 32,
+    "rows": 32,
+    "rotation": 90,
+    "mirror": true,
+    "boards": 4,
+    "files": 12,
+    "usage": [
+      {
+        "code": "E11",
+        "count": 1
+      }
+    ]
+  },
+  {
+    "name": "Q像素-智能板-1790849403027.zip",
+    "sha256": "92490a1b37d6c8ac66594bded662f0b86f215d5442aeb95dd5807d8f7854883c",
+    "columns": 52,
+    "rows": 52,
+    "rotation": 0,
+    "mirror": false,
+    "boards": 1,
+    "files": 6,
+    "usage": [
+      {
+        "code": "E11",
+        "count": 1
+      }
+    ]
+  }
+]
