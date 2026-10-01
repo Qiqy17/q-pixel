@@ -43,3 +43,11 @@
 - 现有局域网接口没有原子 compare-and-swap。回读检查与冲突副本降低覆盖风险，但不能把该接口描述为已具备强一致并发写入能力。
 - 永久删除后保留不含正文的本机删除标记以防旧索引复活；失败队列不会假报电脑已删除。
 - 用户已说明尚无 Apple 开发者账户；当前没有可用的项目 CloudKit 配置，跨网络 iCloud 阶段不能据此标记完成。
+
+## 本机交付证据
+
+- 核心源码提交 `5024bde`，稳定 ID 与缓存版本修正提交 `e9330dd6c005bb75e81fee9159f3830495df0a09`。
+- 已打包并安装 `/Users/mac/Desktop/Q像素.app`，2.0.0 / build 59，构建时间为北京时间 2026-10-02 01:02:31；release-info.json 的 UTC 值为 2026-10-01T17:02:31Z。
+- 暂存包与安装后包均通过 verify_release.sh，含资源清单、源码比较、签名和 Swift 协议用例；app.js、offline-projects.js、auto-draft.js 的源码／安装资源 SHA256 分别一致。
+- 安装后电脑 `/api/health` 为 ok=true，局域网平板 `/pair` 返回 HTTP 200；这仅证明服务已更新并可访问。
+- 旧 App 已备份到 Documents/Q像素/app-backups。未公开发布，未做原生 App 界面或真实 iPad 验收。
