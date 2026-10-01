@@ -18,4 +18,9 @@
 
 ## 交付边界
 
-打包/安装记录将在验证完成后补充。未公开发布；真实智能板、真实iPad以及原生App界面操作尚未验收。
+- 已安装`/Users/mac/Desktop/Q像素.app`，版本2.0.0 / build60；源码提交`1e36fcf102ce1e7a44d53bb6bea4a6bdf662aa57`。构建时间UTC 2026-10-01T17:19:50Z，即北京时间2026-10-02 01:19:50。
+- 安装前未发现桌面QPixel运行进程；旧包已备份至`/Users/mac/Documents/Q像素/app-backups/Q像素-20261002-011957.app`。
+- 安装前及安装后`verify_release.sh`均通过（资源、签名和Swift协议测试）。源码与安装包的smart-board-ui.js SHA256相同：`ac4e15ad1d4d2d705df24e5a95cac4330f2bf9be3605e0b371cae5b1c7087fa9`。
+- 01:20电脑服务`/api/health`返回ok=true、projectsOk=true、settingsOk=true。
+
+未公开发布；真实智能板、真实iPad以及原生App界面操作尚未验收。
