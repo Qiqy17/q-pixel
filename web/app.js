@@ -12503,11 +12503,13 @@
   function makeProjectPayload() {
     if (!state.beads.pattern) return null;
     syncCompositePattern();
+    // Draft, manual save and backup must share the new作品's identity.
+    if (!state.beads.projectId) state.beads.projectId = makeId();
     return {
       version: 2,
       app: "Q像素",
       type: "bead-pattern",
-      id: state.beads.projectId || makeId(),
+      id: state.beads.projectId,
       title: state.beads.projectTitle || "未命名",
       createdAt: state.beads.projectCreatedAt || new Date().toISOString(),
       sourceLabel: state.beads.sourceLabel || state.beads.pattern.sourceLabel || "",

@@ -1,5 +1,5 @@
 importScripts("./studio/scene-material-library.js");
-const CACHE_NAME = "q-pixel-v20261001-offline-projects-58";
+const CACHE_NAME = "q-pixel-v20261002-offline-projects-59";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -26,7 +26,7 @@ const APP_SHELL = [
   "./make/smart-board-ui.js",
   "./make/build-navigation.js",
   "./studio/studio.css",
-  "./studio/studio.css?v=20261001-offline-projects-58",
+  "./studio/studio.css?v=20261002-offline-projects-59",
   "./studio/background-engine.js",
   "./studio/background-tool.js",
   "./studio/surface-engine.js",
@@ -60,7 +60,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20261001-offline-projects-58",
+  "./app.js?v=20261002-offline-projects-59",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"
