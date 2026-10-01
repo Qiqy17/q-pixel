@@ -27,6 +27,7 @@
   const paletteRegistryModule = window.QPixelPaletteRegistry || null;
   const inventoryEngineModule = window.QPixelInventoryEngine || null;
   const boardPlannerModule = window.QPixelBoardPlanner || null;
+  let smartBoardUI = null;
   const buildNavigationModule = window.QPixelBuildNavigation || null;
   const surfaceEngine = window.QPixelSurfaceEngine || null;
   const sceneCatalog = window.QPixelSceneCatalog || null;
@@ -10144,6 +10145,7 @@
       return;
     }
     els.exportPreviewModal.classList.remove("hidden");
+    if (document.getElementById("smartBoardPanel")?.open) smartBoardUI?.refresh();
     state.beads.exportPreviewAutoFit = true;
     requestAnimationFrame(() => {
       if (els.exportPreviewModal.classList.contains("hidden")) return;
@@ -16727,6 +16729,11 @@
         if (!backgroundTool.open()) setMessage("请先创建或导入图纸。", true);
       });
     }
+    smartBoardUI = window.QPixelSmartBoardUI?.create({
+      host: document.getElementById("smartBoardPanel"),
+      getPattern: () => { getMaterialPattern(); syncCompositePattern(); return state.beads.pattern; },
+      palette: beadPalette, makeZip: makeZipBlob, saveFile: saveBlobFile
+    });
     renderInventoryPanel();
     populateBoardSpecSelect();
     professionalWorkspaceReady = initializeProfessionalWorkspace();

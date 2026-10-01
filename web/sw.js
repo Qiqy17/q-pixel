@@ -1,5 +1,5 @@
 importScripts("./studio/scene-material-library.js");
-const CACHE_NAME = "q-pixel-v20260929-layer-order-55";
+const CACHE_NAME = "q-pixel-v20261001-smart-board-56-final";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -19,9 +19,13 @@ const APP_SHELL = [
   "./color/palette-registry.js",
   "./color/inventory-engine.js",
   "./make/board-planner.js",
+  "./make/smart-board-export.js",
+  "./make/pixdot-protocol.js",
+  "./make/smart-board-package.js",
+  "./make/smart-board-ui.js",
   "./make/build-navigation.js",
   "./studio/studio.css",
-  "./studio/studio.css?v=20260929-layer-order-55",
+  "./studio/studio.css?v=20261001-smart-board-56-final",
   "./studio/background-engine.js",
   "./studio/background-tool.js",
   "./studio/surface-engine.js",
@@ -55,7 +59,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20260929-layer-order-55",
+  "./app.js?v=20261001-smart-board-56-final",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"

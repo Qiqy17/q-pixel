@@ -318,3 +318,19 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   }
   .professional-workspace .side-collapse-button::after { content:" 返回画布"; }
 }
+
+.smart-board-panel { padding: 12px 0; border-top: 1px solid #ddd; }
+.smart-board-panel summary { cursor: pointer; font-weight: 700; }
+.smart-board-panel label { display: block; margin: 8px 0; }
+.smart-board-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.smart-board-row > label { flex: 1; min-width: 85px; }
+.smart-board-panel input[type="number"], .smart-board-panel select { width: 100%; max-width: 100%; min-width: 0; }
+.smart-board-panel button { margin: 4px 0; white-space: normal; }
+.smart-board-panel canvas { max-width: 100%; height: auto; image-rendering: pixelated; display: block; margin: 8px 0; }
+.smart-board-panel p { overflow-wrap: anywhere; }
+.smart-board-panel [hidden] { display: none !important; }
+
+.export-preview-side .smart-board-panel[open] { max-height: 65vh; overflow-y: auto; padding: 12px; border: 1px solid #ddd; border-radius: 12px; }
+.smart-board-panel button { min-height: 40px; padding: 8px 12px; border: 1px solid #c9d8d2; border-radius: 8px; background: #f2f8f5; color: #174e43; cursor: pointer; }
+.smart-board-panel button:disabled { opacity: .5; cursor: default; }
+.smart-board-panel input[type="number"], .smart-board-panel select { min-height: 36px; border: 1px solid #c9d8d2; border-radius: 6px; padding: 4px; background: #fff; }

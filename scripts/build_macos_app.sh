@@ -28,7 +28,7 @@ cp "$REPO_DIR/macos/Info.plist" "$CONTENTS_DIR/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$CONTENTS_DIR/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$CONTENTS_DIR/Info.plist"
 
-swiftc "$REPO_DIR/macos/QPixel.swift" -o "$MACOS_DIR/QPixel" -framework AppKit -framework WebKit
+swiftc "$REPO_DIR/macos/QPixel.swift" "$REPO_DIR/macos/SmartBoardController.swift" "$REPO_DIR/macos/SmartBoardProtocol.swift" -o "$MACOS_DIR/QPixel" -framework AppKit -framework WebKit -framework CoreBluetooth
 
 for file in index.html styles.css feature-flags.js module-loader.js import-engine.js import-processing.js import-worker.js app.js manifest.webmanifest icon.svg offline.html sw.js; do
   cp "$REPO_DIR/web/$file" "$RESOURCES_DIR/$file"

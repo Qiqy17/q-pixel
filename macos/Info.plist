@@ -16,6 +16,8 @@
   <key>NSAppTransportSecurity</key>
   <dict><key>NSAllowsArbitraryLoads</key><true/></dict>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSBluetoothAlwaysUsageDescription</key><string>经你选择连接智能拼豆板，发送图纸预览与颜色引导。</string>
+  <key>NSBluetoothPeripheralUsageDescription</key><string>用于连接你选择的智能拼豆板。</string>
   <key>NSLocalNetworkUsageDescription</key><string>用于在本机和平板之间同步 Q像素 设计文件。</string>
 </dict>
 </plist>

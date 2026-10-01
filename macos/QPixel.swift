@@ -5,12 +5,18 @@ import UniformTypeIdentifiers
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     private var window: NSWindow!
     private var webView: WKWebView!
+    private let smartBoard = SmartBoardController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let configuration = WKWebViewConfiguration()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         configuration.userContentController.add(self, name: "exportPng")
         configuration.userContentController.add(self, name: "exportFile")
+        configuration.userContentController.add(self, name: "smartBoard")
+        smartBoard.emit = { [weak self] event in
+            guard let data = try? JSONSerialization.data(withJSONObject: event), let json = String(data: data, encoding: .utf8) else { return }
+            self?.webView.evaluateJavaScript("window.QPixelSmartBoardNative && window.QPixelSmartBoardNative(\(json))")
+        }
 
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
@@ -49,6 +55,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "smartBoard" {
+            let url = message.frameInfo.request.url
+            let local = url?.isFileURL == true || (url?.scheme == "http" && url?.host == "127.0.0.1" && url?.port == 8766)
+            guard message.frameInfo.isMainFrame, local, let body = message.body as? [String: Any] else { return }
+            smartBoard.handle(body); return
+        }
         guard let body = message.body as? [String: Any],
               let dataUrl = body["dataUrl"] as? String,
               let fileName = body["fileName"] as? String else {
@@ -182,8 +194,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 }
 
-let app = NSApplication.shared
-let delegate = AppDelegate()
-app.delegate = delegate
-app.setActivationPolicy(.regular)
-app.run()
+@main
+struct QPixelApplication {
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.setActivationPolicy(.regular)
+        app.run()
+    }
+}

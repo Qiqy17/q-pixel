@@ -12,7 +12,7 @@
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.svg">
   <link rel="stylesheet" href="./styles.css?v=20260928-save-as-45">
-  <link rel="stylesheet" href="./studio/studio.css?v=20260929-layer-order-55">
+  <link rel="stylesheet" href="./studio/studio.css?v=20261001-smart-board-56-final">
 </head>
 <body>
   <main class="app-shell is-home">
@@ -997,6 +997,7 @@
             <div class="tile-preview-selection-head"><strong>选择预览画布</strong><button id="tileSelectAllButton" type="button">全选</button></div>
             <div id="tileRegionChecklist" class="tile-region-checklist" role="group" aria-label="选择要预览和导出的画布"></div>
           </div>
+          <details id="smartBoardPanel" class="smart-board-panel"></details>
           <div class="export-settings">
             <h3>图纸显示</h3>
             <label class="switch-row"><span><strong>显示网格</strong><em>在导出图纸中显示细网格</em></span><input id="exportGridToggle" type="checkbox" checked></label>
@@ -1580,6 +1581,10 @@
   <script src="./color/palette-registry.js"></script>
   <script src="./color/inventory-engine.js"></script>
   <script src="./make/board-planner.js"></script>
+  <script src="./make/smart-board-export.js"></script>
+  <script src="./make/pixdot-protocol.js"></script>
+  <script src="./make/smart-board-package.js"></script>
+  <script src="./make/smart-board-ui.js"></script>
   <script src="./make/build-navigation.js"></script>
   <script src="./studio/background-engine.js"></script>
   <script src="./studio/background-tool.js"></script>
@@ -1592,6 +1597,6 @@
   <script src="./3d/finish-workbench.js?v=20260929-h1-3d-opacity-54"></script>
   <script src="./import-engine.js"></script>
   <script src="./import-processing.js"></script>
-  <script src="./app.js?v=20260929-layer-order-55"></script>
+  <script src="./app.js?v=20261001-smart-board-56-final"></script>
 </body>
 </html>

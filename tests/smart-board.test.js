@@ -1,0 +1,46 @@
+"use strict";
+const assert = require("node:assert/strict");
+const board = require("../web/make/smart-board-export.js");
+const protocol = require("../web/make/pixdot-protocol.js");
+const palette = ["A", "B", "C", "D", "H1", "H7"].map((code, i) => ({ code, rgb: { r: i, g: i + 20, b: i + 40 }, hex: "#111111" }));
+const source = { width: 3, height: 2, cells: [["A", "B", "C"], ["D", "H1", null]] };
+const before = JSON.stringify(source);
+const rotated = board.plan(source, palette, { columns: 2, rows: 2, rotation: 90 });
+assert.deepEqual(rotated.cells, [["D", "A"], ["H1", "B"], [null, "C"]]);
+assert.deepEqual(rotated.boards.map((b) => [b.x, b.y, b.validColumns, b.validRows]), [[0, 0, 2, 2], [0, 2, 2, 1]]);
+assert.equal(board.codeAt(rotated, rotated.boards[1], 1, 1), null);
+assert.deepEqual(board.plan(source, palette, { mirror: true, rotation: 90 }).cells, [[null, "C"], ["H1", "B"], ["D", "A"]]);
+for (const rotation of [0, 90, 180, 270]) for (const mirror of [true, false]) {
+  const plan = board.plan(source, palette, { columns: 2, rows: 2, rotation, mirror });
+  assert.equal(plan.usage.reduce((sum, c) => sum + c.count, 0), 5);
+  assert.equal(plan.boards.flatMap((b) => b.usage).reduce((sum, c) => sum + c.count, 0), 5);
+  assert.equal(new Set(plan.cells.flat().filter((c) => c !== null)).size, 5);
+}
+assert.equal(JSON.stringify(source), before);
+const h1 = board.rgba(rotated, rotated.boards[0]);
+assert.equal(h1[2 * 4 + 3], 255, "H1是透明豆色号，不是空格");
+assert.equal(board.rgba(rotated, rotated.boards[1])[3], 0, "null保持空格");
+assert.throws(() => board.plan({ width: 1, height: 1, cells: [["missing"]] }, palette), /missing/);
+assert.throws(() => board.plan({ width: 501, height: 1, cells: [[]] }, palette), /500/);
+assert.throws(() => board.plan(source, palette, { columns: 1.5 }), /整数/);
+assert.throws(() => board.plan(source, palette, { columns: 0 }), /整数/);
+assert.throws(() => board.plan({ width: 500, height: 500, cells: [[]] }, palette, { columns: 1, rows: 1 }), /2000/);
+assert.ok(board.csv(rotated).startsWith("\uFEFF"));
+assert.ok(board.csv(rotated).includes('"H1"'));
+// Published conformance vectors; https://github.com/oxyroid/pixdot-protocol/tree/ad5c6643
+const hex = (bytes) => Buffer.from(bytes).toString("hex");
+assert.equal(hex(protocol.brightness(50)), "0500048032");
+assert.equal(hex(protocol.rotation(1)), "0500068001");
+assert.equal(hex(protocol.imageFrames(Uint8Array.of(0x11, 0x22, 0x33), 32, true)[0]), "1200020000030000006337c7fa0001112233");
+assert.equal(protocol.crc32(Buffer.from("123456789")), 0xcbf43926);
+assert.deepEqual(protocol.notification(Buffer.from("0500020001", "hex")), { kind: "image", complete: false });
+assert.deepEqual(protocol.notification(Buffer.from("080001800300002a", "hex")), { kind: "board", size: 104, light: 42 });
+assert.equal(protocol.notification(Uint8Array.of(5, 0, 2, 0)), null);
+const frames = protocol.imageFrames(new Uint8Array(104 * 104 * 3).fill(127), 104);
+assert.equal(frames.length, 8);
+assert.equal(frames[0][4], 0); assert.equal(frames[1][4], 2);
+assert.equal(frames[0][14], 101, "默认只预览，不写入设备存储");
+assert.equal(frames.reduce((sum, f) => sum + f.length - 15, 0), 32448);
+assert.throws(() => protocol.imageFrames(new Uint8Array(10), 104), /尺寸/);
+assert.throws(() => protocol.imageFrames(new Uint8Array(10), 64), /尺寸/);
+console.log("smart-board: 变换、色号守恒、补空格、CSV、公开协议向量及分帧通过");
