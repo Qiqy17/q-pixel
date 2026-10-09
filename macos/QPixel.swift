@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         configuration.userContentController.add(self, name: "exportPng")
         configuration.userContentController.add(self, name: "exportFile")
         configuration.userContentController.add(self, name: "smartBoard")
+        configuration.userContentController.add(self, name: "openAdmin")
         smartBoard.emit = { [weak self] event in
             guard let data = try? JSONSerialization.data(withJSONObject: event), let json = String(data: data, encoding: .utf8) else { return }
             self?.webView.evaluateJavaScript("window.QPixelSmartBoardNative && window.QPixelSmartBoardNative(\(json))")
@@ -85,6 +86,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "openAdmin" {
+            let url = message.frameInfo.request.url
+            let local = url?.isFileURL == true || (url?.scheme == "http" && url?.host == "127.0.0.1" && url?.port == 8766)
+            if message.frameInfo.isMainFrame && local, let admin = URL(string: "http://127.0.0.1:8766/admin") {
+                NSWorkspace.shared.open(admin)
+            }
+            return
+        }
         if message.name == "smartBoard" {
             let url = message.frameInfo.request.url
             let local = url?.isFileURL == true || (url?.scheme == "http" && url?.host == "127.0.0.1" && url?.port == 8766)

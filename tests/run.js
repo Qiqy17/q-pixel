@@ -12,4 +12,6 @@ for (const file of files) {
 }
 const python = spawnSync("python3", [path.join(__dirname, "local-server-security.test.py")], { stdio: "inherit" });
 if (python.status !== 0) process.exit(python.status || 1);
+const admin = spawnSync("python3", [path.join(__dirname, "admin-management.test.py")], { stdio: "inherit" });
+if (admin.status !== 0) process.exit(admin.status || 1);
 console.log(`${files.length} 个测试文件通过`);

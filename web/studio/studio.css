@@ -359,3 +359,4 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .project-library-dialog input { min-width: 22px; min-height: 22px; }
 .project-library-dialog button { min-height: 44px; }
 .project-library-dialog [data-role="library-status"] { color: #b42318; }
+@media(max-width:650px) { .home-header-actions #homeAdminButton:not([hidden]) { display:inline-flex; } }

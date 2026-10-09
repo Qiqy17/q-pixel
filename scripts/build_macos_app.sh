@@ -30,7 +30,7 @@ cp "$REPO_DIR/macos/Info.plist" "$CONTENTS_DIR/Info.plist"
 
 swiftc "$REPO_DIR/macos/QPixel.swift" "$REPO_DIR/macos/SmartBoardController.swift" "$REPO_DIR/macos/SmartBoardProtocol.swift" -o "$MACOS_DIR/QPixel" -framework AppKit -framework WebKit -framework CoreBluetooth
 
-for file in index.html styles.css feature-flags.js module-loader.js import-engine.js import-processing.js import-worker.js app.js manifest.webmanifest icon.svg offline.html sw.js; do
+for file in admin.html admin.js index.html styles.css feature-flags.js module-loader.js import-engine.js import-processing.js import-worker.js app.js manifest.webmanifest icon.svg offline.html sw.js; do
   cp "$REPO_DIR/web/$file" "$RESOURCES_DIR/$file"
 done
 mkdir -p "$RESOURCES_DIR/core"
@@ -62,6 +62,7 @@ done
 mkdir -p "$RESOURCES_DIR/assets"
 cp -R "$REPO_DIR/web/assets/materials" "$RESOURCES_DIR/assets/materials"
 cp "$REPO_DIR/scripts/qpixel_ipad_https_server.py" "$RESOURCES_DIR/qpixel_ipad_https_server.py"
+cp "$REPO_DIR/scripts/qpixel_admin.py" "$RESOURCES_DIR/qpixel_admin.py"
 cp "$REPO_DIR/scripts/qpixel_openai.py" "$RESOURCES_DIR/qpixel_openai.py"
 cp "$REPO_DIR/scripts/run_ipad_server.sh" "$RESOURCES_DIR/run_ipad_server.sh"
 cp "$REPO_DIR/scripts/配置HuggingFace令牌.command" "$RESOURCES_DIR/配置HuggingFace令牌.command"

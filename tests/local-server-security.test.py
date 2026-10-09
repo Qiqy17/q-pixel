@@ -81,12 +81,43 @@ class LocalServerSecurityTest(unittest.TestCase):
             time.sleep(0.1)
         self.fail(f"server did not start: {port}")
 
+    def test_admin_is_local_readonly_and_not_proxied(self):
+        fixture = Path(self.temp.name) / "backups"
+        fixture.mkdir(exist_ok=True)
+        backup = fixture / "qpixel-projects-20261009-120000.json"
+        backup.write_text('[{"id":"qa","name":"测试备份"}]')
+        (fixture / "qpixel-projects-20261009-120001.json").symlink_to(backup)
+        before = {str(p): p.read_bytes() for p in Path(self.temp.name).rglob('*') if p.is_file()}
+        for path in ("/admin", "/admin.html", "/admin.js", "/api/admin/dashboard", "/%61dmin.html", "/x/../admin.js"):
+            status, headers, _ = self.request(False, self.local_port, "GET", path)
+            self.assertEqual(status, 200, path)
+            self.assertEqual(headers['Cache-Control'], 'no-store')
+            status, _, _ = self.request(True, self.paired_port, "GET", path)
+            self.assertEqual(status, 403, path)
+        _, headers, _ = self.request(True, self.paired_port, "POST", "/pair", urlencode({"code": self.pairing_code}), {"Content-Type": "application/x-www-form-urlencoded"})
+        cookie = headers['Set-Cookie'].split(';', 1)[0]
+        status, _, _ = self.request(True, self.paired_port, "GET", "/api/admin/dashboard", headers={"Cookie": cookie})
+        self.assertEqual(status, 403)
+        for method in ('POST', 'DELETE', 'HEAD'):
+            status, _, _ = self.request(False, self.local_port, method, '/api/admin/dashboard')
+            self.assertEqual(status, 405)
+        for headers in ({'Host':'evil.example'}, {'Origin':'https://evil.example'}):
+            status, _, _ = self.request(False, self.local_port, 'GET', '/admin', headers=headers)
+            self.assertEqual(status, 403)
+        status, _, body = self.request(False, self.local_port, 'GET', '/api/admin/backups/'+backup.name)
+        self.assertEqual(status, 200); self.assertEqual(body, backup.read_bytes())
+        status, _, _ = self.request(False, self.local_port, 'GET', '/api/admin/backups/qpixel-projects-20261009-120001.json')
+        self.assertEqual(status, 404)
+        after = {str(p): p.read_bytes() for p in Path(self.temp.name).rglob('*') if p.is_file()}
+        # Pairing changes are expected; admin reads do not alter project or backup data.
+        for name, content in before.items(): self.assertEqual(after[name], content)
+
     def test_release_endpoint_is_paired_and_same_revision(self):
         status, headers, body = self.request(False, self.local_port, "GET", "/api/release")
         self.assertEqual(status, 200)
         self.assertEqual(headers["Cache-Control"], "no-store")
         revision = json.loads(body)["interfaceRevision"]
-        self.assertEqual(revision, "20261009-reliability-62")
+        self.assertEqual(revision, "20261009-reliability-admin-63")
         status, _, _ = self.request(True, self.paired_port, "GET", "/api/release")
         self.assertEqual(status, 401)
         _, headers, _ = self.request(True, self.paired_port, "POST", "/pair", urlencode({"code": self.pairing_code}), {"Content-Type": "application/x-www-form-urlencoded"})

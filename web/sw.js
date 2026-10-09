@@ -1,5 +1,5 @@
 importScripts("./studio/scene-material-library.js");
-const CACHE_NAME = "q-pixel-v20261009-reliability-62";
+const CACHE_NAME = "q-pixel-v20261009-reliability-admin-63";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -28,7 +28,7 @@ const APP_SHELL = [
   "./make/smart-board-ui.js",
   "./make/build-navigation.js",
   "./studio/studio.css",
-  "./studio/studio.css?v=20261009-reliability-62",
+  "./studio/studio.css?v=20261009-reliability-admin-63",
   "./studio/background-engine.js",
   "./studio/background-tool.js",
   "./studio/surface-engine.js",
@@ -62,7 +62,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20261009-reliability-62",
+  "./app.js?v=20261009-reliability-admin-63",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"
@@ -88,7 +88,7 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
   const url = new URL(request.url);
-  if (url.pathname.startsWith("/api/")) return;
+  if (url.pathname.startsWith("/api/") || /^\/admin(?:\.|\/|$)/.test(url.pathname)) return;
   event.respondWith(
     fetch(request)
       .then((response) => {

@@ -14991,6 +14991,15 @@
     document.getElementById("migrationImportButton")?.addEventListener("click", () => els.projectFileInput.click());
     const address = document.getElementById("currentEntryAddress");
     if (address) address.textContent = location.protocol === "file:" ? "当前入口：电脑 App 内置离线界面" : `当前入口：${location.origin}${location.pathname}`;
+    const adminButton = document.getElementById("homeAdminButton");
+    if (adminButton && /^(127\.0\.0\.1|localhost|\[::1\])$/.test(location.hostname)) {
+      fetch("./api/admin/status", { cache: "no-store" }).then(r => { if (r.ok) adminButton.hidden = false; }).catch(() => {});
+      adminButton.addEventListener("click", () => {
+        const bridge = window.webkit?.messageHandlers?.openAdmin;
+        if (bridge) bridge.postMessage({});
+        else window.open("./admin", "_blank", "noopener");
+      });
+    }
     checkInterfaceRelease();
     document.addEventListener("visibilitychange", () => { if (!document.hidden) checkInterfaceRelease(); });
     window.addEventListener("online", checkInterfaceRelease);

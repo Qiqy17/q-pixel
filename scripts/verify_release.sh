@@ -11,7 +11,8 @@ VERIFY_APP="$VERIFY_DIR/Q像素.app"
 test -d "$APP_DIR"
 plutil -lint "$APP_DIR/Contents/Info.plist" >/dev/null
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP_DIR/Contents/Info.plist")" = "local.qpixel.app"
-python3 -c 'import ast, pathlib, sys; [ast.parse(pathlib.Path(path).read_text(encoding="utf-8"), filename=path) for path in sys.argv[1:]]' "$RESOURCES_DIR/qpixel_ipad_https_server.py" "$RESOURCES_DIR/qpixel_openai.py"
+python3 -c 'import ast, pathlib, sys; [ast.parse(pathlib.Path(path).read_text(encoding="utf-8"), filename=path) for path in sys.argv[1:]]' "$RESOURCES_DIR/qpixel_ipad_https_server.py" "$RESOURCES_DIR/qpixel_openai.py" "$RESOURCES_DIR/qpixel_admin.py"
+node --check "$RESOURCES_DIR/admin.js"
 node --check "$RESOURCES_DIR/app.js"
 node --check "$RESOURCES_DIR/feature-flags.js"
 node --check "$RESOURCES_DIR/module-loader.js"
@@ -66,7 +67,7 @@ node "$REPO_DIR/tests/surface-engine.test.js"
 node "$REPO_DIR/tests/scene-catalog.test.js"
 node "$REPO_DIR/tests/layer-order.test.js"
 
-for file in index.html styles.css feature-flags.js module-loader.js import-engine.js import-processing.js import-worker.js app.js manifest.webmanifest icon.svg offline.html sw.js qpixel_ipad_https_server.py qpixel_openai.py OPENAI_SETUP.md; do
+for file in admin.html admin.js qpixel_admin.py index.html styles.css feature-flags.js module-loader.js import-engine.js import-processing.js import-worker.js app.js manifest.webmanifest icon.svg offline.html sw.js qpixel_ipad_https_server.py qpixel_openai.py OPENAI_SETUP.md; do
   case "$file" in
     qpixel_*.py) source_file="$REPO_DIR/scripts/$file" ;;
     OPENAI_SETUP.md) source_file="$REPO_DIR/docs/$file" ;;

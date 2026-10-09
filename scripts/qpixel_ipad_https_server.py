@@ -23,6 +23,8 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import parse_qs, unquote, urlparse
 
+from qpixel_admin import is_admin_path, admin_allowed, handle_admin_get
+
 from qpixel_openai import OpenAIConfigError, OpenAIRequestError, find_latest_download_image, generate_image, get_provider_status
 
 
@@ -95,6 +97,11 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
 
     def end_headers(self):
         path = urlparse(self.path).path
+        if is_admin_path(self.path):
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'; object-src 'none'; base-uri 'none'")
         host = self.headers.get("Host", "")
         origin = self.headers.get("Origin")
         if self.server.pairing_code and host in self.server.allowed_hosts and (not origin or origin == f"{self.server.scheme}://{host}") and self.paired():
@@ -116,7 +123,7 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
                             break
         if path.startswith("/api/projects/") and path.endswith("/thumbnail"):
             self.send_header("Cache-Control", "private, max-age=31536000, immutable")
-        elif path.startswith("/api/"):
+        elif path.startswith("/api/") or is_admin_path(self.path):
             self.send_header("Cache-Control", "no-store")
         else:
             self.send_header("Cache-Control", "no-cache")
@@ -157,6 +164,13 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
                        for device in read_paired_devices())
 
     def gate(self):
+        if is_admin_path(self.path):
+            if not admin_allowed(self):
+                self.send_error(403, "Management is available on this computer only")
+                return False
+            if self.command not in ("GET",):
+                self.send_error(405, "Read-only management")
+                return False
         if not self.check_request_origin():
             return False
         if not self.server.pairing_code or self.paired():
@@ -244,8 +258,16 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
             return None
         return length
 
+    def do_HEAD(self):
+        if not self.gate(): return
+        if is_admin_path(self.path):
+            self.send_error(405); return
+        super().do_HEAD()
+
     def do_GET(self):
         if not self.gate():
+            return
+        if handle_admin_get(self, ROOT, DATA_DIR, BACKUP_DIR):
             return
         path = urlparse(self.path).path
         if path == "/pair" and self.server.pairing_code:
