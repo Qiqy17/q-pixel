@@ -4,6 +4,7 @@
   if (root) root.QPixelOfflineProjects = api;
 })(typeof window !== "undefined" ? window : globalThis, function () {
   "use strict";
+  const mutationId = () => globalThis.crypto?.randomUUID?.() || `mutation-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const clone = (value) => value == null ? value : JSON.parse(JSON.stringify(value));
   function indexOf(record) {
     const { payload, history, ...index } = record;
@@ -12,7 +13,7 @@
 
   function fingerprint(record, payloadFingerprint) {
     return JSON.stringify([record.deleted || false, record.title || "", record.folderId || "",
-      record.payload ? payloadFingerprint(record.payload) : record.syncFingerprint || ""]);
+      record.payload ? payloadFingerprint(record.payload) : record.syncFingerprint || "", record.history || []]);
   }
 
   function decide(local, remote, baseline, hash) {
@@ -94,13 +95,13 @@
             copy.localRevision = 1;
             projects.put(copy, copy.id);
             tx.objectStore("projectIndex").put(indexRecord(copy), copy.id);
-            outbox.put({ id: copy.id, revision: 1 }, copy.id);
+            outbox.put({ id: copy.id, revision: 1, mutationId: mutationId() }, copy.id);
             copies.push(copy);
           }
           incoming.localRevision = (old?.localRevision || 0) + 1;
           projects.put(incoming, incoming.id);
           tx.objectStore("projectIndex").put(indexRecord(incoming), incoming.id);
-          outbox.put({ id: incoming.id, revision: incoming.localRevision }, incoming.id);
+          outbox.put({ id: incoming.id, revision: incoming.localRevision, mutationId: mutationId() }, incoming.id);
           done({ record: incoming, copies });
         });
       });
@@ -117,7 +118,7 @@
           const next = Object.assign({}, old || {}, clone(record), { localRevision: (old?.localRevision || 0) + 1 });
           projects.put(next, next.id);
           tx.objectStore("projectIndex").put(indexRecord(next), next.id);
-          if (next.payload || next.deleted) tx.objectStore("syncState").put({ fingerprint: hash(next) }, next.id);
+          if (next.payload || next.deleted) tx.objectStore("syncState").put({ fingerprint: hash(next), serverRevision: next.serverRevision || null }, next.id);
           done(next);
         });
         oldRequest.onsuccess = () => { old = oldRequest.result; apply(); };
@@ -133,20 +134,24 @@
           projects.put(next, next.id);
           tx.objectStore("projectIndex").put(indexRecord(next), next.id);
           const knownSynced = next.payload && next.remoteSyncFingerprint === options.payloadFingerprint(next.payload);
-          if (knownSynced) tx.objectStore("syncState").put({ fingerprint: hash(next) }, next.id);
-          else if (next.payload || next.deleted) tx.objectStore("outbox").put({ id: next.id, revision: 1 }, next.id);
+          if (knownSynced) tx.objectStore("syncState").put({ fingerprint: hash(next), serverRevision: next.serverRevision || null }, next.id);
+          else if (next.payload || next.deleted) tx.objectStore("outbox").put({ id: next.id, revision: 1, mutationId: mutationId() }, next.id);
           done(next);
         });
       });
     }
     function acknowledge(id, revision, remote) {
-      return transaction(["projects", "outbox", "syncState"], "readwrite", (tx, done, run) => {
+      return transaction(["projects", "projectIndex", "outbox", "syncState"], "readwrite", (tx, done, run) => {
         const projects = tx.objectStore("projects"), outbox = tx.objectStore("outbox");
         const request = projects.get(id);
         request.onsuccess = () => run(() => {
-          tx.objectStore("syncState").put({ fingerprint: hash(remote) }, id);
+          tx.objectStore("syncState").put({ fingerprint: hash(remote), serverRevision: remote.serverRevision || null }, id);
           const current = request.result;
           if (current?.localRevision === revision && hash(current) === hash(remote)) {
+            current.serverRevision = remote.serverRevision || null;
+            current.lastSyncedAt = new Date().toISOString();
+            projects.put(current, id);
+            tx.objectStore("projectIndex").put(indexRecord(current), id);
             outbox.delete(id);
             done(true);
           } else done(false);
@@ -157,7 +162,7 @@
       return transaction(["projects", "projectIndex", "outbox", "syncState"], "readwrite", (tx, done, run) => {
         const projects = tx.objectStore("projects"), request = projects.get(id);
         request.onsuccess = () => run(() => {
-          tx.objectStore("syncState").put({ fingerprint: hash(remote) }, id);
+          tx.objectStore("syncState").put({ fingerprint: hash(remote), serverRevision: remote.serverRevision || null }, id);
           if (request.result?.localRevision !== revision) { done(false); return; }
           const next = Object.assign({}, clone(remote), { localRevision: revision + 1 });
           projects.put(next, id);
@@ -167,8 +172,43 @@
         });
       });
     }
-    return Object.freeze({ hash, save, receive, seed, acknowledge, resolveConflict,
-      list: () => read("projectIndex"), get: (id) => read("projects", id), pending: () => read("outbox"),
+    function snapshot() {
+      return transaction(["projects", "projectIndex", "outbox"], "readonly", (tx, done) => {
+        const result = {}; let remaining = 3;
+        for (const name of ["projects", "projectIndex", "outbox"]) {
+          const request = tx.objectStore(name).getAll();
+          request.onsuccess = () => { result[name] = request.result; if (!--remaining) done(result); };
+        }
+      });
+    }
+    function importBatch(records, report, expectedSnapshot) {
+      return transaction(["projects", "projectIndex", "outbox", "syncState"], "readwrite", (tx, done, run) => {
+        const projects = tx.objectStore("projects"), request = projects.getAll();
+        request.onsuccess = () => run(() => {
+          if (JSON.stringify(request.result) !== expectedSnapshot) throw new Error("作品库在预览后发生变化，请重新检查导入。");
+          for (const record of records) {
+            if (!record.payload || !record.id) throw new Error("迁移作品正文不完整");
+            const next = Object.assign({}, clone(record), { localRevision: 1 });
+            projects.put(next, next.id);
+            tx.objectStore("projectIndex").put(indexRecord(next), next.id);
+            if (!next.deleted) tx.objectStore("outbox").put({ id: next.id, revision: 1, mutationId: mutationId() }, next.id);
+          }
+          tx.objectStore("syncState").put(clone(report), "__migration_report__");
+          done({ imported: records.length });
+        });
+      });
+    }
+    async function pendingEntries() {
+      // Upgrade legacy queue entries once; retries must reuse the same identity.
+      return transaction(["outbox"], "readwrite", (tx, done) => {
+        const store = tx.objectStore("outbox"), request = store.getAll();
+        request.onsuccess = () => { for (const entry of request.result) if (!entry.mutationId) { entry.mutationId = mutationId(); store.put(entry, entry.id); } done(request.result); };
+      });
+    }
+    return Object.freeze({ hash, save, receive, seed, acknowledge, resolveConflict, snapshot, importBatch,
+      list: () => read("projectIndex"), get: (id) => read("projects", id), pending: pendingEntries,
+      syncState: (id) => read("syncState", id),
+      migrationReport: () => read("syncState", "__migration_report__"),
       baseline: async (id) => (await read("syncState", id))?.fingerprint || "",
       setWriteFailureForTest: (value) => { failWrites = Boolean(value); }
     });

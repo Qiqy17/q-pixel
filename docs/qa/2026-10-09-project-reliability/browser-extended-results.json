@@ -1,0 +1,27 @@
+{
+  "passed": 21,
+  "reloadId": "qa-large-500-d75ad886-a7c1-4e15-8e12-62ada4a30d8f",
+  "results": [
+    "prepare editable canvas",
+    "mutation identity survives repeated queue reads",
+    "stale import preview is rejected",
+    "stale import creates no partial record",
+    "UI exports one editable library file",
+    "UI backup checksums valid",
+    "actual file input opens migration preview",
+    "native export carries unique request identity",
+    "cancelled native export preserves dirty state",
+    "duplicate late callback cannot mark project saved",
+    "older save can finish",
+    "edit during save stays visibly unsaved",
+    "newer edit saves separately",
+    "120x120 opens two layers",
+    "120x120 saves offline",
+    "120x120 offline save never uploads",
+    "120x120 persistent reopen exact",
+    "500x500 opens two layers",
+    "500x500 saves offline",
+    "500x500 offline save never uploads",
+    "500x500 persistent reopen exact"
+  ]
+}

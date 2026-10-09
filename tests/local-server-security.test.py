@@ -54,7 +54,12 @@ class LocalServerSecurityTest(unittest.TestCase):
                     process.wait(timeout=3)
         self.temp.cleanup()
 
-    def request(self, secure, port, method, path, body=None, headers=None):
+    def request(self, secure, port, method, path, body=None, headers=None, conditional=True):
+        if conditional and path.startswith("/api/projects/") and method in {"POST", "DELETE"}:
+            status, _, current = self.request(secure, port, "GET", path, headers=headers, conditional=False)
+            revision = json.loads(current).get("serverRevision") if status == 200 else None
+            import uuid
+            body = json.dumps({"project": json.loads(body) if body else None, "expectedRevision": revision, "mutationId": str(uuid.uuid4())})
         connection = (http.client.HTTPSConnection(
             "127.0.0.1", port, context=ssl._create_unverified_context(), timeout=2,
         ) if secure else http.client.HTTPConnection("127.0.0.1", port, timeout=2))
@@ -81,7 +86,7 @@ class LocalServerSecurityTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(headers["Cache-Control"], "no-store")
         revision = json.loads(body)["interfaceRevision"]
-        self.assertEqual(revision, "20261009-inventory-migration-61")
+        self.assertEqual(revision, "20261009-reliability-62")
         status, _, _ = self.request(True, self.paired_port, "GET", "/api/release")
         self.assertEqual(status, 401)
         _, headers, _ = self.request(True, self.paired_port, "POST", "/pair", urlencode({"code": self.pairing_code}), {"Content-Type": "application/x-www-form-urlencoded"})
@@ -166,18 +171,102 @@ class LocalServerSecurityTest(unittest.TestCase):
                                     headers={"Cookie": cookie})
         self.assertEqual(status, 401)
 
-    def test_older_save_cannot_replace_newer_project_file(self):
+    def test_stale_revision_cannot_replace_newer_project_file(self):
         project_id = "save-order-test"
-        newest = {"id": project_id, "updatedAt": "2026-09-28T00:02:00Z", "payload": {"value": "new"}}
-        older = {"id": project_id, "updatedAt": "2026-09-28T00:01:00Z", "payload": {"value": "old"}}
-        for project, accepted in ((newest, True), (older, False)):
-            status, _, body = self.request(False, self.local_port, "POST", f"/api/projects/{project_id}",
-                                           json.dumps(project), {"Content-Type": "application/json"})
-            self.assertEqual(status, 200)
-            self.assertEqual(json.loads(body)["accepted"], accepted)
-        status, _, body = self.request(False, self.local_port, "GET", f"/api/projects/{project_id}")
+        newest = {"id": project_id, "updatedAt": "1900-01-01", "payload": {"value": "new"}}
+        status, _, result = self.request(False, self.local_port, "POST", f"/api/projects/{project_id}", json.dumps(newest))
         self.assertEqual(status, 200)
+        revision = json.loads(result)["serverRevision"]
+        stale = {"project": {**newest, "updatedAt": "2099-01-01", "payload": {"value": "old"}}, "expectedRevision": None, "mutationId": "stale"}
+        status, _, _ = self.request(False, self.local_port, "POST", f"/api/projects/{project_id}", json.dumps(stale), conditional=False)
+        self.assertEqual(status, 409)
+        status, _, body = self.request(False, self.local_port, "GET", f"/api/projects/{project_id}")
         self.assertEqual(json.loads(body)["payload"], newest["payload"])
+        self.assertEqual(json.loads(body)["serverRevision"], revision)
+
+    def test_atomic_race_retry_delete_and_restart(self):
+        import concurrent.futures
+        project = {"id": "race", "payload": {"value": "base"}}
+        status, _, body = self.request(False, self.local_port, "POST", "/api/projects/race", json.dumps(project))
+        base = json.loads(body)["serverRevision"]
+        envelopes = [{"project": {**project, "payload": {"value": value}}, "expectedRevision": base, "mutationId": value} for value in ("a", "b")]
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            results = list(pool.map(lambda envelope: self.request(False, self.local_port, "POST", "/api/projects/race", json.dumps(envelope), conditional=False), envelopes))
+        self.assertEqual(sorted(result[0] for result in results), [200, 409])
+        winner = next(i for i, result in enumerate(results) if result[0] == 200)
+        revision = json.loads(results[winner][2])["serverRevision"]
+        status, _, body = self.request(False, self.local_port, "POST", "/api/projects/race", json.dumps(envelopes[winner]), conditional=False)
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["serverRevision"], revision)
+        deletion = {"expectedRevision": revision, "mutationId": "delete"}
+        status, _, body = self.request(False, self.local_port, "DELETE", "/api/projects/race", json.dumps(deletion), conditional=False)
+        self.assertEqual(status, 200)
+        deleted_revision = json.loads(body)["serverRevision"]
+        for method, envelope in (("DELETE", deletion), ("POST", {"project": project, "expectedRevision": None, "mutationId": "revive"})):
+            status, _, _ = self.request(False, self.local_port, method, "/api/projects/race", json.dumps(envelope), conditional=False)
+            self.assertEqual(status, 200 if method == "DELETE" else 409)
+        self.local.terminate(); self.local.wait(timeout=3)
+        self.local = subprocess.Popen([sys.executable, str(SERVER), "--http", "--port", str(self.local_port)], env={**os.environ, "QPIXEL_DATA_DIR": self.temp.name}, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.wait_ready(self.local_port, False)
+        status, _, body = self.request(False, self.local_port, "DELETE", "/api/projects/race", json.dumps(deletion), conditional=False)
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["serverRevision"], deleted_revision)
+        self.assertEqual(self.request(False, self.local_port, "GET", "/api/projects/race")[0], 404)
+        self.assertNotIn("payload", json.loads((Path(self.temp.name) / "projects/race.json").read_text()))
+        self.assertEqual(json.loads(self.request(False, self.local_port, "GET", "/api/projects/index")[2]), [])
+
+    def test_unconditional_routes_and_second_authority_are_rejected(self):
+        for method, path, body in (("POST", "/api/projects", "[]"), ("POST", "/api/projects/old", '{"id":"old"}'), ("DELETE", "/api/projects/old", None)):
+            self.assertEqual(self.request(False, self.local_port, method, path, body, conditional=False)[0], 428)
+        second = subprocess.run([sys.executable, str(SERVER), "--http", "--port", str(free_port())], env={**os.environ, "QPIXEL_DATA_DIR": self.temp.name}, capture_output=True, timeout=3)
+        self.assertNotEqual(second.returncode, 0)
+
+    def test_legacy_revision_and_failed_index_persistence(self):
+        project = {"id": "legacy", "title": "旧作品", "payload": {"value": "kept"}}
+        path = Path(self.temp.name) / "projects" / "legacy.json"
+        path.parent.mkdir(exist_ok=True); path.write_text(json.dumps(project))
+        status, _, body = self.request(False, self.local_port, "GET", "/api/projects/legacy")
+        revision = json.loads(body)["serverRevision"]
+        self.assertTrue(revision.startswith("legacy-"))
+        index_path = Path(self.temp.name) / "qpixel-project-index-v1.json"
+        if index_path.exists(): index_path.unlink()
+        index_path.mkdir()
+        envelope = {"project": {**project, "title": "新名称"}, "expectedRevision": revision, "mutationId": "legacy-update"}
+        status, _, body = self.request(False, self.local_port, "POST", "/api/projects/legacy", json.dumps(envelope), conditional=False)
+        self.assertEqual(status, 200)
+        token = json.loads(body)["serverRevision"]
+        self.assertFalse(token.startswith("legacy-"))
+        self.assertEqual(json.loads(path.read_text())["payload"], project["payload"])
+        self.assertEqual(json.loads(self.request(False, self.local_port, "GET", "/api/projects/legacy")[2])["serverRevision"], token)
+
+    def test_delete_update_race_and_paired_conflict_status(self):
+        import concurrent.futures
+        project = {"id": "delete-race", "payload": {"value": "base"}}
+        status, _, body = self.request(False, self.local_port, "POST", "/api/projects/delete-race", json.dumps(project))
+        revision = json.loads(body)["serverRevision"]
+        update = {"project": {**project, "payload": {"value": "changed"}}, "expectedRevision": revision, "mutationId": "update"}
+        deletion = {"expectedRevision": revision, "mutationId": "delete"}
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            jobs = [pool.submit(self.request, False, self.local_port, method, "/api/projects/delete-race", json.dumps(envelope), None, False)
+                    for method, envelope in (("POST", update), ("DELETE", deletion))]
+            results = [job.result() for job in jobs]
+        self.assertEqual(sorted(result[0] for result in results), [200, 409])
+        status, _, body = self.request(False, self.local_port, "GET", "/api/projects/delete-race")
+        self.assertEqual(status, 200 if results[0][0] == 200 else 404)
+        _, headers, _ = self.request(True, self.paired_port, "POST", "/pair", urlencode({"code": self.pairing_code}), {"Content-Type": "application/x-www-form-urlencoded"})
+        cookie = headers["Set-Cookie"].split(";", 1)[0]
+        bad = {**update, "mutationId": "other", "expectedRevision": "stale"}
+        self.assertEqual(self.request(True, self.paired_port, "POST", "/api/projects/delete-race", json.dumps(bad), {"Cookie": cookie}, conditional=False)[0], 409)
+        health = json.loads(self.request(True, self.paired_port, "GET", "/api/health", headers={"Cookie": cookie})[2])
+        self.assertEqual(health["syncProtocolVersion"], 2)
+
+    def test_corrupt_existing_file_is_not_overwritten_as_a_new_project(self):
+        path = Path(self.temp.name) / "projects" / "corrupt.json"
+        path.parent.mkdir(exist_ok=True); path.write_text("broken-original")
+        self.assertEqual(self.request(False, self.local_port, "GET", "/api/projects/corrupt")[0], 503)
+        envelope = {"expectedRevision": None, "mutationId": "repair", "project": {"id": "corrupt", "payload": {"new": True}}}
+        self.assertEqual(self.request(False, self.local_port, "POST", "/api/projects/corrupt", json.dumps(envelope), conditional=False)[0], 503)
+        self.assertEqual(path.read_text(), "broken-original")
 
     def test_project_index_and_thumbnails_update_without_rewriting_other_projects(self):
         thumbnail = b"\x89PNG\r\n\x1a\nthumbnail"

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import fcntl
 import base64
 import binascii
 import hashlib
@@ -45,6 +46,7 @@ PAIRING_LIFETIME_SECONDS = 365 * 24 * 60 * 60
 WRITE_LOCK = Lock()
 PAIRING_LOCK = Lock()
 PROJECT_INDEX_CACHE = None
+SYNC_PROTOCOL_VERSION = 2
 
 
 def paired_device_hash(token):
@@ -276,7 +278,11 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
             return
         thumbnail_id = get_thumbnail_id_from_path(path)
         if thumbnail_id:
-            project = self.read_project(thumbnail_id)
+            try:
+                project = self.read_project(thumbnail_id)
+            except OSError:
+                self.send_json({"error": "作品文件无法读取"}, status=503)
+                return
             thumbnail = project.get("thumbnail", "") if project else ""
             try:
                 header, encoded = thumbnail.split(",", 1)
@@ -295,9 +301,13 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
             return
         project_id = get_project_id_from_path(path)
         if project_id:
-            project = self.read_project(project_id) or find_project(self.read_projects(), project_id)
-            if project:
-                self.send_json(project)
+            try:
+                project = self.read_project(project_id)
+            except OSError:
+                self.send_json({"error": "作品文件无法读取，请保留本机修改并检查电脑备份。"}, status=503)
+                return
+            if project and not project.get("purged"):
+                self.send_json(public_project(project))
             else:
                 self.send_error(404, "Project not found")
             return
@@ -329,26 +339,11 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
         if path != "/api/projects":
             self.send_error(404)
             return
-        length = int(self.headers.get("Content-Length") or "0")
-        raw = self.rfile.read(length)
-        try:
-            payload = json.loads(raw.decode("utf-8") or "[]")
-        except json.JSONDecodeError:
-            self.send_error(400, "Invalid JSON")
+        length = self.request_length(50 * 1024 * 1024)
+        if length is None:
             return
-        if not isinstance(payload, list):
-            self.send_error(400, "Expected project list")
-            return
-        with WRITE_LOCK:
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
-            backup_projects_file()
-            payload = merge_projects(self.read_projects(), payload)
-            write_project_files(payload)
-            tmp = PROJECTS_FILE.with_suffix(".tmp")
-            tmp.write_text(json.dumps(payload[:200], ensure_ascii=False), encoding="utf-8")
-            os.replace(tmp, PROJECTS_FILE)
-            rebuild_project_index()
-        self.send_json({"ok": True, "count": len(payload[:200])})
+        self.rfile.read(length)
+        self.send_json({"error": "请更新客户端，使用逐作品条件同步。"}, status=428)
 
     def do_DELETE(self):
         if not self.gate():
@@ -360,14 +355,7 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
         if not project_id:
             self.send_error(404)
             return
-        with WRITE_LOCK:
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
-            index = read_project_index()
-            path = project_file_path(project_id)
-            if path and path.exists():
-                path.unlink()
-            update_project_index(index, None, removed_id=project_id)
-        self.send_json({"ok": True, "id": project_id})
+        self.conditional_project_request(project_id, deleting=True)
 
     def generate_ai_image(self):
         length = int(self.headers.get("Content-Length") or "0")
@@ -390,33 +378,64 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
         self.send_json({"ok": True, **result})
 
     def write_single_project_request(self, project_id):
-        length = int(self.headers.get("Content-Length") or "0")
-        raw = self.rfile.read(length)
+        self.conditional_project_request(project_id)
+
+    def conditional_project_request(self, project_id, deleting=False):
+        length = self.request_length(50 * 1024 * 1024)
+        if length is None:
+            return
         try:
-            payload = json.loads(raw.decode("utf-8") or "{}")
-        except json.JSONDecodeError:
-            self.send_error(400, "Invalid JSON")
+            envelope = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        except (ValueError, UnicodeDecodeError):
+            self.send_json({"error": "Invalid JSON"}, status=400)
             return
-        if not isinstance(payload, dict) or not payload.get("id"):
-            self.send_error(400, "Expected project object")
+        if not isinstance(envelope, dict) or "expectedRevision" not in envelope:
+            self.send_json({"error": "客户端版本过旧，请先备份并更新。"}, status=428)
             return
-        if str(payload.get("id")) != project_id:
-            self.send_error(400, "Project id mismatch")
+        expected = envelope["expectedRevision"]
+        mutation = envelope.get("mutationId")
+        project = envelope.get("project")
+        if (expected is not None and not isinstance(expected, str)) or not isinstance(mutation, str) or not 1 <= len(mutation) <= 200:
+            self.send_json({"error": "Invalid write condition"}, status=400)
             return
-        with WRITE_LOCK:
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
-            index = read_project_index()
-            existing = self.read_project(project_id)
-            accepted = not existing or project_sort_time(payload) >= project_sort_time(existing)
-            stored = find_project(merge_projects([existing] if existing else [], [payload]), project_id)
-            # Requests can finish out of order when a large project is saved
-            # repeatedly. Keep the newer file and index when an older request arrives.
-            if accepted:
+        if not project_file_path(project_id) or (not deleting and (not isinstance(project, dict) or project.get("id") != project_id)):
+            self.send_json({"error": "Project id mismatch"}, status=400)
+            return
+        # Server-owned fields cannot be supplied by a client.
+        clean = {key: value for key, value in (project or {}).items()
+                 if key not in {"serverRevision", "_lastMutation", "_lastDigest", "purged", "expectedRevision", "mutationId"}}
+        digest = hashlib.sha256(json.dumps([deleting, expected, clean], sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+        try:
+            with WRITE_LOCK:
+                index = read_project_index()
+                existing = self.read_project(project_id)
+                revision = project_revision(existing)
+                if existing and existing.get("_lastMutation") == mutation:
+                    if existing.get("_lastDigest") != digest:
+                        self.send_json({"error": "mutationId already used"}, status=409)
+                        return
+                    self.send_json({"ok": True, "accepted": True, "serverRevision": revision, "id": project_id, "replayed": True})
+                    return
+                if revision != expected:
+                    self.send_json({"error": "电脑作品已变化，双方修改将保留。", "serverRevision": revision, "purged": bool(existing and existing.get("purged"))}, status=409)
+                    return
+                if existing and existing.get("purged"):
+                    self.send_json({"error": "作品已永久删除，请另存为新作品。", "serverRevision": revision, "purged": True}, status=409)
+                    return
+                if deleting:
+                    stored = {"id": project_id, "deleted": True, "purged": True}
+                else:
+                    stored = dict(clean)
+                    # A metadata-only update preserves existing content, including history.
+                    for key in ("payload", "thumbnail", "history"):
+                        if key not in stored and existing and key in existing:
+                            stored[key] = existing[key]
+                stored.update(serverRevision=secrets.token_hex(16), _lastMutation=mutation, _lastDigest=digest)
                 write_project_file(stored)
-                update_project_index(index, stored)
-        self.send_json({"ok": True, "id": project_id, "count": len(index) + (0 if existing else 1),
-                        "accepted": accepted,
-                        "storedUpdatedAt": project_sort_time(stored)})
+                update_project_index(index, stored, removed_id=project_id if deleting else None)
+            self.send_json({"ok": True, "accepted": True, "id": project_id, "serverRevision": stored["serverRevision"]})
+        except OSError:
+            self.send_json({"error": "电脑写入失败，请保留本机修改并重试。"}, status=503)
 
     def write_settings_request(self):
         length = int(self.headers.get("Content-Length") or "0")
@@ -442,12 +461,12 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
     def read_projects(self):
         project_files = list_project_files()
         if project_files or PROJECT_INDEX_FILE.exists():
-            return project_files
+            return [public_project(p) for p in project_files if not p.get("purged")]
         if not PROJECTS_FILE.exists():
             return []
         try:
             data = json.loads(PROJECTS_FILE.read_text(encoding="utf-8"))
-            return data if isinstance(data, list) else []
+            return [public_project(p) for p in data if isinstance(p, dict) and not p.get("purged")] if isinstance(data, list) else []
         except Exception:
             return []
 
@@ -457,8 +476,8 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
             return None
         try:
             return normalize_project(json.loads(path.read_text(encoding="utf-8")))
-        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
-            return None
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
+            raise OSError("Existing project file cannot be read") from error
 
     def read_settings(self):
         if not SETTINGS_FILE.exists():
@@ -529,6 +548,18 @@ def is_ip(value):
         return False
 
 
+def project_revision(project):
+    if not project:
+        return None
+    return project.get("serverRevision") or "legacy-" + hashlib.sha256(
+        json.dumps(project, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+
+
+def public_project(project):
+    return {**{key: value for key, value in project.items() if key not in {"_lastMutation", "_lastDigest"}},
+            "serverRevision": project_revision(project)}
+
+
 def project_sort_time(project):
     if not isinstance(project, dict):
         return ""
@@ -584,7 +615,7 @@ def persist_project_index(summaries, signatures):
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=DATA_DIR,
                                          prefix=".qpixel-project-index-", delete=False) as file:
             path = Path(file.name)
-            json.dump({"version": 1, "signatures": signatures, "projects": summaries}, file, ensure_ascii=False)
+            json.dump({"version": 2, "signatures": signatures, "projects": summaries}, file, ensure_ascii=False)
         os.replace(path, PROJECT_INDEX_FILE)
     except OSError:
         # Project files remain authoritative when the optional index cannot be saved.
@@ -607,7 +638,7 @@ def read_project_index():
         return PROJECT_INDEX_CACHE[1]
     try:
         saved = json.loads(PROJECT_INDEX_FILE.read_text(encoding="utf-8"))
-        if saved.get("version") == 1 and saved.get("signatures") == signatures and isinstance(saved.get("projects"), list):
+        if saved.get("version") == 2 and saved.get("signatures") == signatures and isinstance(saved.get("projects"), list):
             PROJECT_INDEX_CACHE = (signatures, saved["projects"])
             return saved["projects"]
     except (OSError, ValueError, AttributeError):
@@ -632,7 +663,10 @@ def write_project_file(project):
         return
     PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(project, ensure_ascii=False), encoding="utf-8")
+    with tmp.open("w", encoding="utf-8") as file:
+        json.dump(project, file, ensure_ascii=False)
+        file.flush()
+        os.fsync(file.fileno())
     os.replace(tmp, path)
 
 
@@ -650,12 +684,12 @@ def directory_size(path):
 
 def project_summary(project):
     project = normalize_project(project)
-    if not project:
+    if not project or project.get("purged"):
         return None
     payload = project.get("payload") if isinstance(project.get("payload"), dict) else {}
     pattern = payload.get("pattern") if isinstance(payload.get("pattern"), dict) else {}
     history = project.get("history") if isinstance(project.get("history"), list) else []
-    summary = {key: value for key, value in project.items() if key not in {"payload", "history", "thumbnail"}}
+    summary = {key: value for key, value in public_project(project).items() if key not in {"payload", "history", "thumbnail"}}
     summary["hasPayload"] = bool(project.get("payload"))
     summary["hasThumbnail"] = bool(project.get("thumbnail"))
     summary["historyCount"] = len(history)
@@ -720,6 +754,7 @@ def health_payload(projects, settings):
     settings_ok = isinstance(settings, dict)
     return {
         "ok": projects_ok and settings_ok,
+        "syncProtocolVersion": SYNC_PROTOCOL_VERSION,
         "projectsOk": projects_ok,
         "settingsOk": settings_ok,
         "projectCount": len(projects) if projects_ok else 0,
@@ -878,7 +913,14 @@ def main():
         parser.error("非本机地址必须通过 run_ipad_server.sh 启用配对。")
     if pairing_code and (args.http or not args.proxy_port):
         parser.error("配对服务必须使用 HTTPS，并转发到本机服务。")
+    authority_lock = None
     if not args.proxy_port:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        authority_lock = (DATA_DIR / ".authority.lock").open("a")
+        try:
+            fcntl.flock(authority_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            parser.error("同一作品目录已有写服务运行；请停止旧服务后重试。")
         cleanup_backups()
         migrate_projects_if_needed()
     server = ThreadingHTTPServer((args.host, args.port), QPixelHttpsHandler)

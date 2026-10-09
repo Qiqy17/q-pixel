@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="qpixel-revision" content="20261009-inventory-migration-61">
+  <meta name="qpixel-revision" content="20261009-reliability-62">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -13,7 +13,7 @@
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.svg">
   <link rel="stylesheet" href="./styles.css?v=20260928-save-as-45">
-  <link rel="stylesheet" href="./studio/studio.css?v=20261009-inventory-migration-61">
+  <link rel="stylesheet" href="./studio/studio.css?v=20261009-reliability-62">
 </head>
 <body>
   <main class="app-shell is-home">
@@ -40,11 +40,13 @@
         <p id="currentEntryAddress" class="panel-caption" style="overflow-wrap:anywhere"></p>
         <p>电脑 App、电脑网页和平板网页各有本机保存区。不同 IP、端口、HTTP／HTTPS 地址的本机作品也相互独立。新入口看不到旧作品，不代表作品已删除。</p>
         <ol>
-          <li>在旧入口逐个打开作品，先保存到本机，再下载 .qpx 备份；未同步的作品也要备份。</li>
-          <li>在新入口导入 .qpx，核对名称、尺寸、图层和色号，再保存到本机。多个作品需逐个迁移。</li>
+          <li>在旧入口使用“批量备份作品库”，包含本机完整作品和恢复草稿；未下载的作品会明确列入遗漏清单。</li>
+          <li>在新入口使用“导入作品库”，先检查重复、冲突与遗漏，再确认导入；单作品仍可用 .qpx。</li>
           <li>需要上传电脑时，点击“同步电脑文件”；恢复网络、导入和保存都不会自动上传作品。</li>
         </ol>
         <div class="split-actions">
+          <button id="libraryBackupButton" class="text-button secondary" type="button">批量备份作品库</button>
+          <button id="libraryImportButton" class="text-button secondary" type="button">导入作品库</button>
           <button id="migrationBackupButton" class="text-button secondary" type="button">备份当前作品 .qpx</button>
           <button id="migrationImportButton" class="text-button secondary" type="button">导入备份 .qpx</button>
         </div>
@@ -113,7 +115,9 @@
         <button class="text-button secondary" id="saveAsTopButton" type="button">另存为</button>
         <button class="text-button secondary" id="chooseTopButton" type="button">导入</button>
         <button class="text-button secondary" id="saveTopButton" type="button">保存</button>
-        <span class="save-status" id="saveStatus">已保存</span>
+        <span class="save-status" id="saveStatus" role="status">尚未保存到本机</span>
+        <span class="save-status" id="projectSyncStatus" role="status">待核对同步状态</span>
+        <small id="projectSavedTime" class="panel-caption"></small>
         <button class="text-button secondary" id="exportProjectTopButton" type="button" title="下载当前可编辑工程文件">备份 .qpx</button>
         <button class="text-button secondary" id="unifiedPreviewButton" type="button">预览</button>
         <button class="text-button" id="exportTopButton" type="button">导出</button>
@@ -1597,6 +1601,13 @@
   </section>
 
   <input id="fileInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp" hidden>
+  <dialog id="projectLibraryDialog" class="project-library-dialog" aria-labelledby="libraryDialogTitle">
+    <h2 id="libraryDialogTitle"></h2><div data-role="library-body"></div>
+    <p data-role="library-status" role="alert"></p><div class="split-actions">
+      <button type="button" data-role="library-close">关闭</button><button type="button" data-role="library-submit"></button>
+    </div>
+  </dialog>
+  <input id="libraryFileInput" type="file" accept=".qpxlib,application/json" hidden>
   <input id="projectFileInput" type="file" accept=".qpx,application/json" hidden>
   <script src="./feature-flags.js"></script>
   <script src="./module-loader.js"></script>
@@ -1605,6 +1616,8 @@
   <script src="./core/design-save-as.js"></script>
   <script src="./core/auto-draft.js"></script>
   <script src="./core/offline-projects.js"></script>
+  <script src="./core/save-status.js"></script>
+  <script src="./core/project-library.js"></script>
   <script src="./core/editor-performance.js"></script>
   <script src="./core/layer-translate.js"></script>
   <script src="./core/layer-order.js"></script>
@@ -1629,6 +1642,6 @@
   <script src="./3d/finish-workbench.js?v=20260929-h1-3d-opacity-54"></script>
   <script src="./import-engine.js"></script>
   <script src="./import-processing.js"></script>
-  <script src="./app.js?v=20261009-inventory-migration-61"></script>
+  <script src="./app.js?v=20261009-reliability-62"></script>
 </body>
 </html>

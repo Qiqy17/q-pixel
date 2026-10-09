@@ -2,9 +2,10 @@ import AppKit
 import WebKit
 import UniformTypeIdentifiers
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler, NSWindowDelegate {
     private var window: NSWindow!
     private var webView: WKWebView!
+    private var checkingTermination = false
     private let smartBoard = SmartBoardController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -29,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             backing: .buffered,
             defer: false
         )
+        window.delegate = self
         window.title = "Q像素"
         window.minSize = NSSize(width: 420, height: 520)
         placeWindowOnMainScreen()
@@ -41,6 +43,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        NSApp.terminate(nil)
+        return false
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if checkingTermination { return .terminateCancel }
+        checkingTermination = true
+        webView.evaluateJavaScript("window.QPixelHasUnsavedChanges ? window.QPixelHasUnsavedChanges() : null") { [weak self] value, error in
+            guard let self else { sender.reply(toApplicationShouldTerminate: false); return }
+            if error == nil, let dirty = value as? Bool, !dirty {
+                self.checkingTermination = false
+                sender.reply(toApplicationShouldTerminate: true)
+                return
+            }
+            let alert = NSAlert()
+            alert.messageText = "请先保存或备份当前修改"
+            alert.informativeText = "当前修改尚未确认保存，或仍有作品库操作正在进行。返回画布保存后再退出。"
+            alert.addButton(withTitle: "返回画布")
+            alert.addButton(withTitle: "放弃未保存修改并退出")
+            alert.beginSheetModal(for: self.window) { response in
+                self.checkingTermination = false
+                sender.reply(toApplicationShouldTerminate: response == .alertSecondButtonReturn)
+            }
+        }
+        return .terminateLater
     }
 
     func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
@@ -69,7 +99,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         if message.name == "exportPng" {
             savePng(dataUrl: dataUrl, fileName: fileName)
         } else if message.name == "exportFile" {
-            saveFile(dataUrl: dataUrl, fileName: fileName)
+            saveFile(dataUrl: dataUrl, fileName: fileName, requestId: body["requestId"] as? String)
         }
     }
 
@@ -153,8 +183,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
     }
 
-    private func saveFile(dataUrl: String, fileName: String) {
+    private func notifyExport(requestId: String?, status: String) {
+        guard let requestId = requestId else { return }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["requestId": requestId, "status": status]),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.QPixelNativeExportResult && window.QPixelNativeExportResult(\(json))")
+    }
+
+    private func saveFile(dataUrl: String, fileName: String, requestId: String?) {
         guard let data = decodeDataUrl(dataUrl) else {
+            notifyExport(requestId: requestId, status: "failed")
             showSaveError("导出的文件数据不完整。")
             return
         }
@@ -167,11 +205,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         }
         panel.canCreateDirectories = true
         panel.beginSheetModal(for: window) { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
+            guard response == .OK, let url = panel.url else { self?.notifyExport(requestId: requestId, status: "cancelled"); return }
             do {
                 try data.write(to: url, options: .atomic)
-                self?.webView.evaluateJavaScript("window.QPixelNativeSaved && window.QPixelNativeSaved()")
+                if requestId != nil { self?.notifyExport(requestId: requestId, status: "saved") }
+                else { self?.webView.evaluateJavaScript("window.QPixelNativeSaved && window.QPixelNativeSaved()") }
             } catch {
+                self?.notifyExport(requestId: requestId, status: "failed")
                 self?.showSaveError("保存失败，请检查保存位置。")
             }
         }

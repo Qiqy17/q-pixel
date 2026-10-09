@@ -1,0 +1,16 @@
+{
+  "checks" : [
+    "native WebKit loads pattern",
+    "native WebKit local save succeeds",
+    "native WebKit status explicit",
+    "native WebKit conditional sync confirmed",
+    "native WebKit SHA256 library roundtrip",
+    "native exit hook protects edits",
+    "native save before reopen",
+    "native reopens saved pattern",
+    "native reopen preserves layers and colors",
+    "native reopen preserves build progress",
+    "native library dialog opens"
+  ],
+  "passed" : 11
+}

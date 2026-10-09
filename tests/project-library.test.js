@@ -1,0 +1,49 @@
+"use strict";
+const assert = require("node:assert/strict");
+globalThis.crypto ||= require("node:crypto").webcrypto;
+const library = require("../web/core/project-library.js");
+const status = require("../web/core/save-status.js");
+const make = (id = "a") => ({ id, title: "中文作品", payload: { version: 2, id, title: "中文作品",
+  pattern: { width: 16, height: 16, cells: Array.from({length:16},()=>["H2",...Array(15).fill(null)]) }, layers: [{ id: "l1", cells: Array.from({length:16},()=>["H2",...Array(15).fill(null)]) }],
+  activeLayerId: "l1", buildProgress: { "0,0": true }, finish3d: { unknown: "preserve" } },
+  history: [{ id: "v1", fingerprint: "old", payload: { version: 2, id, pattern: { width: 16, height: 16, cells: Array.from({length:16},()=>["E11",...Array(15).fill(null)]) } } }] });
+(async () => {
+  const record = make(); record.serverRevision = "private-revision";
+  const trash = { ...make("trash"), deleted: true };
+  const backup = await library.create({ records: [record, trash, { id: "remote", title: "未下载" }], draft: make("draft").payload, pendingIds: ["a"] });
+  assert.equal(backup.partial, true);
+  assert.equal(backup.text.includes("private-revision"), false);
+  const inspection = await library.inspect(backup.text);
+  assert.equal(inspection.invalid.length, 0);
+  assert.deepEqual(inspection.valid[0].payload, record.payload);
+  const same = library.plan(inspection, [record], () => "draft-copy");
+  assert.deepEqual(same.report.skipped, ["a"]);
+  assert.equal(same.records.find((r) => r.id === "trash").deleted, true);
+  assert.ok(same.records.find((r) => r.id === "trash").deletedAt);
+  assert.equal(same.records.find((r) => r.id === "draft-copy").payload.id, "draft-copy");
+  const different = make(); different.payload.pattern.cells[0][0] = "H1";
+  let sequence = 0;
+  const conflict = library.plan(inspection, [different], () => `copy-${++sequence}`);
+  assert.equal(conflict.report.copies.length, 1);
+  const copy = conflict.records[0];
+  assert.equal(copy.payload.id, copy.id);
+  assert.equal(copy.history[0].payload.id, copy.id);
+  assert.equal(different.payload.pattern.cells[0][0], "H1");
+  const corrupt = JSON.parse(backup.text); corrupt.items[0].record.payload.pattern.cells[0][0] = "H7";
+  const damaged = await library.inspect(JSON.stringify(corrupt));
+  assert.equal(damaged.valid.length, 1);
+  assert.equal(damaged.packageValid, false);
+  assert.ok(damaged.invalid.some((item) => item.id === "a"));
+  const many = await library.create({ records: Array.from({ length: 130 }, (_, i) => make(`p-${i}`)) });
+  assert.equal((await library.inspect(many.text)).valid.length, 130);
+  await assert.rejects(library.create({ records: Array.from({ length: 1001 }, (_, i) => make(`p-${i}`)) }), /1000/);
+  assert.throws(() => library.validatePayload({ version: 2, pattern: { width: 500, height: 500, cells: [["H2"]] } }), /不完整/);
+  const unknown = { ...record, payload: { ...record.payload, version: 99 } };
+  await assert.rejects(library.create({ records: [unknown] }), /版本/);
+  const historyChange = make(); historyChange.history[0].payload.pattern.cells[0][0] = "H1";
+  assert.equal(library.plan({ ...inspection, draft: null }, [historyChange], () => "history-copy").report.copies.length, 1);
+  assert.equal(status.describe({ dirty: true, saving: false, failed: true }).local, "保存失败·修改未保存");
+  assert.equal(status.describe({ dirty: true, hasPayload: true, pending: false }).remote, "上次保存版本已同步");
+  assert.equal(status.describe({ dirty: false, hasPayload: true, pending: true }).remote, "待同步");
+  console.log("project-library: 完整正文/历史/草稿、130 项、损坏校验、非覆盖迁移和状态区分通过");
+})().catch((error) => { console.error(error); process.exitCode = 1; });

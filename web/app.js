@@ -27,6 +27,12 @@
   let saveAttempt = 0;
   let pendingSaveAttempt = 0;
   let pendingSaveRevision = -1;
+  let lastSaveFailure = false;
+  let manualSyncActive = false;
+  let lastSyncError = "";
+  let libraryBusy = false;
+  let offlineTrashCache = null;
+  const nativeExportRequests = new Map();
   const workspaceStateModule = window.QPixelWorkspaceState || null;
   const domUtils = window.QPixelDomUtils || null;
   const paletteRegistryModule = window.QPixelPaletteRegistry || null;
@@ -9806,10 +9812,12 @@
     if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.exportFile) {
       const reader = new FileReader();
       reader.onload = () => {
-        state.pendingSaveMessage = message || "文件已保存。";
-        window.webkit.messageHandlers.exportFile.postMessage({ fileName, dataUrl: reader.result });
+        const requestId = `export-${makeId()}`;
+        nativeExportRequests.set(requestId, message || "文件已保存。");
+        window.webkit.messageHandlers.exportFile.postMessage({ requestId, fileName, dataUrl: reader.result });
         setMessage("请选择保存位置。", false);
       };
+      reader.onerror = () => setMessage("文件生成失败，请重新导出。", true);
       reader.readAsDataURL(blob);
       return;
     }
@@ -9820,7 +9828,7 @@
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(link.href), 500);
-    setMessage(message || "文件已导出。", false);
+    setMessage("已发起下载，请确认文件已保留。", false);
   }
 
   function canvasToPngBlob(canvas) {
@@ -12878,6 +12886,7 @@
   }
 
   function persistOfflineChanges(records) {
+    if (libraryBusy) return Promise.reject(new Error("作品库备份或迁移中，请稍后保存。"));
     const snapshots = records.map((record) => JSON.parse(JSON.stringify(record)));
     const work = offlineWriteQueue.catch(() => {}).then(async () => {
       await offlineReady;
@@ -12897,74 +12906,101 @@
         if (saved.copies.length) setMessage("检测到另一页面的修改，已同时保留冲突副本。", false);
       }
       await refreshOfflineIndex();
+      updateDirtyStatus();
       return { ok: true, indexedDB: true };
     });
     offlineWriteQueue = work;
     return work;
   }
 
-  async function syncOfflineOutbox(remoteIndex) {
-    const remoteById = new Map(remoteIndex.map((record) => [record.id, record]));
+  async function requireSyncProtocol() {
+    const response = await fetch(`${syncApiBase}/api/health`, { cache: "no-store" });
+    if (!response.ok) throw new Error(response.status === 401 ? "配对已失效，请重新配对。" : `电脑服务不可用 (${response.status})`);
+    if ((await response.json()).syncProtocolVersion !== 2) throw new Error("电脑同步服务需要更新；本机作品和待同步修改已保留。");
+  }
+
+  async function readSyncProject(id) {
+    const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(id)}`, { cache: "no-store" });
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(response.status === 401 ? "配对已失效，请重新配对。" : `读取电脑作品失败 (${response.status})`);
+    return response.json();
+  }
+
+  async function writeSyncRecord(record, remote, entry, deleting = false) {
+    const outgoing = prepareProjectForRemote(record);
+    for (const key of ["localRevision", "pendingSync", "offlinePayloadFingerprint", "serverRevision"]) delete outgoing[key];
+    const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(record.id)}`, {
+      method: deleting ? "DELETE" : "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project: deleting ? undefined : outgoing, expectedRevision: remote?.serverRevision || null, mutationId: entry.mutationId })
+    });
+    if (response.status === 409) { const detail = await response.json(); return { conflict: true, ...detail }; }
+    if (!response.ok) throw new Error(response.status === 428 ? "客户端或电脑服务需要更新，请先保留本机作品。" : response.status === 401 ? "配对已失效，请重新配对。" : `电脑写入失败 (${response.status})`);
+    const result = await response.json();
+    if (!result.ok || !result.serverRevision) throw new Error("电脑保存确认不完整，待同步记录已保留。");
+    if (deleting) {
+      const check = await readSyncProject(record.id);
+      if (check) throw new Error("电脑永久删除未确认，待同步记录已保留。");
+      await offlineProjects.acknowledge(record.id, record.localRevision, Object.assign({}, record, { serverRevision: result.serverRevision }));
+    } else {
+      const stored = await readSyncProject(record.id);
+      if (!stored || stored.serverRevision !== result.serverRevision || offlineProjects.hash(stored) !== offlineProjects.hash(record)) throw new Error("电脑回读内容不一致，待同步记录已保留。");
+      await offlineProjects.acknowledge(record.id, record.localRevision, stored);
+    }
+    return result;
+  }
+
+  async function syncOfflineOutbox() {
     const pending = await offlineProjects.pending();
     let conflicts = 0;
-    for (const entry of pending) {
+    for (let position = 0; position < pending.length; position++) {
+      const entry = pending[position];
+      setMessage(`正在同步 ${position + 1}/${pending.length}；未确认修改保留在本机。`, false);
       const local = await offlineProjects.get(entry.id);
       if (!local || local.localRevision !== entry.revision) continue;
-      let remote = null;
-      if (remoteById.has(entry.id)) {
-        const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(entry.id)}`, { cache: "no-store" });
-        if (!response.ok) throw new Error(`读取电脑作品失败 ${response.status}`);
-        remote = await response.json();
-      }
-      const decision = offlineModule.decide(local, remote, await offlineProjects.baseline(entry.id), offlineProjects.hash);
+      let remote = await readSyncProject(entry.id);
+      const baseline = await offlineProjects.baseline(entry.id);
+      let decision = offlineModule.decide(local, remote, baseline, offlineProjects.hash);
       if (local.purged) {
-        if (remote && !remote.deleted && offlineProjects.hash(remote) !== await offlineProjects.baseline(entry.id)) throw new Error("电脑作品有未核对修改，永久删除待核对；本机删除记录已保留");
-        if (remote) {
-          const deletion = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(entry.id)}`, { method: "DELETE" });
-          if (!deletion.ok) throw new Error("电脑永久删除失败");
-          const check = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(entry.id)}`, { cache: "no-store" });
-          if (check.status !== 404) throw new Error("电脑删除未确认");
-        }
-        await offlineProjects.acknowledge(entry.id, entry.revision, local);
+        if (remote && !remote.deleted && offlineProjects.hash(remote) !== baseline) throw new Error("电脑作品有新修改，永久删除待核对；删除队列已保留。");
+        // Even a missing original must pass the server's tombstone/version check.
+        const syncedState = await offlineProjects.syncState(entry.id);
+        const condition = remote || (syncedState?.serverRevision ? { serverRevision: syncedState.serverRevision } : null);
+        const result = await writeSyncRecord(local, condition, entry, true);
+        if (result.conflict) throw new Error("电脑删除版本发生变化，删除队列已保留，请核对后重试。");
         continue;
       }
+      if (decision === "equal") { await offlineProjects.acknowledge(entry.id, entry.revision, remote); continue; }
+      if (decision === "upload") {
+        const result = await writeSyncRecord(local, remote, entry);
+        if (!result.conflict) continue;
+        remote = await readSyncProject(entry.id);
+        decision = "conflict";
+      }
       if (decision === "conflict") {
-        // Keep the local edit as a deterministic, retry-safe copy. Leave the computer's original intact.
         const suffix = `${projectModelModule.payloadFingerprint(local.payload)}-${local.localRevision}`;
         const copy = offlineModule.conflictCopy(local, suffix);
         const oldCopy = await offlineProjects.get(copy.id);
         const savedCopy = oldCopy || (await offlineProjects.save(copy)).record;
-        await uploadOfflineRecord(savedCopy);
-        // Confirm the remote original has not changed again before retiring this local revision.
-        const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(entry.id)}`, { cache: "no-store" });
-        if (!response.ok || offlineProjects.hash(await response.json()) !== offlineProjects.hash(remote)) throw new Error("电脑作品再次变化，请重试同步");
-        await offlineProjects.resolveConflict(entry.id, entry.revision, remote);
+        const copyEntry = (await offlineProjects.pending()).find((item) => item.id === savedCopy.id);
+        const copyRemote = await readSyncProject(savedCopy.id);
+        if (copyRemote && offlineProjects.hash(copyRemote) === offlineProjects.hash(savedCopy)) await offlineProjects.acknowledge(savedCopy.id, savedCopy.localRevision, copyRemote);
+        else {
+          if (!copyEntry || (copyRemote && offlineProjects.hash(copyRemote) !== offlineProjects.hash(savedCopy))) throw new Error("冲突副本已在其他端变化，双方内容已保留，请核对后重试。");
+          const result = await writeSyncRecord(savedCopy, copyRemote, copyEntry);
+          if (result.conflict) throw new Error("冲突副本再次变化，请重试；双方内容已保留。");
+        }
+        const currentRemote = await readSyncProject(entry.id);
+        if (currentRemote?.serverRevision !== remote?.serverRevision) throw new Error("电脑作品再次变化，请重试同步。");
+        // Keep a local tombstone when the computer has permanently deleted the original.
+        await offlineProjects.resolveConflict(entry.id, entry.revision, remote || { id: entry.id, deleted: true, purged: true });
         if (state.beads.projectId === entry.id && !state.hasUnsavedChanges && payloadFingerprint(makeProjectPayload()) === payloadFingerprint(local.payload)) {
-          state.beads.projectId = copy.id;
-          state.beads.projectTitle = copy.title;
+          state.beads.projectId = copy.id; state.beads.projectTitle = copy.title;
           if (els.projectTitleInput) els.projectTitleInput.value = copy.title;
         }
         conflicts += 1;
-      } else if (decision === "equal") await offlineProjects.acknowledge(entry.id, entry.revision, remote);
-      else await uploadOfflineRecord(local);
+      }
     }
     return conflicts;
-  }
-
-  async function uploadOfflineRecord(record) {
-    const outgoing = prepareProjectForRemote(record);
-    delete outgoing.localRevision; delete outgoing.pendingSync; delete outgoing.offlinePayloadFingerprint;
-    const response = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(record.id)}`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(outgoing)
-    });
-    if (!response.ok) throw new Error(`电脑写入失败 ${response.status}`);
-    const result = await response.json();
-    if (!result.ok || result.accepted === false) throw new Error("电脑拒绝旧版本，待同步记录已保留");
-    const readback = await fetch(`${syncApiBase}/api/projects/${encodeURIComponent(record.id)}`, { cache: "no-store" });
-    if (!readback.ok) throw new Error("电脑保存回读失败");
-    const stored = await readback.json();
-    if (offlineProjects.hash(stored) !== offlineProjects.hash(record)) throw new Error("电脑回读内容不一致，待同步记录已保留");
-    await offlineProjects.acknowledge(record.id, record.localRevision, stored);
   }
 
   function getProjects() {
@@ -13034,7 +13070,7 @@
 
   function getTrashProjects() {
     try {
-      const parsed = JSON.parse(localStorage.getItem(trashStorageKey) || "[]");
+      const parsed = offlineTrashCache || JSON.parse(localStorage.getItem(trashStorageKey) || "[]");
       if (!Array.isArray(parsed)) return [];
       return parsed.map((item) => {
         const normalized = normalizeProject(item);
@@ -13052,11 +13088,9 @@
   }
 
   function setTrashProjects(projects) {
-    const now = Date.now();
     const keep = projects
-      .map((item) => Object.assign(normalizeProject(item), { deletedAt: item.deletedAt || new Date().toISOString() }))
-      .filter((item) => now - (new Date(item.deletedAt).getTime() || now) <= 90 * 24 * 60 * 60 * 1000)
-      .slice(0, 120);
+      .map((item) => Object.assign(normalizeProject(item), { deletedAt: item.deletedAt || new Date().toISOString() }));
+    offlineTrashCache = keep;
     const index = keep.map((item) => {
       const summary = Object.assign({}, item);
       if (item.payload) {
@@ -13070,7 +13104,7 @@
     } catch {
       const compact = index.map((item) => Object.assign({}, item, { payload: undefined }));
       try { localStorage.setItem(trashStorageKey, JSON.stringify(compact)); } catch {}
-      setMessage("回收站空间不足，已保留文件索引；请及时永久删除不需要的文件。", true);
+      setMessage("回收站兼容缓存未写入；作品仍保留在本机作品库，可重试或备份。", true);
     }
     const activeIds = new Set(keep.map((item) => item.id));
     for (let indexPosition = localStorage.length - 1; indexPosition >= 0; indexPosition -= 1) {
@@ -13334,7 +13368,7 @@
   }
 
   function prepareProjectForRemote(project) {
-    const outgoing = Object.assign({}, normalizeProject(project));
+    const outgoing = JSON.parse(JSON.stringify(project));
     delete outgoing.remoteUpdatedAt;
     delete outgoing.remoteSyncFingerprint;
     if (outgoing.payload) {
@@ -13342,7 +13376,7 @@
       outgoing.payloadUpdatedAt = outgoing.updatedAt || outgoing.savedAt || outgoing.payload.savedAt || new Date().toISOString();
       outgoing.hasPayload = true;
     }
-    outgoing.historyCount = Math.max(Number(outgoing.historyCount || 0), normalizeProjectHistory(outgoing.history).length);
+    outgoing.historyCount = Math.max(Number(outgoing.historyCount || 0), (outgoing.history || []).length);
     return outgoing;
   }
 
@@ -13354,22 +13388,16 @@
 
   // 同步节流：避免保存→同步→重渲染→列表跳变；同一时间只允许一个同步在飞。
   let syncProjectsInFlight = null;
-  let syncProjectsQueued = false;
 
-  function syncProjectsFromRemoteThrottled(options) {
+  function syncProjectsFromRemoteThrottled(options = {}) {
     if (syncProjectsInFlight) {
-      // 已有同步在飞：标记排队，结束后自动补一轮，避免旧数据覆盖新保存。
-      syncProjectsQueued = true;
-      return syncProjectsInFlight;
+      const active = syncProjectsInFlight;
+      // A user's click must wait for background reads and then actually upload.
+      return options.manual ? active.catch(() => {}).then(() => syncProjectsFromRemoteThrottled(options)) : active;
     }
-    syncProjectsInFlight = syncProjectsFromRemote(options).finally(() => {
-      syncProjectsInFlight = null;
-      if (syncProjectsQueued) {
-        syncProjectsQueued = false;
-        syncProjectsFromRemoteThrottled();
-      }
-    });
-    return syncProjectsInFlight;
+    const job = syncProjectsFromRemote(options);
+    syncProjectsInFlight = job;
+    return job.finally(() => { if (syncProjectsInFlight === job) syncProjectsInFlight = null; });
   }
 
   async function syncProjectsFromRemote(options = {}) {
@@ -13377,10 +13405,13 @@
     await offlineWriteQueue.catch(() => {});
     const localProjects = getProjects();
     // Background calls may refresh the index, but may never upload local edits.
-    if (options.manual) setMessage("正在手动同步电脑（需要同一局域网）...", false);
+    if (libraryBusy) { if (options.manual) setMessage("作品库正在处理，完成后请点击同步电脑。", true); return localProjects; }
+    if (options.manual) { manualSyncActive = true; lastSyncError = ""; updateDirtyStatus(); setMessage("正在手动同步电脑（需要同一局域网）...", false); }
     try {
-      const remoteProjects = await fetchRemoteProjects();
-      const conflicts = options.manual ? await syncOfflineOutbox(remoteProjects) : 0;
+      if (options.manual) await requireSyncProtocol();
+      let remoteProjects = await fetchRemoteProjects();
+      const conflicts = options.manual ? await syncOfflineOutbox() : 0;
+      if (options.manual) remoteProjects = await fetchRemoteProjects();
       if (options.manual) {
         // Download remote changes only for作品 that already have a local正文; never alter the open canvas.
         const localIndex = new Map((await offlineProjects.list()).map((record) => [record.id, record]));
@@ -13405,9 +13436,11 @@
       return getProjects();
     } catch (error) {
       console.warn("手动同步未完成", error);
-      if (options.manual) setMessage("电脑未连接：本机作品已保留。当前同步需要同一局域网，跨网 iCloud 尚未配置。", true);
+      if (options.manual) { lastSyncError = error instanceof TypeError ? "电脑未连接，请检查同一局域网连接；本机修改已保留。" : error.message; setMessage(lastSyncError, true); }
       renderHomeProjects();
       return localProjects;
+    } finally {
+      if (options.manual) { manualSyncActive = false; updateDirtyStatus(); }
     }
   }
 
@@ -13435,7 +13468,17 @@
     const dirty = Boolean(state.hasUnsavedChanges);
     const saving = dirty && pendingSaveAttempt && pendingSaveRevision === draftRevision;
     if (els.saveStatus) {
-      els.saveStatus.textContent = saving ? "保存中" : dirty ? "未保存" : "已保存";
+      const project = getProjects().find((item) => item.id === state.beads.projectId);
+      const status = window.QPixelSaveStatus.describe({ dirty, saving, failed: lastSaveFailure,
+        savedAt: project?.savedAt || project?.updatedAt, hasPayload: Boolean(project?.hasPayload || project?.payload),
+        pending: Boolean(project?.pendingSync), syncing: manualSyncActive, syncError: lastSyncError,
+        conflict: Boolean(project?.conflictOf) });
+      els.saveStatus.textContent = status.local;
+      const savedTime = document.getElementById("projectSavedTime");
+      if (savedTime) savedTime.textContent = status.savedAt ? `本机 ${formatShortDate(status.savedAt)}${project?.lastSyncedAt ? ` · 同步 ${formatShortDate(project.lastSyncedAt)}` : ""}` : "";
+      els.saveStatus.title = status.savedAt ? `最近本机保存：${formatDateTime(status.savedAt)}` : "";
+      const syncStatus = document.getElementById("projectSyncStatus");
+      if (syncStatus) { syncStatus.textContent = status.remote; syncStatus.title = lastSyncError || "点击首页同步电脑文件，才上传本机修改。"; }
       els.saveStatus.classList.toggle("dirty", dirty);
     }
     if (els.saveTopButton) els.saveTopButton.title = dirty ? "保存未保存修改" : "当前没有未保存修改";
@@ -13446,7 +13489,7 @@
   }
 
   function persistRecoveryDraft() {
-    if (!draftVault || !state.hasUnsavedChanges || !state.beads.pattern || draftRevision === persistedDraftRevision) return Promise.resolve(false);
+    if (libraryBusy || !draftVault || !state.hasUnsavedChanges || !state.beads.pattern || draftRevision === persistedDraftRevision) return Promise.resolve(false);
     const revision = draftRevision;
     let payload;
     try { payload = makeProjectPayload(); } catch (error) { return Promise.reject(error); }
@@ -13471,6 +13514,7 @@
 
   function markUnsavedChanges() {
     state.hasUnsavedChanges = true;
+    lastSaveFailure = false;
     draftRevision += 1;
     updateDirtyStatus();
     scheduleRecoveryDraft();
@@ -14525,6 +14569,7 @@
       setMessage("保存失败，请先创建画布。", true);
       return false;
     }
+    lastSaveFailure = false;
     const savingRevision = draftRevision;
     const attempt = ++saveAttempt;
     pendingSaveAttempt = attempt;
@@ -14562,9 +14607,10 @@
       await persistOfflineChanges([nextProject]);
       if (attempt === saveAttempt && savingRevision === draftRevision) { markSaved(); clearRecoveryDraft(payload); }
       renderProjectList(); renderHomeProjects();
-      if (attempt === saveAttempt) setMessage("已保存到本机，待同步；联网后点击“同步电脑文件”。", false);
+      if (attempt === saveAttempt) setMessage(savingRevision === draftRevision ? "已保存到本机，待同步；联网后点击“同步电脑文件”。" : "保存期间产生了新修改，请再次保存；本次版本已保留在本机。", false);
       return true;
     } catch (error) {
+      lastSaveFailure = true;
       console.error("Q像素工程保存失败", error);
       if (attempt === saveAttempt) setMessage("保存失败，请点顶部“备份 .qpx”保留当前修改。", true);
       return false;
@@ -14750,26 +14796,126 @@
   }
 
   function saveTextFile(text, fileName, mime, message) {
-    const blob = new Blob([text], { type: mime || "application/json" });
-    if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.exportFile) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        state.pendingSaveMessage = message || "文件已保存。";
-        window.webkit.messageHandlers.exportFile.postMessage({ fileName, dataUrl: reader.result });
-        setMessage("请选择保存位置。", false);
+    saveBlobFile(new Blob([text], { type: mime || "application/json" }), fileName, mime, message);
+  }
+
+  let libraryPreview = null;
+  function libraryPanel(title) {
+    const dialog = document.getElementById("projectLibraryDialog");
+    dialog.querySelector("h2").textContent = title;
+    dialog.querySelector('[data-role="library-body"]').replaceChildren();
+    dialog.querySelector('[data-role="library-status"]').textContent = "";
+    dialog.querySelector('[data-role="library-submit"]').disabled = false;
+    if (!dialog.open) dialog.showModal();
+    return dialog;
+  }
+  function libraryLine(container, text) { const p = document.createElement("p"); p.textContent = text; container.appendChild(p); return p; }
+  function libraryChoice(container, text, value, checked = true) {
+    const label = document.createElement("label"), input = document.createElement("input");
+    input.type = "checkbox"; input.value = value; input.checked = checked;
+    label.append(input, document.createTextNode(text)); container.appendChild(label); return input;
+  }
+  async function showLibraryExport() {
+    try {
+      await offlineReady;
+      const snapshot = await offlineProjects.snapshot(), dialog = libraryPanel("备份本机作品库"), body = dialog.querySelector('[data-role="library-body"]');
+      libraryLine(body, "包含勾选作品的正文、可读历史和回收站内容；不自动下载或同步。单包最多 1000 个作品、50 MiB，超出时请分批选择。");
+      snapshot.projects.filter((record) => !record.purged).forEach((record) => libraryChoice(body,
+        `${record.title || record.id}${record.deleted ? "（回收站）" : ""}${!record.payload ? "（无本机正文，将列入遗漏清单）" : ""}`,
+        record.id, true));
+      libraryChoice(body, "包含恢复草稿／当前未保存画布", "__draft__", true);
+      const submit = dialog.querySelector('[data-role="library-submit"]'); submit.textContent = "生成选中备份";
+      submit.onclick = async () => {
+        submit.disabled = true;
+        try {
+          const selected = [...body.querySelectorAll('input:checked')].map((el) => el.value);
+          const result = await buildLibraryBackup(selected.filter((id) => id !== "__draft__"), selected.includes("__draft__"));
+          saveTextFile(result.text, `Q像素-${result.partial ? "部分" : "本机"}作品库-${formatStamp(new Date())}.qpxlib`, "application/json", result.partial ? "部分作品库备份已保存，请查看文件中的遗漏清单。" : "本机作品库备份已保存。");
+          dialog.close();
+        } catch (error) { dialog.querySelector('[data-role="library-status"]').textContent = error.message; submit.disabled = false; }
       };
-      reader.onerror = () => setMessage("导出源文件失败。", true);
-      reader.readAsDataURL(blob);
-      return;
-    }
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(link.href), 500);
-    setMessage(message || "文件已导出。", false);
+    } catch (error) { setMessage(`无法备份：${error.message}`, true); }
+  }
+  async function buildLibraryBackup(selectedIds, includeDraft = true) {
+    if (libraryBusy) throw new Error("作品库正在处理，请稍后重试。");
+    libraryBusy = true;
+    try {
+      await offlineReady; await offlineWriteQueue.catch(() => {}); await draftWriteQueue.catch(() => {});
+      if (syncProjectsInFlight) await syncProjectsInFlight;
+      const revision = draftRevision, snapshot = await offlineProjects.snapshot(), vaultDraft = await draftVault?.load();
+      const historyChecks = [], records = [];
+      for (const record of snapshot.projects) {
+        if (selectedIds && !selectedIds.includes(record.id)) continue;
+        const copy = JSON.parse(JSON.stringify(record));
+        if ((copy.historyCount || 0) > (copy.history || []).length) {
+          const history = await draftVault?.loadHistory(copy.id) || [];
+          historyChecks.push([copy.id, JSON.stringify(history)]);
+          if (history.length > (copy.history || []).length) copy.history = history;
+        }
+        records.push(copy);
+      }
+      const draft = includeDraft ? state.hasUnsavedChanges ? makeProjectPayload() : vaultDraft : null;
+      if (!records.length && !draft) throw new Error("没有选中可备份的作品或草稿。");
+      const result = await window.QPixelProjectLibrary.create({ records, draft, pendingIds: snapshot.outbox.map((item) => item.id) });
+      const after = await offlineProjects.snapshot(), afterDraft = await draftVault?.load();
+      if (JSON.stringify(snapshot.projects) !== JSON.stringify(after.projects) || JSON.stringify(snapshot.projectIndex) !== JSON.stringify(after.projectIndex) || JSON.stringify(snapshot.outbox) !== JSON.stringify(after.outbox) || JSON.stringify(vaultDraft) !== JSON.stringify(afterDraft) || revision !== draftRevision) throw new Error("备份期间作品发生变化，请关闭其他编辑页后重试。");
+      for (const [id, text] of historyChecks) if (JSON.stringify(await draftVault.loadHistory(id)) !== text) throw new Error("备份期间历史变化，请重试。");
+      return result;
+    } finally { libraryBusy = false; scheduleRecoveryDraft(); }
+  }
+  async function previewLibraryText(text) {
+    const inspection = await window.QPixelProjectLibrary.inspect(text);
+    await offlineReady;
+    const snapshot = await offlineProjects.snapshot();
+    const plan = window.QPixelProjectLibrary.plan(inspection, snapshot.projects);
+    libraryPreview = { inspection, snapshot: JSON.stringify(snapshot.projects), plan };
+    return { inspection, report: plan.report, count: plan.records.length };
+  }
+  async function commitLibraryImport(selectedIds, includeDraft) {
+    if (!libraryPreview || libraryBusy) throw new Error("请先检查作品库文件。");
+    libraryBusy = true;
+    try {
+      await offlineWriteQueue.catch(() => {}); await draftWriteQueue.catch(() => {});
+      if (syncProjectsInFlight) await syncProjectsInFlight;
+      const preview = libraryPreview, inspection = { ...preview.inspection,
+        valid: preview.inspection.valid.filter((record) => selectedIds.includes(record.id)),
+        draft: includeDraft ? preview.inspection.draft : null };
+      const plan = window.QPixelProjectLibrary.plan(inspection, JSON.parse(preview.snapshot));
+      await offlineProjects.importBatch(plan.records, plan.report, preview.snapshot);
+      // Histories remain authoritative in imported project records; a vault write failure cannot lose them.
+      for (const record of plan.records) if (record.history?.length) {
+        try { await draftVault?.saveHistory(record.id, record.history); } catch (_) {}
+      }
+      libraryPreview = null;
+      await refreshOfflineIndex(); renderHomeProjects(); renderProjectList(); updateDirtyStatus();
+      return plan.report;
+    } finally { libraryBusy = false; scheduleRecoveryDraft(); }
+  }
+  async function showLibraryImport(file) {
+    if (!file) return;
+    try {
+      if (file.size > window.QPixelProjectLibrary.MAX_BYTES) throw new Error("文件超过 50 MiB，请使用分批备份文件。");
+      const preview = await previewLibraryText(await file.text()), dialog = libraryPanel("检查作品库导入"), body = dialog.querySelector('[data-role="library-body"]');
+      libraryLine(body, `有效作品 ${preview.inspection.valid.length}；相同作品 ${preview.report.skipped.length}；冲突副本 ${preview.report.copies.length}；遗漏 ${preview.inspection.omitted.length}；错误 ${preview.inspection.invalid.length}。`);
+      libraryLine(body, "只导入勾选的有效内容。不同内容保留副本，回收站内容仍在回收站；不替换当前画布，不自动上传。");
+      for (const item of preview.inspection.invalid) libraryLine(body, `错误：${item.id} · ${item.reason}`);
+      for (const item of preview.inspection.omitted) libraryLine(body, `未包含：${item.title || item.id} · ${item.reason}`);
+      for (const record of preview.inspection.valid) libraryChoice(body, `${record.title || record.id}${record.deleted ? "（回收站）" : ""}`, record.id);
+      if (preview.inspection.draft) libraryChoice(body, "恢复草稿（另存独立作品）", "__draft__");
+      const submit = dialog.querySelector('[data-role="library-submit"]'); submit.textContent = preview.inspection.invalid.length ? "确认仅导入勾选的有效内容" : "确认导入勾选内容";
+      submit.onclick = async () => {
+        submit.disabled = true;
+        try {
+          const ids = [...body.querySelectorAll('input:checked')].map((el) => el.value);
+          if (!ids.length) throw new Error("请至少选择一个作品或草稿。");
+          const report = await commitLibraryImport(ids.filter((id) => id !== "__draft__"), ids.includes("__draft__"));
+          body.replaceChildren(); libraryLine(body, `导入完成：新增 ${report.added.length}，副本 ${report.copies.length}，跳过 ${report.skipped.length}，回收站 ${report.trash.length}，草稿 ${report.drafts.length}。`);
+          libraryLine(body, "已保存到本机；活动作品待手动同步电脑。原有画布与恢复草稿未替换。");
+          submit.textContent = "下载迁移报告"; submit.disabled = false;
+          submit.onclick = () => saveTextFile(JSON.stringify(report, null, 2), "Q像素-迁移报告.json", "application/json", "迁移报告已保存。");
+        } catch (error) { dialog.querySelector('[data-role="library-status"]').textContent = error.message; submit.disabled = false; }
+      };
+    } catch (error) { setMessage(`导入检查失败：${error.message}`, true); }
   }
 
   function exportCurrentProjectFile() {
@@ -14837,6 +14983,10 @@
     installSelectionGuard();
     document.getElementById("inventoryCopyShortageButton")?.addEventListener("click", copyShortageReport);
     document.getElementById("inventoryExportShortageButton")?.addEventListener("click", exportShortageReport);
+    document.getElementById("libraryBackupButton")?.addEventListener("click", showLibraryExport);
+    document.getElementById("libraryImportButton")?.addEventListener("click", () => document.getElementById("libraryFileInput").click());
+    document.getElementById("libraryFileInput")?.addEventListener("change", (event) => { showLibraryImport(event.target.files[0]); event.target.value = ""; });
+    document.getElementById("projectLibraryDialog")?.querySelector('[data-role="library-close"]').addEventListener("click", () => { document.getElementById("projectLibraryDialog").close(); libraryPreview = null; });
     document.getElementById("migrationBackupButton")?.addEventListener("click", exportCurrentProjectFile);
     document.getElementById("migrationImportButton")?.addEventListener("click", () => els.projectFileInput.click());
     const address = document.getElementById("currentEntryAddress");
@@ -16314,8 +16464,19 @@
   }
 
   function exposeTestHooks() {
+    window.QPixelHasUnsavedChanges = () => Boolean(state.hasUnsavedChanges || pendingSaveAttempt || libraryBusy);
     window.QPixelNativeSaved = () => setMessage(state.pendingSaveMessage || "PNG 已保存。", false);
+    window.QPixelNativeExportResult = (event) => {
+      const message = nativeExportRequests.get(event?.requestId);
+      if (!message) return;
+      nativeExportRequests.delete(event.requestId);
+      setMessage(event.status === "saved" ? message : event.status === "cancelled" ? "已取消文件保存；作品状态未改变。" : "文件写入失败，请重新导出。", event.status === "failed");
+    };
     window.QPixelTest = {
+      buildLibraryBackupForTest: buildLibraryBackup,
+      previewLibraryTextForTest: previewLibraryText,
+      commitLibraryImportForTest: commitLibraryImport,
+      librarySnapshotForTest: () => offlineProjects.snapshot(),
       clampParams,
       clampBeadParams,
       renderSynthetic,
@@ -16470,6 +16631,7 @@
       getOfflineStoreForTest: () => offlineProjects,
       flushOfflineWritesForTest: () => offlineWriteQueue,
       syncOfflineForTest: () => syncProjectsFromRemoteThrottled({ manual: true }),
+      refreshRemoteIndexForTest: () => syncProjectsFromRemoteThrottled(),
       getShortageReportForTest: getShortageReport,
       renderInventoryPanelForTest: renderInventoryPanel,
       checkInterfaceReleaseForTest: checkInterfaceRelease,

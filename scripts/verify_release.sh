@@ -20,6 +20,8 @@ node --check "$RESOURCES_DIR/core/workspace-state.js"
 node --check "$RESOURCES_DIR/core/dom-utils.js"
 node --check "$RESOURCES_DIR/core/project-store.js"
 node --check "$RESOURCES_DIR/core/offline-projects.js"
+node --check "$RESOURCES_DIR/core/save-status.js"
+node --check "$RESOURCES_DIR/core/project-library.js"
 node --check "$RESOURCES_DIR/core/auto-draft.js"
 node --check "$RESOURCES_DIR/core/design-save-as.js"
 node --check "$RESOURCES_DIR/core/editor-performance.js"
@@ -53,6 +55,7 @@ swiftc "$REPO_DIR/macos/SmartBoardProtocol.swift" "$REPO_DIR/tests/smart-board-n
 "$VERIFY_DIR/smart-board-tests"
 node "$REPO_DIR/tests/project-store.test.js"
 node "$REPO_DIR/tests/offline-projects.test.js"
+node "$REPO_DIR/tests/project-library.test.js"
 node "$REPO_DIR/tests/auto-draft.test.js"
 node "$REPO_DIR/tests/design-save-as.test.js"
 node "$REPO_DIR/tests/background-engine.test.js"
@@ -74,7 +77,7 @@ done
 cmp -s "$RESOURCES_DIR/run_ipad_server.sh" "$REPO_DIR/scripts/run_ipad_server.sh"
 zsh -n "$RESOURCES_DIR/run_ipad_server.sh"
 
-for file in project-model.js workspace-state.js dom-utils.js project-store.js design-save-as.js editor-performance.js layer-translate.js layer-order.js offline-projects.js auto-draft.js; do
+for file in project-model.js workspace-state.js dom-utils.js project-store.js design-save-as.js editor-performance.js layer-translate.js layer-order.js offline-projects.js auto-draft.js save-status.js project-library.js; do
   cmp -s "$RESOURCES_DIR/core/$file" "$REPO_DIR/web/core/$file"
 done
 

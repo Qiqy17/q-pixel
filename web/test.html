@@ -99,6 +99,11 @@
     <span id="sourceCompareOpacityLabel"></span>
     <div id="lockedColorSummary"></div>
   </div>
+  <script>
+    window.qpixelTestErrors = [];
+    window.addEventListener("error", (event) => window.qpixelTestErrors.push({message:event.message, stack:event.error && event.error.stack}));
+    window.addEventListener("unhandledrejection", (event) => window.qpixelTestErrors.push({message:String(event.reason), stack:event.reason && event.reason.stack}));
+  </script>
   <script src="./feature-flags.js"></script>
   <script src="./module-loader.js"></script>
   <script src="./core/project-model.js"></script>
@@ -106,9 +111,12 @@
   <script src="./core/dom-utils.js"></script>
   <script src="./core/editor-performance.js"></script>
   <script src="./core/layer-translate.js"></script>
+  <script src="./core/layer-order.js"></script>
   <script src="./color/palette-registry.js"></script>
   <script src="./import-engine.js"></script>
   <script src="./import-processing.js"></script>
+  <script src="./core/save-status.js"></script>
+  <script src="./core/project-library.js"></script>
   <script src="./app.js"></script>
   <script>
     async function blobToDataUrl(blob) {

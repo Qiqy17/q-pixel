@@ -1,5 +1,5 @@
 importScripts("./studio/scene-material-library.js");
-const CACHE_NAME = "q-pixel-v20261009-inventory-migration-61";
+const CACHE_NAME = "q-pixel-v20261009-reliability-62";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -14,6 +14,8 @@ const APP_SHELL = [
   "./core/design-save-as.js",
   "./core/auto-draft.js",
   "./core/offline-projects.js",
+  "./core/save-status.js",
+  "./core/project-library.js",
   "./core/editor-performance.js",
   "./core/layer-translate.js",
   "./core/layer-order.js",
@@ -26,7 +28,7 @@ const APP_SHELL = [
   "./make/smart-board-ui.js",
   "./make/build-navigation.js",
   "./studio/studio.css",
-  "./studio/studio.css?v=20261009-inventory-migration-61",
+  "./studio/studio.css?v=20261009-reliability-62",
   "./studio/background-engine.js",
   "./studio/background-tool.js",
   "./studio/surface-engine.js",
@@ -60,7 +62,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20261009-inventory-migration-61",
+  "./app.js?v=20261009-reliability-62",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"
