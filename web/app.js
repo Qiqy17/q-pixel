@@ -2890,8 +2890,56 @@
     return entries;
   }
 
+  function getShortageReport() {
+    const pattern = state.beads && state.beads.pattern;
+    if (!pattern || !Array.isArray(pattern.cells)) return null;
+    const engine = ensureInventoryEngine();
+    if (!engine) return null;
+    const usage = {};
+    calculateUsage(pattern).forEach((item) => { usage[item.code] = item.count; });
+    return engine.shortageReport(usage, state.inventory);
+  }
+
+  function renderShortageReport() {
+    const body = document.getElementById("inventoryShortageRows");
+    if (!body) return;
+    body.replaceChildren();
+    const report = getShortageReport();
+    document.getElementById("inventoryReportNote").textContent = !report ? "生成或打开图纸后可查看完整清单。"
+      : `${report.estimated ? "未录入有效库存，按零库存估算。" : "按当前图纸与库存计算。"} ${report.rows.length ? `共 ${report.rows.length} 色，需补 ${report.totalShortage} 颗。` : "当前库存可覆盖图纸全部用量，无需补货。"}`;
+    for (const item of report?.rows || []) {
+      const row = document.createElement("tr");
+      for (const value of [item.code, item.need, item.stock, item.shortage]) {
+        const cell = document.createElement("td"); cell.textContent = String(value); row.appendChild(cell);
+      }
+      body.appendChild(row);
+    }
+    for (const id of ["inventoryCopyShortageButton", "inventoryExportShortageButton"]) document.getElementById(id).disabled = !report?.rows.length;
+    document.getElementById("inventoryCopyFallback").hidden = true;
+  }
+
+  async function copyShortageReport() {
+    const report = getShortageReport();
+    if (!report?.rows.length) return;
+    try {
+      await navigator.clipboard.writeText(report.text);
+      setMessage("完整缺货清单已复制；库存未扣减。");
+    } catch {
+      const fallback = document.getElementById("inventoryCopyFallback");
+      fallback.value = report.text; fallback.hidden = false; fallback.focus(); fallback.select();
+      setMessage("此入口无法直接复制，请选择下方清单文本复制。", true);
+    }
+  }
+
+  function exportShortageReport() {
+    const report = getShortageReport();
+    if (!report?.rows.length) return;
+    saveTextFile(report.csv, `${safeFileName(state.beads.projectTitle || "Q像素")}-缺货清单.csv`, "text/csv;charset=utf-8", "完整缺货清单已导出；库存未扣减。");
+  }
+
   function renderInventoryPanel() {
     if (!els.inventorySummary) return;
+    renderShortageReport();
     const pattern = state.beads && state.beads.pattern;
     const hasInventory = state.inventory && Object.keys(state.inventory).some((code) => Number(state.inventory[code]) > 0);
     if (!hasInventory) {
@@ -14744,6 +14792,7 @@
 
   function importProjectFile(file) {
     if (!file) return;
+    if (state.hasUnsavedChanges && !window.confirm("当前有未保存修改。导入会替换当前画布，请先保存或备份。仍要导入吗？")) return;
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -14786,6 +14835,15 @@
 
   function wireEvents() {
     installSelectionGuard();
+    document.getElementById("inventoryCopyShortageButton")?.addEventListener("click", copyShortageReport);
+    document.getElementById("inventoryExportShortageButton")?.addEventListener("click", exportShortageReport);
+    document.getElementById("migrationBackupButton")?.addEventListener("click", exportCurrentProjectFile);
+    document.getElementById("migrationImportButton")?.addEventListener("click", () => els.projectFileInput.click());
+    const address = document.getElementById("currentEntryAddress");
+    if (address) address.textContent = location.protocol === "file:" ? "当前入口：电脑 App 内置离线界面" : `当前入口：${location.origin}${location.pathname}`;
+    checkInterfaceRelease();
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) checkInterfaceRelease(); });
+    window.addEventListener("online", checkInterfaceRelease);
     els.homeNewDesignButton.addEventListener("click", startNewProjectFlow);
     els.homeNewTopButton.addEventListener("click", startNewProjectFlow);
     if (els.projectEntryCloseButton) els.projectEntryCloseButton.addEventListener("click", closeProjectEntryModal);
@@ -16412,6 +16470,9 @@
       getOfflineStoreForTest: () => offlineProjects,
       flushOfflineWritesForTest: () => offlineWriteQueue,
       syncOfflineForTest: () => syncProjectsFromRemoteThrottled({ manual: true }),
+      getShortageReportForTest: getShortageReport,
+      renderInventoryPanelForTest: renderInventoryPanel,
+      checkInterfaceReleaseForTest: checkInterfaceRelease,
       setOfflineWriteFailureForTest: (value) => offlineProjects.setWriteFailureForTest(value),
       setProjectStorageFailureForTest: (enabled) => {
         state.forceProjectStorageFailureForTest = Boolean(enabled);
@@ -16843,6 +16904,22 @@
     window.setTimeout(offerDraftRecovery, 100);
     syncProjectsFromRemoteThrottled();
     syncSharedSettingsFromRemote();
+  }
+
+  async function checkInterfaceRelease() {
+    const status = document.getElementById("releaseStatus");
+    const revision = document.querySelector('meta[name="qpixel-revision"]')?.content;
+    if (!status || !revision) return;
+    status.textContent = `页面版本：${revision}`;
+    if (location.protocol === "file:") { status.textContent += " · App 内置界面"; return; }
+    try {
+      const response = await fetch("./api/release", { cache: "no-store" });
+      if (!response.ok) return;
+      const release = await response.json();
+      status.textContent = release.interfaceRevision && release.interfaceRevision !== revision
+        ? `发现界面更新：${release.interfaceRevision}。请先保存或备份未保存修改，再重新打开此入口。`
+        : `页面版本：${revision}${release.build ? ` · 服务 build ${release.build}` : " · 与服务界面一致"}`;
+    } catch { status.textContent += " · 暂无法核对服务版本"; }
   }
 
   function registerOfflineApp() {

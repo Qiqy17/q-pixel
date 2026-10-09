@@ -344,3 +344,11 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .layer-reorder-handle { min-height: 44px; }
 .layer-card .layer-name, .finish-workbench .layer-name { min-height: 24px; font-size: 13px; }
 .layer-card .layer-mini, .finish-workbench .layer-mini { height: 32px; }
+
+/* 手动同步在窄屏也必须可操作；迁移说明可展开滚动。 */
+#entryMigrationGuide { width:100%; max-width:1540px; margin:0 auto; flex:none; }
+#entryMigrationGuide summary, #inventoryShortageDetails summary { cursor:pointer; font-weight:700; padding:8px 0; }
+#entryMigrationGuide[open] { max-height:45dvh; overflow:auto; }
+#inventoryShortageDetails th, #inventoryShortageDetails td { padding:6px 8px; border-bottom:1px solid var(--panel-line); white-space:nowrap; }
+#inventoryCopyFallback { width:100%; user-select:text; }
+@media(max-width:650px) { .home-header-actions #homeSyncButton { display:inline-flex; } .home-header-actions { flex-wrap:wrap; } }

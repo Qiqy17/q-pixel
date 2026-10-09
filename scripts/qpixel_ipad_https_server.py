@@ -8,6 +8,7 @@ import http.client
 import ipaddress
 import json
 import os
+import re
 import secrets
 import shutil
 import ssl
@@ -256,6 +257,9 @@ class QPixelHttpsHandler(SimpleHTTPRequestHandler):
             return
         if path == "/api/ai/latest-download":
             self.send_json(find_latest_download_image(parse_query(self.path).get("since", ["0"])[0]) or {"found": False})
+            return
+        if path == "/api/release":
+            self.send_json(release_payload())
             return
         if path == "/api/health":
             with WRITE_LOCK:
@@ -693,6 +697,22 @@ def file_size(path):
         return path.stat().st_size if path.exists() else 0
     except OSError:
         return 0
+
+
+def release_payload():
+    result = {}
+    try:
+        data = json.loads((ROOT / "release-info.json").read_text(encoding="utf-8"))
+        result = {key: data[key] for key in ("version", "build", "gitCommit", "builtAt") if key in data}
+    except (OSError, ValueError, TypeError):
+        pass
+    try:
+        match = re.search(r'<meta name="qpixel-revision" content="([a-zA-Z0-9-]+)"', (ROOT / "index.html").read_text(encoding="utf-8"))
+        if match:
+            result["interfaceRevision"] = match.group(1)
+    except OSError:
+        pass
+    return result
 
 
 def health_payload(projects, settings):

@@ -107,3 +107,24 @@ const undone = inventoryEngine.undoDecrement(applied.inventory, applied.record);
 assert.equal(undone["A1"], 8);
 assert.equal(undone["A2"], 10);
 console.log("inventory-engine tests: PASS");
+
+// 完整缺货报告：不截断、零库存估算、CSV 中文与无副作用。
+const reportUsage = Object.fromEntries(Array.from({length: 9}, (_, i) => [`A${i + 1}`, i + 2]));
+const reportStock = { A1: 1, A2: 0 };
+const beforeUsage = JSON.stringify(reportUsage), beforeStock = JSON.stringify(reportStock);
+const report = inventoryEngine.shortageReport(reportUsage, reportStock);
+assert.equal(report.rows.length, 9);
+assert.equal(report.estimated, false);
+assert.ok(report.text.includes("A9\t10\t0\t10"));
+assert.ok(report.csv.startsWith("\uFEFF"));
+assert.ok(report.csv.includes('"色号","需求（颗）","库存（颗）","需补（颗）"'));
+assert.equal(report.totalShortage, Object.values(reportUsage).reduce((a,b) => a+b,0)-1);
+assert.equal(JSON.stringify(reportUsage), beforeUsage);
+assert.equal(JSON.stringify(reportStock), beforeStock);
+const zeroReport = inventoryEngine.shortageReport(reportUsage, {});
+assert.equal(zeroReport.estimated, true);
+assert.equal(zeroReport.rows.length, 9);
+assert.ok(zeroReport.text.includes("按零库存估算"));
+assert.equal(inventoryEngine.shortageReport({A1: 2}, {A1: 2}).rows.length, 0);
+assert.equal(inventoryEngine.shortageReport({}, {}).rows.length, 0);
+assert.ok(inventoryEngine.shortageReport({'=SUM(1)': 2}, {}).csv.includes("'=SUM(1)"));

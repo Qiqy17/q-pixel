@@ -79,6 +79,25 @@
       });
     }
 
+    // 清单与统计共用同一摘要，不扣减库存或改写图纸。
+    function shortageReport(usage, inventory) {
+      const summary = summarize(usage, inventory);
+      const rows = summary.colors.filter((item) => item.shortage > 0);
+      const estimated = !Array.from(normalizeUsage(inventory).values()).some((count) => count > 0);
+      const note = estimated ? "未录入有效库存，按零库存估算" : "按当前图纸和已录入库存计算";
+      const header = ["色号", "需求（颗）", "库存（颗）", "需补（颗）"];
+      const values = rows.map((item) => [item.code, item.need, item.stock, item.shortage]);
+      // Quote strings and neutralize spreadsheet formula prefixes in external color codes.
+      const csvCell = (value) => typeof value === "number" ? String(value)
+        : '"' + String(value).replace(/^[=+@\-]/, "'$&").replace(/"/g, '""') + '"';
+      return {
+        rows, estimated, totalShortage: summary.totalShortage,
+        text: ["Q像素缺货清单", note, header.join("\t"), ...values.map((row) => row.join("\t")),
+          `共 ${rows.length} 色，需补 ${summary.totalShortage} 颗`].join("\n"),
+        csv: "\uFEFF" + [["Q像素缺货清单", note], header, ...values].map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n"
+      };
+    }
+
     // 替代色候选：按色差升序，且替代后库存必须真正可覆盖新增用量。
     function substitutionOptions(code, usage, inventory, substitutionOptions) {
       const settings = substitutionOptions || {};
@@ -243,7 +262,7 @@
       return next;
     }
 
-    return Object.freeze({ ENGINE_VERSION, usageOfCells, summarize, substitutionOptions, planInventoryReduction, decrementPreview, applyDecrement, undoDecrement });
+    return Object.freeze({ ENGINE_VERSION, usageOfCells, summarize, shortageReport, substitutionOptions, planInventoryReduction, decrementPreview, applyDecrement, undoDecrement });
   }
 
   return Object.freeze({ ENGINE_VERSION, create });

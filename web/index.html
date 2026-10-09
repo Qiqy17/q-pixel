@@ -2,6 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
+  <meta name="qpixel-revision" content="20261009-inventory-migration-61">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -12,7 +13,7 @@
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.svg">
   <link rel="stylesheet" href="./styles.css?v=20260928-save-as-45">
-  <link rel="stylesheet" href="./studio/studio.css?v=20261002-smart-board-cancel-60">
+  <link rel="stylesheet" href="./studio/studio.css?v=20261009-inventory-migration-61">
 </head>
 <body>
   <main class="app-shell is-home">
@@ -32,6 +33,23 @@
         </div>
       </header>
       <p id="offlineAvailability" class="panel-caption" role="status">离线入口准备中；作品需先保存到本机。</p>
+
+      <p id="releaseStatus" class="panel-caption" role="status"></p>
+      <details id="entryMigrationGuide" class="panel-card" style="margin-bottom:16px">
+        <summary>更换入口／迁移作品</summary>
+        <p id="currentEntryAddress" class="panel-caption" style="overflow-wrap:anywhere"></p>
+        <p>电脑 App、电脑网页和平板网页各有本机保存区。不同 IP、端口、HTTP／HTTPS 地址的本机作品也相互独立。新入口看不到旧作品，不代表作品已删除。</p>
+        <ol>
+          <li>在旧入口逐个打开作品，先保存到本机，再下载 .qpx 备份；未同步的作品也要备份。</li>
+          <li>在新入口导入 .qpx，核对名称、尺寸、图层和色号，再保存到本机。多个作品需逐个迁移。</li>
+          <li>需要上传电脑时，点击“同步电脑文件”；恢复网络、导入和保存都不会自动上传作品。</li>
+        </ol>
+        <div class="split-actions">
+          <button id="migrationBackupButton" class="text-button secondary" type="button">备份当前作品 .qpx</button>
+          <button id="migrationImportButton" class="text-button secondary" type="button">导入备份 .qpx</button>
+        </div>
+        <p class="panel-caption">当前作品备份只导出已打开的作品。旧入口无法联网时，可尝试从原来的浏览器／桌面图标离线打开；尚未下载的作品需要从电脑同步获取。有备份则在新入口导入。没有备份且旧保存区无法访问时，新入口无法自动找回；请保留原浏览器数据。</p>
+      </details>
 
       <section class="studio-home-intro" aria-label="继续创作">
         <div><span class="studio-eyebrow">YOUR WORKSPACE</span><h2>继续你的创作</h2><p>从最近的图纸接着做，或导入图片开始新项目。</p></div>
@@ -459,6 +477,18 @@
                 <button id="inventoryDecrementButton" class="text-button secondary" type="button">按图纸扣减库存</button>
                 <button id="inventoryUndoDecrementButton" class="text-button secondary" type="button" hidden>撤回上次扣减</button>
               </div>
+              <details id="inventoryShortageDetails">
+                <summary>完整缺货清单</summary>
+                <p id="inventoryReportNote" class="panel-caption"></p>
+                <div style="overflow-x:auto;max-height:280px">
+                  <table style="width:100%;text-align:left"><caption class="sr-only">图纸备料缺货明细</caption><thead><tr><th scope="col">色号</th><th scope="col">需求</th><th scope="col">库存</th><th scope="col">需补</th></tr></thead><tbody id="inventoryShortageRows"></tbody></table>
+                </div>
+                <div class="split-actions">
+                  <button id="inventoryCopyShortageButton" class="text-button secondary" type="button" disabled>复制缺货清单</button>
+                  <button id="inventoryExportShortageButton" class="text-button secondary" type="button" disabled>导出 CSV</button>
+                </div>
+                <textarea id="inventoryCopyFallback" rows="6" aria-label="缺货清单文本，可选择复制" readonly hidden></textarea>
+              </details>
               <div id="inventorySubstitutionList"></div>
             </div>
             <div class="toggle-grid" data-studio-stages="design output">
@@ -1599,6 +1629,6 @@
   <script src="./3d/finish-workbench.js?v=20260929-h1-3d-opacity-54"></script>
   <script src="./import-engine.js"></script>
   <script src="./import-processing.js"></script>
-  <script src="./app.js?v=20261002-smart-board-cancel-60"></script>
+  <script src="./app.js?v=20261009-inventory-migration-61"></script>
 </body>
 </html>

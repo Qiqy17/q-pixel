@@ -76,6 +76,20 @@ class LocalServerSecurityTest(unittest.TestCase):
             time.sleep(0.1)
         self.fail(f"server did not start: {port}")
 
+    def test_release_endpoint_is_paired_and_same_revision(self):
+        status, headers, body = self.request(False, self.local_port, "GET", "/api/release")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers["Cache-Control"], "no-store")
+        revision = json.loads(body)["interfaceRevision"]
+        self.assertEqual(revision, "20261009-inventory-migration-61")
+        status, _, _ = self.request(True, self.paired_port, "GET", "/api/release")
+        self.assertEqual(status, 401)
+        _, headers, _ = self.request(True, self.paired_port, "POST", "/pair", urlencode({"code": self.pairing_code}), {"Content-Type": "application/x-www-form-urlencoded"})
+        cookie = headers["Set-Cookie"].split(";", 1)[0]
+        status, _, body = self.request(True, self.paired_port, "GET", "/api/release", headers={"Cookie": cookie})
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["interfaceRevision"], revision)
+
     def test_pairing_protects_shared_api_and_proxies_one_store(self):
         status, headers, _ = self.request(True, self.paired_port, "GET", "/api/projects")
         self.assertEqual(status, 401)
