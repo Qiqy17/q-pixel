@@ -27,6 +27,8 @@
 
 Google Play：若使用 2023-11-13 后创建的个人开发者账号，官方要求至少 12 位测试者连续加入封闭测试 14 日后申请生产权限；不是所有账号一律适用。其他安卓商店另按所选渠道核对。
 
+面向中国大陆发行：需要按最终联网业务、主体及发行平台核对 APP 备案及平台信息要求，当前没有检查到备案材料，不能标记完成。Apple 的 App 信息页面要求在适用时提交 ICP 备案信息；不能把 Q像素工具直接套用游戏版号要求。
+
 ## 官方来源（2026-10-09 查阅）
 
 - Apple 审核指南 2.4.5、4.2、5.1：https://developer.apple.com/app-store/review/guidelines/
@@ -35,3 +37,6 @@ Google Play：若使用 2023-11-13 后创建的个人开发者账号，官方要
 - 隐私资料：https://developer.apple.com/help/app-store-connect/reference/app-information/app-privacy
 - macOS 公证：https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution
 - Google 新个人账号测试：https://support.google.com/googleplay/android-developer/answer/14151465?hl=en
+
+- 工信部 APP 备案通知：https://www.miit.gov.cn/jgsj/xgj/wjfb/art/2023/art_dd783a581c9644a4aee10afa582811db.html
+- Apple 中国大陆 App 信息：https://developer.apple.com/cn/help/app-store-connect/reference/app-information/app-information/
