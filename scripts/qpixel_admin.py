@@ -49,7 +49,7 @@ def tablet_status():
         if not ipaddress.ip_address(host).is_private:
             return {'state': 'unknown', 'label': '未找到局域网共享地址'}
         context = ssl.create_default_context(cafile=str(cert_dir / 'qpixel-ipad.crt'))
-        connection = http.client.HTTPSConnection(host, 8767, timeout=1, context=context)
+        connection = http.client.HTTPSConnection(host, 8767, timeout=0.25, context=context)
         try:
             connection.request('GET', '/pair')
             response = connection.getresponse()
