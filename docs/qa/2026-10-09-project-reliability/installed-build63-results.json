@@ -1,0 +1,46 @@
+{
+  "installedRelease": {
+    "version": "2.0.0",
+    "build": "63",
+    "gitCommit": "c4f70fb37517f95eed7e5b3125389da284fceff6",
+    "builtAt": "2026-10-09T10:53:34Z"
+  },
+  "resourceHashesMatch": {
+    "web/app.js": true,
+    "web/core/offline-projects.js": true,
+    "web/core/save-status.js": true,
+    "web/core/project-library.js": true,
+    "web/index.html": true,
+    "web/styles.css": true,
+    "web/sw.js": true,
+    "web/admin.html": true,
+    "web/admin.js": true,
+    "scripts/qpixel_admin.py": true,
+    "scripts/qpixel_ipad_https_server.py": true
+  },
+  "projectCount": 217,
+  "projectFilesUnchanged": true,
+  "health": {
+    "ok": true,
+    "syncProtocolVersion": 2,
+    "projectCount": 217,
+    "projectsOk": true,
+    "settingsOk": true
+  },
+  "release": {
+    "version": "2.0.0",
+    "build": "63",
+    "gitCommit": "c4f70fb37517f95eed7e5b3125389da284fceff6",
+    "builtAt": "2026-10-09T10:53:34Z",
+    "interfaceRevision": "20261009-reliability-admin-63"
+  },
+  "tabletPairStatus": 200,
+  "tabletAdminStatus": 403,
+  "nativeUI": {
+    "homeBuild63": true,
+    "recoveryDraftPreserved": true,
+    "libraryDialogOpened": true,
+    "realSavePanelOpenedAndCancelled": true,
+    "fullEditSaveReopenAccepted": false
+  }
+}
