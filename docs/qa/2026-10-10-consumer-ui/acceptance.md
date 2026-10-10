@@ -12,3 +12,9 @@ Implemented the approved task-oriented home and four-stage workspace, temporary 
 - 390 × 844 responsive viewport: home and make panel; collapse restores visible canvas. Desktop 1280 × 800: make and output controls verified.
 
 These are source and browser checks. Native App edit-save-exit-reopen, real iPad touch/offline, physical bead production, and application-market distribution are not accepted by these results.
+
+## Package
+
+Build 64, source commit `10413a9c56284922af4ddbd996667c617ab976c5`; `verify_release.sh` passed. Eight changed resource SHA256 values match source. Candidate is stored under `dist/Q像素-Consumer-64.app`; installed build and running production services were not replaced.
+
+Additional responsive checks: actual DOM viewport 744 × 1133 portrait and 1024 × 768 landscape, panel-to-canvas switching; final desktop screenshot corrected to actual 1280 × 800 viewport.
