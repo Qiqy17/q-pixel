@@ -10204,7 +10204,7 @@
         paperPreset: "a4", exportScale: 1, showInfo: true, showUsage: true,
         showAxisNumbers: true, axisStartCol: board.columnStart + 1, axisStartRow: board.rowStart + 1,
         pageTitle: `${state.beads.projectTitle || "Q像素拼豆图纸"} · 底板 ${board.index}/${boards.length}`,
-        pageSubtitle: `列 ${board.columnStart + 1}–${board.columnStart + board.columns} · 行 ${board.rowStart + 1}–${board.rowStart + board.rows} · ${board.cellCount} 颗`
+        pageSubtitle: `列 ${board.columnStart + 1}–${board.columnStart + board.columns} · 行 ${board.rowStart + 1}–${board.rowStart + board.rows} · ${board.cellCount} 颗 · ${state.beads.exportSettings.exportMirror ? "镜像" : "非镜像"} · PDF 非 1:1，请试印核对格距`
       });
       const canvas = makeBeadExportCanvas(chunk, settings);
       const layout = getExportLayout(chunk, settings, getUsageForExport(chunk, settings));
@@ -14488,16 +14488,20 @@
       black: "黑底",
       custom: "自定义底色"
     };
+    const boardSpec = boardPlannerModule?.getSpec(getBoardPlanOptions().specId);
     return {
       pattern: state.beads.pattern,
       layers: state.beads.layers,
       usage,
       inventory: state.inventory,
+      validColorCodes: beadPalette.map(color => color.code),
+      boardSpecLabel: boardSpec?.label,
+      boardPlanEstimated: Boolean(getBoardPlanOptions().preferSeams),
       baseboardMode: state.beads.baseboardMode,
       baseboardModeLabel: baseboardLabels[state.beads.baseboardMode] || state.beads.baseboardMode,
-      boardCount: boardPlannerModule && state.beads.pattern && state.beads.pattern.width <= 100 && state.beads.pattern.height <= 100
-        ? boardPlannerModule.splitPattern(state.beads.pattern, { specId: "standard-29" }).length
-        : (boardPlanCache ? boardPlanCache.length : 0),
+      boardCount: boardSpec && state.beads.pattern
+        ? Math.ceil(state.beads.pattern.width / boardSpec.columns) * Math.ceil(state.beads.pattern.height / boardSpec.rows)
+        : 0,
       exportSettings: state.beads.exportSettings,
       hasUnsavedChanges: state.hasUnsavedChanges
     };
@@ -16658,6 +16662,7 @@
       setMessage(event.status === "saved" ? message : event.status === "cancelled" ? "已取消文件保存；作品状态未改变。" : "文件写入失败，请重新导出。", event.status === "failed");
     };
     window.QPixelTest = {
+      getQualitySnapshotForTest: getProfessionalWorkspaceSnapshot,
       persistRecoveryDraftForTest: persistRecoveryDraft,
       offerDraftRecoveryForTest: offerDraftRecovery,
       buildLibraryBackupForTest: buildLibraryBackup,

@@ -4,6 +4,9 @@
     "offline activation preserves unrelated cache",
     "real browser offline reload reopens saved project",
     "network recovery and local save never upload projects",
+    "quality panel uses selected physical board specification",
+    "quality snapshot checks actual usage and print scale",
+    "actual board PDF export contains four pages",
     "120x120 two-layer save and reopen",
     "500x500 two-layer save and reopen",
     "no page JavaScript errors"
@@ -11,20 +14,20 @@
   "timings": [
     {
       "size": 120,
-      "openMs": 1469.2000000001863,
+      "openMs": 1192,
       "editMs": 0.20000000018626451,
-      "undoMs": 13.5,
-      "saveMs": 44.69999999925494,
-      "reopenMs": 18.300000000745058,
+      "undoMs": 14.400000000372529,
+      "saveMs": 34,
+      "reopenMs": 17.59999999962747,
       "layers": 2
     },
     {
       "size": 500,
-      "openMs": 11649.699999999255,
-      "editMs": 0.40000000037252903,
-      "undoMs": 146.79999999981374,
-      "saveMs": 273.29999999981374,
-      "reopenMs": 246.20000000018626,
+      "openMs": 11420.900000000373,
+      "editMs": 0.2999999998137355,
+      "undoMs": 146.5,
+      "saveMs": 274.20000000018626,
+      "reopenMs": 237.90000000037253,
       "layers": 2
     }
   ],

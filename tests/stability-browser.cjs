@@ -18,6 +18,7 @@ const check=(value,name)=>{assert(value,name);results.push(name);};
   const origin=`http://127.0.0.1:${server.address().port}`;
   const browser=await chromium.launch({executablePath:process.env.QPIXEL_CHROME||"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",headless:true});
   try{
+    const directory=path.resolve(process.argv[2]||'docs/qa/2026-10-10-stability');await fs.mkdir(directory,{recursive:true});
     const context=await browser.newContext(),page=await context.newPage();
     page.on('pageerror',error=>errors.push(String(error)));
     await page.goto(origin);await page.waitForFunction(()=>window.QPixelTest?.getOfflineStoreForTest());
@@ -29,6 +30,18 @@ const check=(value,name)=>{assert(value,name);results.push(name);};
     check(await page.evaluate(async()=>{await QPixelTest.loadProject(localStorage.getItem('stability-qa-id'));return QPixelTest.makeProjectPayload().pattern.width===18;}),'real browser offline reload reopens saved project');
     await context.setOffline(false);
     check(uploads===0,'network recovery and local save never upload projects');
+    const quality=await page.evaluate(()=>{
+      const select=document.getElementById('boardSpecSelect');select.value='standard-15';select.dispatchEvent(new Event('change'));
+      const snapshot=QPixelTest.getQualitySnapshotForTest(),checks=QPixelQualityChecks.run(snapshot);
+      return {count:snapshot.boardCount,label:snapshot.boardSpecLabel,integrity:checks.find(c=>c.id==='pattern-integrity').status,print:checks.find(c=>c.id==='output').detail};
+    });
+    check(quality.count===4 && quality.label.includes('15'),'quality panel uses selected physical board specification');
+    check(quality.integrity==='pass' && quality.print.includes('不保证 1:1'),'quality snapshot checks actual usage and print scale');
+    const pdfDownload=page.waitForEvent('download');
+    await page.evaluate(()=>document.getElementById('studioOutputBoardPdfButton').click());
+    const pdf=await pdfDownload;await pdf.saveAs(path.join(directory,'qa-board-output.pdf'));
+    const pdfText=(await fs.readFile(path.join(directory,'qa-board-output.pdf'))).toString('latin1');
+    check(pdfText.startsWith('%PDF-1.4') && (pdfText.match(/\/Type \/Page /g)||[]).length===4,'actual board PDF export contains four pages');
     for(const size of [120,500]){
       const measurements=await page.evaluate(async size=>{
         const t=QPixelTest,out={size},time=async(name,fn)=>{const start=performance.now();await fn();out[name]=performance.now()-start;};
@@ -44,7 +57,6 @@ const check=(value,name)=>{assert(value,name);results.push(name);};
     }
     check(errors.length===0,'no page JavaScript errors');
     await context.close();
-    const directory=path.resolve(process.argv[2]||'docs/qa/2026-10-10-stability');await fs.mkdir(directory,{recursive:true});
     await fs.writeFile(path.join(directory,'browser-stability-results.json'),JSON.stringify({scope:'isolated desktop Chromium; not physical iPad or calibrated 3D',results,timings,errors},null,2)+'\n');
     console.log(JSON.stringify({results,timings},null,2));
   }finally{await browser.close();}
