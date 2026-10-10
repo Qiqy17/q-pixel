@@ -818,7 +818,7 @@
     if (els.pixelPanel) els.pixelPanel.classList.toggle("active", state.mode === "pixel");
     if (els.beadPanel) els.beadPanel.classList.toggle("active", state.mode === "beads" || state.mode === "pixel");
     if (els.exportTopButton) {
-      els.exportTopButton.textContent = "导出预览";
+      els.exportTopButton.textContent = "导出";
     }
     syncDropZoneClass();
     render();
@@ -4298,6 +4298,8 @@
     } else {
       renderPixelMode(compositeCurrent);
     }
+    professionalWorkspaceRuntime?.inspector.render(professionalWorkspaceState.stage);
+    renderConsumerTask();
   }
 
   function updateParam(key, value) {
@@ -4392,7 +4394,7 @@
     });
     if (els.importQuickButton) {
       const span = els.importQuickButton.querySelector("span");
-      if (span) span.textContent = `按${importTypeLabel(getEffectiveImportType(session))}的均衡参数生成，可直接进入编辑`;
+      if (span) span.textContent = `按${importTypeLabel(getEffectiveImportType(session))}的${({ fidelity: "保真", balanced: "均衡", simple: "简化" })[session.consumerMode || "balanced"]}方案生成，可直接进入编辑`;
     }
     document.querySelectorAll("[data-import-type]").forEach((button) => {
       button.classList.toggle("active", button.dataset.importType === (session.selectedType || "auto"));
@@ -5122,6 +5124,7 @@
 
   function startImportWizard() {
     if (!state.importSession) return;
+    state.importSession.consumerSerial = (state.importSession.consumerSerial || 0) + 1;
     importWizard = {
       step: 1,
       sessionId: state.importSession.id,
@@ -5425,6 +5428,15 @@
 
   function openImportChoiceModal() {
     if (!state.importSession) return;
+    state.importSession.consumerMode = "balanced";
+    document.querySelectorAll("[data-consumer-import]").forEach((button) => {
+      button.classList.toggle("active", button.dataset.consumerImport === "balanced");
+      button.setAttribute("aria-pressed", String(button.dataset.consumerImport === "balanced"));
+    });
+    const widthSelect = document.getElementById("consumerImportWidth");
+    if (widthSelect) widthSelect.value = "auto";
+    const customWidth = document.getElementById("consumerImportCustomWidth");
+    if (customWidth) customWidth.hidden = true;
     if (els.importChoiceFileName) {
       const labels = { photo: "照片转图纸", rebuild: "已有图纸重建", trace: "参考图描绘" };
       els.importChoiceFileName.textContent = `${labels[state.importSession.intent] || "导入图片"} · ${state.importSession.name}`;
@@ -5438,6 +5450,41 @@
     drawWizardPreviewCanvas(els.importEntryPreviewCanvas, state.importSession.image, null);
     renderImportAnalysis();
     syncImportAdjustmentControls();
+    previewConsumerImport();
+  }
+
+  async function previewConsumerImport() {
+    const session = state.importSession;
+    if (!session) return;
+    const serial = session.consumerSerial = (session.consumerSerial || 0) + 1;
+    session.consumerResult = null;
+    renderImportAnalysis();
+    const summary = document.getElementById("consumerImportSummary");
+    const retry = document.getElementById("consumerImportRetry");
+    if (summary) summary.textContent = "正在生成临时预览；确认前不改变当前作品。";
+    if (retry) retry.hidden = true;
+    if (els.importQuickButton) els.importQuickButton.disabled = true;
+    const previewCanvas = document.getElementById("consumerImportPreview");
+    previewCanvas?.getContext("2d").clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+    try {
+      const size = document.getElementById("consumerImportWidth")?.value || "auto";
+      const requested = size === "custom" ? document.getElementById("consumerImportCustomWidth")?.value : size;
+      let width = size === "auto" ? null : clamp(requested, 16, 500);
+      let height = width ? Math.round(width * (session.image.naturalHeight || session.image.height) / (session.image.naturalWidth || session.image.width)) : null;
+      if (height > 500) { width = Math.max(16, Math.round(width * 500 / height)); height = 500; }
+      if (height) height = Math.max(16, height);
+      const result = await buildQuickImportPattern(session, width, height, session.consumerMode || "balanced");
+      if (state.importSession !== session || session.consumerSerial !== serial) return;
+      session.consumerResult = result;
+      const stats = window.QPixelConsumerFlow.summary(result.pattern);
+      drawWizardPreviewCanvas(previewCanvas, null, result.pattern);
+      if (summary) summary.textContent = `${stats.width} × ${stats.height} 格 · ${stats.colors} 色 · ${stats.total} 颗 · 临时预览，尚未应用`;
+      if (els.importQuickButton) els.importQuickButton.disabled = false;
+    } catch (error) {
+      if (state.importSession !== session || session.consumerSerial !== serial) return;
+      if (summary) summary.textContent = error.name === "AbortError" ? "预览已取消，可重新生成或进入精细调整。" : `预览未完成：${error.message}`;
+      if (retry) retry.hidden = false;
+    }
   }
 
   function importImageElementAsLayer(image, name) {
@@ -5487,7 +5534,7 @@
     };
   }
 
-  async function buildQuickImportPattern(session, targetWidth, targetHeight) {
+  async function buildQuickImportPattern(session, targetWidth, targetHeight, mode = "balanced") {
     let width = targetWidth;
     let height = targetHeight;
     if (!width || !height) {
@@ -5510,7 +5557,7 @@
     }
     const result = await runImportPatternTask(session, { targetWidth: width, targetHeight: height, maxSide: 1800 });
     return {
-      pattern: applyAdaptiveImportModeToPattern(result.rawPattern, "balanced", getEffectiveImportType(session), "balanced"),
+      pattern: applyAdaptiveImportModeToPattern(result.rawPattern, mode, getEffectiveImportType(session), "balanced"),
       processedSource: result.processedSource
     };
   }
@@ -5519,7 +5566,8 @@
     const session = state.importSession;
     if (!session) return;
     try {
-      const result = await buildQuickImportPattern(session);
+      const result = session.consumerResult || await buildQuickImportPattern(session);
+      if (state.importSession !== session || !isCurrentImportSession(session.id)) return;
       const pattern = result.pattern;
       if (session.mode === "layer") {
         importPatternAsLayer(pattern, session.name);
@@ -5537,7 +5585,7 @@
       state.image = session.image;
       state.imageName = session.name;
       state.importCalibration = null;
-      state.beads.importMode = "balanced";
+      state.beads.importMode = session.consumerMode || "balanced";
       state.beads.pattern = pattern;
       state.beads.width = pattern.width;
       state.beads.height = pattern.height;
@@ -5547,7 +5595,7 @@
       state.beads.pixelSignature = "";
       state.beads.restorationFingerprint = "";
       updateLockedColorsFromPattern(pattern);
-      state.beads.importRecipe = makeImportRecipe(session, "balanced");
+      state.beads.importRecipe = makeImportRecipe(session, state.beads.importMode);
       state.beads.rebuildReport = null;
       state.beads.importProcessedSource = result.processedSource;
       state.view.zoom = 1;
@@ -5558,7 +5606,8 @@
       if (!hadPattern) clearHistory();
       setMode("beads");
       state.beads.sourceCompareEnabled = true;
-      setMessage(`已按${importTypeLabel(getEffectiveImportType(session))}的均衡参数生成 ${pattern.width} x ${pattern.height} 图纸。`, false);
+      const modeLabel = { fidelity: "高保真", balanced: "均衡", simple: "易制作" }[state.beads.importMode];
+      setMessage(`已按${importTypeLabel(getEffectiveImportType(session))}的${modeLabel}参数生成 ${pattern.width} x ${pattern.height} 图纸。`, false);
       renderImportSummary();
       markUnsavedChanges();
       state.importSession = null;
@@ -13472,7 +13521,7 @@
       const status = window.QPixelSaveStatus.describe({ dirty, saving, failed: lastSaveFailure,
         savedAt: project?.savedAt || project?.updatedAt, hasPayload: Boolean(project?.hasPayload || project?.payload),
         pending: Boolean(project?.pendingSync), syncing: manualSyncActive, syncError: lastSyncError,
-        conflict: Boolean(project?.conflictOf) });
+        conflict: Boolean(project?.conflictOf), syncConfirmed: Boolean(project?.remoteSyncFingerprint && project?.payload && project.remoteSyncFingerprint === payloadFingerprint(project.payload)) });
       els.saveStatus.textContent = status.local;
       const savedTime = document.getElementById("projectSavedTime");
       if (savedTime) savedTime.textContent = status.savedAt ? `本机 ${formatShortDate(status.savedAt)}${project?.lastSyncedAt ? ` · 同步 ${formatShortDate(project.lastSyncedAt)}` : ""}` : "";
@@ -13522,6 +13571,9 @@
 
   function markSaved() {
     state.hasUnsavedChanges = false;
+    if (state.beads.projectId) {
+      try { localStorage.setItem("qpixel-consumer-recent", state.beads.projectId); } catch (_) {}
+    }
     updateDirtyStatus();
     clearTimeout(draftTimer);
     draftTimer = 0;
@@ -13799,6 +13851,92 @@
     });
   }
 
+  function renderConsumerHome(projects) {
+    const title = document.getElementById("consumerHomeTitle");
+    if (!title || !window.QPixelConsumerFlow) return;
+    let preferred = "";
+    try { preferred = localStorage.getItem("qpixel-consumer-recent") || ""; } catch (_) {}
+    const project = window.QPixelConsumerFlow.recent(projects, preferred);
+    title.dataset.projectId = project?.id || "";
+    if (project && !project.payload && project.hasPayload) {
+      offlineProjects.get(project.id).then((complete) => {
+        if (complete?.payload && title.dataset.projectId === project.id) {
+          renderConsumerHome(projects.map((item) => item.id === project.id ? Object.assign({}, item, complete) : item));
+        }
+      }).catch(() => {});
+    }
+    const text = (id, value) => { const node = document.getElementById(id); if (node) node.textContent = value; };
+    const hasLocal = Boolean(project?.hasPayload || project?.payload);
+    text("consumerHomeEyebrow", project ? "继续你的作品" : "从第一张图纸开始");
+    title.textContent = project?.title || "把喜欢的图片，做成拼豆作品";
+    const stats = window.QPixelConsumerFlow.summary(project?.payload?.pattern, project?.payload?.buildProgress);
+    text("consumerHomeSummary", project ? `${project.width || stats.width} × ${project.height || stats.height} 格${project.payload ? ` · ${stats.colors} 色 · ${stats.total} 颗 · 制作 ${stats.percent}%` : ""}` : "选择图片，查看推荐图纸，再跟着色号一步步完成。");
+    text("consumerHomeAvailability", project ? hasLocal ? "此设备可离线打开" : "需连接电脑获取完整作品" : "示例在本机打开，保存前不会加入作品库。");
+    const resume = async (stage) => {
+      if (!project) return;
+      await loadProject(project.id);
+      if (state.beads.projectId === project.id && !document.querySelector(".app-shell")?.classList.contains("is-home")) {
+        professionalWorkspaceRuntime?.controller.setStage(stage);
+        applyStudioStage(stage);
+      }
+    };
+    const continueButton = document.getElementById("consumerContinueButton");
+    const editButton = document.getElementById("consumerEditButton");
+    continueButton.hidden = !project; editButton.hidden = !project;
+    continueButton.textContent = hasLocal ? "继续拼制" : "获取并打开";
+    continueButton.onclick = () => resume("make"); editButton.onclick = () => resume("design");
+    const thumb = document.getElementById("consumerHomeThumb");
+    const src = project && projectThumbnailSrc(project);
+    thumb.hidden = !src;
+    if (src) { thumb.src = src; thumb.onerror = () => { thumb.hidden = true; document.getElementById("consumerHomeIllustration").hidden = false; }; }
+    document.getElementById("consumerHomeIllustration").hidden = Boolean(src);
+  }
+
+  function renderConsumerTask() {
+    const node = document.getElementById("consumerOutputSummary");
+    if (node && window.QPixelConsumerFlow) {
+      const stats = window.QPixelConsumerFlow.summary(state.beads.pattern, state.buildProgress);
+      node.textContent = state.beads.pattern ? `${stats.width} × ${stats.height} 格 · ${stats.colors} 色 · ${stats.total} 颗。导出文件不代替工程保存。` : "先创建或导入图纸，再选择输出用途。";
+    }
+  }
+
+  function bindConsumerFlow() {
+    document.body.classList.add("consumer-flow");
+    document.getElementById("consumerSampleButton")?.addEventListener("click", async () => {
+      if (!await confirmLeaveWithUnsavedChanges()) return;
+      const sample = window.QPixelConsumerFlow.sample();
+      const colors = { Y: nearestBeadColor(223, 178, 88).code, B: nearestBeadColor(151, 96, 57).code, G: nearestBeadColor(99, 148, 81).code };
+      sample.cells = sample.cells.map((row) => row.map((c) => c == null ? null : colors[c]));
+      if (!applyProjectPayload({ version: 2, title: "小花练习", pattern: sample, buildProgress: {} }, false)) return;
+      state.beads.projectTitle = "小花练习";
+      markUnsavedChanges(); showEditor();
+      professionalWorkspaceRuntime?.controller.setStage("design");
+      setMessage("已打开小花示例。可编辑、配色或拼制；保存后才加入作品库。", false);
+    });
+    document.getElementById("consumerFullPaletteButton")?.addEventListener("click", () => els.toolPaletteButton?.click());
+    document.getElementById("consumerStartMakeButton")?.addEventListener("click", () => professionalWorkspaceRuntime?.controller.setStage("make"));
+    document.querySelectorAll("[data-consumer-output]").forEach((button) => button.addEventListener("click", () => {
+      document.querySelectorAll("[data-consumer-output]").forEach((item) => {
+        item.classList.toggle("active", item === button); item.setAttribute("aria-pressed", String(item === button));
+      });
+      document.querySelectorAll("[data-output-kind]").forEach((item) => { item.hidden = item.dataset.outputKind !== button.dataset.consumerOutput; });
+    }));
+    document.querySelectorAll("[data-consumer-import]").forEach((button) => button.addEventListener("click", () => {
+      if (!state.importSession) return;
+      state.importSession.consumerMode = button.dataset.consumerImport;
+      document.querySelectorAll("[data-consumer-import]").forEach((item) => { item.classList.toggle("active", item === button); item.setAttribute("aria-pressed", String(item === button)); });
+      previewConsumerImport();
+    }));
+    document.getElementById("consumerImportWidth")?.addEventListener("change", (event) => {
+      document.getElementById("consumerImportCustomWidth").hidden = event.target.value !== "custom";
+      previewConsumerImport();
+    });
+    document.getElementById("consumerImportCustomWidth")?.addEventListener("change", previewConsumerImport);
+    document.getElementById("consumerImportRetry")?.addEventListener("click", previewConsumerImport);
+    const extra = document.querySelector(".top-action-menu > div");
+    [els.saveAsTopButton, els.chooseTopButton, els.exportProjectTopButton].forEach((button) => { if (extra && button) extra.prepend(button); });
+  }
+
   function renderHomeProjects() {
     if (!els.homeProjectGrid) return;
     const folders = getFolders();
@@ -13811,6 +13949,7 @@
       if (sort === "created") return new Date(b.createdAt || b.savedAt || 0) - new Date(a.createdAt || a.savedAt || 0);
       return compareProjectsByRecency(a, b);
     });
+    renderConsumerHome(allProjects);
     const visibleProjects = currentFolder
       ? allProjects.filter((project) => project.folderId === currentFolder.id)
       : query ? allProjects : allProjects.filter((project) => !project.folderId || !folders.some((folder) => folder.id === project.folderId));
@@ -13870,7 +14009,7 @@
       empty.className = "home-empty";
       empty.textContent = query ? "没有匹配的作品；试试其他名称。" : currentFolder
         ? "这个文件夹还没有设计文件。长按任意设计卡片，选「移动到文件夹」即可归档。"
-        : "还没有设计文件。点右上角 + 新建，或从上方选择一种开始方式。";
+        : "还没有作品。选择图片开始，或试做一朵小花。";
       els.homeProjectGrid.appendChild(empty);
     }
 
@@ -14365,6 +14504,8 @@
       element.hidden = !element.dataset.studioStages.split(/\s+/).includes(stage);
     });
     const shouldBuild = stage === "make";
+    if (els.buildModeToggle) els.buildModeToggle.disabled = shouldBuild;
+    if (shouldBuild && state.mode !== "beads" && state.beads.pattern) setMode("beads");
     if (state.beads.buildMode !== shouldBuild) {
       state.beads.buildMode = shouldBuild;
       if (els.buildModeToggle) els.buildModeToggle.checked = shouldBuild;
@@ -15184,7 +15325,10 @@
     els.replaceButton.addEventListener("click", openFileDialog);
     els.exportButton.addEventListener("click", exportPixelPng);
     if (els.pixelExportPreviewButton) els.pixelExportPreviewButton.addEventListener("click", openExportPreview);
-    els.exportTopButton.addEventListener("click", exportCurrentMode);
+    els.exportTopButton.addEventListener("click", () => {
+      if (professionalWorkspaceRuntime && state.beads.pattern) professionalWorkspaceRuntime.controller.setStage("output");
+      else exportCurrentMode();
+    });
     els.exportChartButton.addEventListener("click", openExportPreview);
     els.exportPreviewOpenButton.addEventListener("click", openExportPreview);
     els.exportPreviewCloseButton.addEventListener("click", closeExportPreview);
@@ -16876,7 +17020,8 @@
     renderMaterialPicker();
     syncControls();
     wireEvents();
-    document.getElementById("studioOutputPreviewButton")?.addEventListener("click", () => els.exportTopButton?.click());
+    bindConsumerFlow();
+    document.getElementById("studioOutputPreviewButton")?.addEventListener("click", exportCurrentMode);
     document.getElementById("studioOutputBoardPdfButton")?.addEventListener("click", exportBoardPdf);
     document.getElementById("studioOutputMaterialsButton")?.addEventListener("click", exportMaterialsCsv);
     document.getElementById("studioOutput3dButton")?.addEventListener("click", () => document.getElementById("unifiedPreviewButton")?.click());

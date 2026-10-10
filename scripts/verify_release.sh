@@ -22,6 +22,7 @@ node --check "$RESOURCES_DIR/core/dom-utils.js"
 node --check "$RESOURCES_DIR/core/project-store.js"
 node --check "$RESOURCES_DIR/core/offline-projects.js"
 node --check "$RESOURCES_DIR/core/save-status.js"
+node --check "$RESOURCES_DIR/core/consumer-flow.js"
 node --check "$RESOURCES_DIR/core/project-library.js"
 node --check "$RESOURCES_DIR/core/auto-draft.js"
 node --check "$RESOURCES_DIR/core/design-save-as.js"
@@ -78,7 +79,7 @@ done
 cmp -s "$RESOURCES_DIR/run_ipad_server.sh" "$REPO_DIR/scripts/run_ipad_server.sh"
 zsh -n "$RESOURCES_DIR/run_ipad_server.sh"
 
-for file in project-model.js workspace-state.js dom-utils.js project-store.js design-save-as.js editor-performance.js layer-translate.js layer-order.js offline-projects.js auto-draft.js save-status.js project-library.js; do
+for file in project-model.js workspace-state.js dom-utils.js project-store.js design-save-as.js editor-performance.js layer-translate.js layer-order.js offline-projects.js auto-draft.js save-status.js project-library.js consumer-flow.js; do
   cmp -s "$RESOURCES_DIR/core/$file" "$REPO_DIR/web/core/$file"
 done
 

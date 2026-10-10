@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="qpixel-revision" content="20261009-reliability-admin-63">
+  <meta name="qpixel-revision" content="20261010-consumer-64">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -13,7 +13,7 @@
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.svg">
   <link rel="stylesheet" href="./styles.css?v=20260928-save-as-45">
-  <link rel="stylesheet" href="./studio/studio.css?v=20261009-reliability-admin-63">
+  <link rel="stylesheet" href="./studio/studio.css?v=20261010-consumer-64">
 </head>
 <body>
   <main class="app-shell is-home">
@@ -54,9 +54,10 @@
         <p class="panel-caption">当前作品备份只导出已打开的作品。旧入口无法联网时，可尝试从原来的浏览器／桌面图标离线打开；尚未下载的作品需要从电脑同步获取。有备份则在新入口导入。没有备份且旧保存区无法访问时，新入口无法自动找回；请保留原浏览器数据。</p>
       </details>
 
-      <section class="studio-home-intro" aria-label="继续创作">
-        <div><span class="studio-eyebrow">YOUR WORKSPACE</span><h2>继续你的创作</h2><p>从最近的图纸接着做，或导入图片开始新项目。</p></div>
-        <button type="button" class="studio-primary" data-studio-entry="photo">导入图片</button>
+      <section class="studio-home-intro consumer-home-hero" aria-label="开始或继续创作">
+        <div class="consumer-hero-copy"><span class="studio-eyebrow" id="consumerHomeEyebrow">从第一张图纸开始</span><h2 id="consumerHomeTitle">把喜欢的图片，做成拼豆作品</h2><p id="consumerHomeSummary">选择图片，查看推荐图纸，再跟着色号一步步完成。</p><p id="consumerHomeAvailability" class="panel-caption"></p>
+          <div class="consumer-hero-actions"><button id="consumerContinueButton" type="button" class="studio-primary" hidden>继续制作</button><button id="consumerEditButton" type="button" class="text-button secondary" hidden>编辑图纸</button><button type="button" class="studio-primary" data-studio-entry="photo">选择图片</button><button id="consumerSampleButton" class="text-button secondary" type="button">试做一朵小花</button></div>
+        </div><img id="consumerHomeThumb" alt="最近作品预览" hidden><div id="consumerHomeIllustration" aria-hidden="true">✿<small>图片 → 图纸 → 作品</small></div>
       </section>
 
       <section class="home-grid">
@@ -64,7 +65,7 @@
           <div class="home-card-head">
             <div>
               <h2>创作空间</h2>
-              <p>保存在本机的 Q像素源文件都会出现在这里。</p>
+              <p>管理此设备的作品和电脑作品；卡片标明能否离线打开。</p>
             </div>
             <div class="home-card-head-actions">
               <label class="home-search"><span class="sr-only">搜索作品</span><input id="homeProjectSearch" type="search" placeholder="搜索作品、文件夹" autocomplete="off"></label>
@@ -468,8 +469,8 @@
               <h2>显示拼豆图纸</h2>
               <p id="usageSummary" class="panel-caption">底部色号栏可查看用量，点击色号可批量替换。</p>
             </div>
-            <div class="panel-section inventory-block" data-studio-stages="color make">
-              <h2>库存约束</h2>
+            <div class="panel-section inventory-block" data-studio-stages="color">
+              <h2>备料与库存（可选）</h2>
               <p class="panel-caption">录入现有豆子数量，配色时可只用库存颜色并提示缺口。</p>
               <textarea id="inventoryBulkInput" rows="3" placeholder="每行一条：色号 数量，如 A1 120"></textarea>
               <div class="split-actions">
@@ -701,14 +702,17 @@
           </div>
 
           <div class="panel-card studio-output-card" data-studio-stages="output">
-            <div class="panel-section compact"><h2>交付与成品预览</h2><p class="panel-caption">图纸、材料和成品效果分别导出，文件中保留当前色号。</p></div>
-            <button type="button" id="studioOutputPreviewButton">打开图纸导出预览</button>
-            <button type="button" id="materialPreviewButton">打开样式预览</button>
-            <button type="button" id="studioOutputBoardPdfButton">逐板图纸 PDF</button>
-            <button type="button" id="studioOutputMaterialsButton">材料清单 CSV</button>
-            <button type="button" id="studioOutput3dButton">进入成品 3D</button>
+            <div class="panel-section compact"><h2>你想得到什么？</h2><p class="panel-caption">图纸用于制作，材料清单用于备料，展示图片用于分享。</p></div><nav class="consumer-output-tabs" aria-label="导出用途"><button type="button" data-consumer-output="print" class="active">打印图纸</button><button type="button" data-consumer-output="materials">材料清单</button><button type="button" data-consumer-output="showcase">展示作品</button></nav><p id="consumerOutputSummary" class="panel-caption" role="status"></p>
+            <button type="button" id="studioOutputPreviewButton" data-output-kind="print">图纸预览与设置</button>
+            <button type="button" id="materialPreviewButton" data-output-kind="showcase" hidden>平面展示与设置</button>
+            <button type="button" id="studioOutputBoardPdfButton" data-output-kind="print">导出逐板 PDF</button>
+            <button type="button" id="studioOutputMaterialsButton" data-output-kind="materials" hidden>导出材料 CSV</button>
+            <button type="button" id="studioOutput3dButton" data-output-kind="showcase" hidden>3D 展示与 PNG 导出</button>
           </div>
 
+          <button class="text-button secondary" data-studio-stages="color" id="consumerFullPaletteButton" type="button">打开完整色板</button>
+          <button class="text-button" data-studio-stages="color" id="consumerStartMakeButton" type="button">按当前配色开始拼制</button>
+          <p class="panel-caption" data-studio-stages="make">点击格子只标记进度。需要改色或删格，请切换到画图。</p>
           <select id="paletteSelect" class="full-select hidden-control" aria-label="当前颜色"></select>
           <div id="paletteGrid" class="palette-grid hidden-control" aria-label="色板"></div>
           <select id="replaceFromSelect" class="full-select hidden-control"></select>
@@ -1230,12 +1234,14 @@
         <button id="importTaskCancelButton" class="text-button secondary" type="button">取消导入</button>
       </div>
       <div id="importEntryPanel" class="import-entry-panel">
-        <div class="import-entry-preview"><canvas id="importEntryPreviewCanvas" width="720" height="380" aria-label="待导入图片预览"></canvas></div>
+        <div class="consumer-import-compare"><div><strong>你的图片</strong><div class="import-entry-preview"><canvas id="importEntryPreviewCanvas" width="720" height="380" aria-label="待导入图片预览"></canvas></div></div><div><strong>推荐图纸</strong><div class="import-entry-preview"><canvas id="consumerImportPreview" width="720" height="380" aria-label="推荐图纸预览"></canvas></div></div></div>
+        <p id="consumerImportSummary" class="consumer-result-summary" role="status">正在生成临时预览；确认前不改变当前作品。</p>
+        <div class="consumer-import-choices" role="group" aria-label="推荐方案"><button data-consumer-import="fidelity" type="button">更接近原图</button><button data-consumer-import="balanced" class="active" type="button">均衡推荐</button><button data-consumer-import="simple" type="button">更容易拼</button><label>宽度 <select id="consumerImportWidth" aria-label="图纸宽度"><option value="auto">自动识别</option><option value="29">29 格</option><option value="58">58 格</option><option value="87">87 格</option><option value="custom">自定义</option></select></label><input id="consumerImportCustomWidth" aria-label="自定义图纸宽度" type="number" min="16" max="500" value="48" hidden><button id="consumerImportRetry" type="button" hidden>重新生成预览</button></div>
         <div class="import-analysis-card" id="importEntryAnalysis" role="status">正在本机分析图片类型…</div>
         <p class="import-entry-note">可以直接进入编辑；高级优化仅在需要调整像素精度、色号或结构时使用。</p>
         <div class="import-entry-actions">
-          <button id="importQuickButton" class="recommended-choice" type="button"><strong>快速导入，直接编辑</strong><span>自动匹配一次像素精度，不强制经过优化向导</span></button>
-          <button id="importAdvancedButton" type="button"><strong>进入高级优化</strong><span>可调整识别、像素精度和色号，也可随时跳过</span></button>
+          <button id="importQuickButton" class="recommended-choice" type="button"><strong>用这个方案继续</strong><span>自动匹配一次像素精度，不强制经过优化向导</span></button>
+          <button id="importAdvancedButton" type="button"><strong>精细调整</strong><span>可调整识别、像素精度和色号，也可随时跳过</span></button>
         </div>
       </div>
       <div id="importWizardShell" class="import-wizard-shell hidden">
@@ -1618,6 +1624,7 @@
   <script src="./core/auto-draft.js"></script>
   <script src="./core/offline-projects.js"></script>
   <script src="./core/save-status.js"></script>
+  <script src="./core/consumer-flow.js"></script>
   <script src="./core/project-library.js"></script>
   <script src="./core/editor-performance.js"></script>
   <script src="./core/layer-translate.js"></script>
@@ -1643,6 +1650,6 @@
   <script src="./3d/finish-workbench.js?v=20260929-h1-3d-opacity-54"></script>
   <script src="./import-engine.js"></script>
   <script src="./import-processing.js"></script>
-  <script src="./app.js?v=20261009-reliability-admin-63"></script>
+  <script src="./app.js?v=20261010-consumer-64"></script>
 </body>
 </html>

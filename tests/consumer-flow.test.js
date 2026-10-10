@@ -1,0 +1,13 @@
+"use strict";
+const assert = require("node:assert/strict");
+const flow = require("../web/core/consumer-flow.js");
+const quality = require("../web/workspaces/quality-checks.js");
+const pattern = { width: 3, height: 2, cells: [[null, "H1", "H2"], ["H1", null, null]] };
+assert.deepEqual(flow.summary(pattern, { "0:1": true, "0:0": true, "9:9": true, "0:2": false }), { width:3,height:2,colors:2,total:3,done:1,percent:33 });
+assert.equal(flow.recent([{id:"gone",deleted:true},{id:"a",savedAt:"2026-10-01"},{id:"b",savedAt:"2026-10-02"}], "gone").id,"b");
+assert.equal(flow.recent([{id:"a"},{id:"b"}], "a").id,"a");
+const checks = quality.run({pattern,usage:{H1:2,H2:1},inventory:{}});
+assert.equal(checks.find(x=>x.id === "inventory").status,"pass");
+assert.equal(quality.run({pattern,usage:{H1:2},inventory:{H1:0}}).find(x=>x.id === "inventory").status,"warning");
+assert.equal(flow.summary(flow.sample()).colors,3);
+console.log("consumer-flow: progress excludes empty/stale cells, deleted recent fallback and optional inventory passed");

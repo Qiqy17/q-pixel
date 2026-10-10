@@ -89,7 +89,8 @@
           icon.setAttribute("aria-hidden", "true");
           icon.classList.add("tool-svg-icon");
           icon.innerHTML = TOOL_ICONS[tool] || "";
-          const label = Array.from(button.childNodes).filter((node) => node.nodeType === 3).map((node) => node.textContent).join("").trim();
+          const labels = { "rect-fill": "矩形填充", "rect-clear": "区域删除" };
+          const label = labels[tool] || Array.from(button.childNodes).filter((node) => node.nodeType === 3).map((node) => node.textContent).join("").trim();
           Array.from(button.childNodes).filter((node) => node.nodeType === 3).forEach((node) => node.remove());
           const text = documentRef.createElement("span");
           text.className = "tool-button-label";

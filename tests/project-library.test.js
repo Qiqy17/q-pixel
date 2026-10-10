@@ -43,7 +43,8 @@ const make = (id = "a") => ({ id, title: "中文作品", payload: { version: 2, 
   const historyChange = make(); historyChange.history[0].payload.pattern.cells[0][0] = "H1";
   assert.equal(library.plan({ ...inspection, draft: null }, [historyChange], () => "history-copy").report.copies.length, 1);
   assert.equal(status.describe({ dirty: true, saving: false, failed: true }).local, "保存失败·修改未保存");
-  assert.equal(status.describe({ dirty: true, hasPayload: true, pending: false }).remote, "上次保存版本已同步");
+  assert.equal(status.describe({ dirty: true, hasPayload: true, pending: false, syncConfirmed: true }).remote, "上次保存版本已同步");
+  assert.equal(status.describe({ dirty: false, hasPayload: true, pending: false }).remote, "尚未确认同步");
   assert.equal(status.describe({ dirty: false, hasPayload: true, pending: true }).remote, "待同步");
   console.log("project-library: 完整正文/历史/草稿、130 项、损坏校验、非覆盖迁移和状态区分通过");
 })().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -42,6 +42,7 @@ cp "$REPO_DIR/web/core/design-save-as.js" "$RESOURCES_DIR/core/design-save-as.js
 cp "$REPO_DIR/web/core/auto-draft.js" "$RESOURCES_DIR/core/auto-draft.js"
 cp "$REPO_DIR/web/core/offline-projects.js" "$RESOURCES_DIR/core/offline-projects.js"
 cp "$REPO_DIR/web/core/save-status.js" "$RESOURCES_DIR/core/save-status.js"
+cp "$REPO_DIR/web/core/consumer-flow.js" "$RESOURCES_DIR/core/consumer-flow.js"
 cp "$REPO_DIR/web/core/project-library.js" "$RESOURCES_DIR/core/project-library.js"
 cp "$REPO_DIR/web/core/editor-performance.js" "$RESOURCES_DIR/core/editor-performance.js"
 cp "$REPO_DIR/web/core/layer-translate.js" "$RESOURCES_DIR/core/layer-translate.js"

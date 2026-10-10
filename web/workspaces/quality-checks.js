@@ -27,6 +27,7 @@
     const colorCount = Object.keys(usage).filter((code) => Number(usage[code]) > 0).length;
     const total = Object.values(usage).reduce((sum, count) => sum + Math.max(0, Number(count) || 0), 0);
     const missing = Object.entries(usage).filter(([code, count]) => Number(inventory[code] || 0) < Number(count || 0));
+    const inventorySet = Object.keys(inventory).length > 0;
     const boardCount = Math.max(0, Math.floor(Number(source.boardCount) || 0));
     const boardLabel = boardCount > 1 ? `需 ${boardCount} 块底板` : boardCount === 1 ? "单块底板可容纳" : "";
     const checks = [];
@@ -40,7 +41,7 @@
       : result("palette-wait", "palette", "warning", "等待图纸", "生成图纸后才能分析配色。"));
 
     checks.push(pattern
-      ? result("inventory", "inventory", missing.length ? "warning" : "pass", "库存覆盖", missing.length ? `${missing.length} 个色号库存不足或尚未录入。` : "当前库存可覆盖图纸用量。", missing.length ? { type: "inventory-replan", label: "仅用库存配色" } : null)
+      ? result("inventory", "inventory", inventorySet && missing.length ? "warning" : "pass", inventorySet ? "库存覆盖" : "库存尚未设置（可选）", !inventorySet ? "可直接拼制；录入库存后再核对实际缺口。" : missing.length ? `${missing.length} 个色号库存不足或尚未录入，请查看完整备料清单。` : "当前库存可覆盖图纸用量。", null)
       : result("inventory-wait", "inventory", "warning", "等待图纸", "生成图纸后才能核对库存。"));
 
     const modeLabel = source.baseboardModeLabel || source.baseboardMode || "";

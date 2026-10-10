@@ -1,5 +1,5 @@
 importScripts("./studio/scene-material-library.js");
-const CACHE_NAME = "q-pixel-v20261009-reliability-admin-63";
+const CACHE_NAME = "q-pixel-v20261010-consumer-64";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -15,6 +15,7 @@ const APP_SHELL = [
   "./core/auto-draft.js",
   "./core/offline-projects.js",
   "./core/save-status.js",
+  "./core/consumer-flow.js",
   "./core/project-library.js",
   "./core/editor-performance.js",
   "./core/layer-translate.js",
@@ -28,7 +29,7 @@ const APP_SHELL = [
   "./make/smart-board-ui.js",
   "./make/build-navigation.js",
   "./studio/studio.css",
-  "./studio/studio.css?v=20261009-reliability-admin-63",
+  "./studio/studio.css?v=20261010-consumer-64",
   "./studio/background-engine.js",
   "./studio/background-tool.js",
   "./studio/surface-engine.js",
@@ -62,7 +63,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20261009-reliability-admin-63",
+  "./app.js?v=20261010-consumer-64",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"

@@ -117,7 +117,7 @@ class LocalServerSecurityTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(headers["Cache-Control"], "no-store")
         revision = json.loads(body)["interfaceRevision"]
-        self.assertEqual(revision, "20261009-reliability-admin-63")
+        self.assertEqual(revision, "20261010-consumer-64")
         status, _, _ = self.request(True, self.paired_port, "GET", "/api/release")
         self.assertEqual(status, 401)
         _, headers, _ = self.request(True, self.paired_port, "POST", "/pair", urlencode({"code": self.pairing_code}), {"Content-Type": "application/x-www-form-urlencoded"})
