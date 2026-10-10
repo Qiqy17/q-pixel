@@ -1,0 +1,24 @@
+{
+  "release": {
+    "version": "2.0.0",
+    "build": "65",
+    "gitCommit": "dd05cbffa4c59e11077bdc75285400ffd4bb81a7",
+    "builtAt": "2026-10-10T05:39:35Z"
+  },
+  "interfaceRevision": "20261010-stability-65",
+  "verification": "verify_release.sh passed",
+  "changedResourceSHA256": {
+    "app.js": "4f8dc83687da9f19eee3c32f9e5abe0dcce3c46a781c646f56a3be353335e51e",
+    "index.html": "d153c23236b6c9a49990f70b401e94b2ffb4d0f98164133ab91299c43b5bc02f",
+    "sw.js": "8bb497c574ec5af4e6aac5948aef0eae061552ecb27c5848ebf8fa078cba4116",
+    "core/project-library.js": "cad6ac5c9261cfc0e277f277c4ab0aa82be654c0cbccef946a59d94522dde5dc",
+    "workspaces/quality-checks.js": "96e1119514dbfabc3b6b26934850597324ca17f78ee09a8dc0306e25fc44cffc",
+    "3d/finish-workbench.js": "24cfb12770ef037fd3c78f0bcc3d52140e961a1bf7648849cc38dd7c914098d3"
+  },
+  "installed": false,
+  "installedBuild": "64",
+  "reason": "Existing production App is running; session and data preserved",
+  "marketPublished": false,
+  "archiveSHA256": "1631372de068b7ee5ef7697acb98ab2045b405ba32506eab33185944d61aff63",
+  "archiveVerification": "unzip -tq passed"
+}
