@@ -18,3 +18,7 @@ These are source and browser checks. Native App edit-save-exit-reopen, real iPad
 Build 64, source commit `10413a9c56284922af4ddbd996667c617ab976c5`; `verify_release.sh` passed. Eight changed resource SHA256 values match source. Candidate is stored under `dist/Q像素-Consumer-64.app`; installed build and running production services were not replaced.
 
 Additional responsive checks: actual DOM viewport 744 × 1133 portrait and 1024 × 768 landscape, panel-to-canvas switching; final desktop screenshot corrected to actual 1280 × 800 viewport.
+
+## Installed build 64 (2026-10-10)
+
+User requested continuation. Installed Desktop App with existing installer; prior App and launch-agent configuration backed up. Native App was not running before installation. Installed release source commit `a4ed11cc74e3b6f2b995a8c39b84b9b45eca1b3f`, interface `20261010-consumer-64`; release verifier passed. Production HTTP health passed with 229 project records. 232 existing project/index/settings hashes remained identical; 131 packaged web resources matched source. Native UI opens the new home with build 64 visible. It also presents an existing unsaved draft recovery prompt; left untouched. Native edit-save-exit-reopen was therefore not tested in the production session. Real iPad remains unaccepted.
