@@ -1,0 +1,43 @@
+{
+  "installed": true,
+  "checkedAt": "2026-10-10T05:46:14.256360+00:00",
+  "installedRelease": {
+    "version": "2.0.0",
+    "build": "65",
+    "gitCommit": "e3d4a79f2253566934c68d0d9857a588fba418a0",
+    "builtAt": "2026-10-10T05:45:35Z"
+  },
+  "apiRelease": {
+    "version": "2.0.0",
+    "build": "65",
+    "gitCommit": "e3d4a79f2253566934c68d0d9857a588fba418a0",
+    "builtAt": "2026-10-10T05:45:35Z",
+    "interfaceRevision": "20261010-stability-65"
+  },
+  "apiHealth": {
+    "ok": true,
+    "syncProtocolVersion": 2,
+    "projectsOk": true,
+    "settingsOk": true,
+    "projectCount": 229,
+    "projectFileCount": 229,
+    "projectDirectorySize": 141662416,
+    "projectsFileExists": true,
+    "projectsFileSize": 81591109,
+    "settingsFileExists": true,
+    "settingsFileSize": 17072,
+    "backupCount": 130,
+    "dataDir": "/Users/mac/Documents/Q像素",
+    "updatedAt": "2026-10-10T13:46:14.253837"
+  },
+  "productionJsonCount": 378,
+  "productionJsonHashesUnchanged": true,
+  "changedProductionJsonCount": 0,
+  "newProductionJsonCount": 0,
+  "matchedWebResourceCount": 131,
+  "mismatchedWebResources": [],
+  "previousAppBackup": "/Users/mac/Documents/Q像素/app-backups/Q像素-20261010-134539.app",
+  "nativeFilePanelsAccepted": false,
+  "realIpadAccepted": false,
+  "physicalManufactureAccepted": false
+}
