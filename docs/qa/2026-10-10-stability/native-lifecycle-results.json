@@ -24,6 +24,16 @@
     },
     {
       "checks": [
+        "native backup shows capacity before generation",
+        "batch explicitly excludes draft",
+        "selected batch can be generated",
+        "backup checksum validated",
+        "independent database restores complete payload and progress"
+      ],
+      "phase": "library"
+    },
+    {
+      "checks": [
         "unsaved draft committed before forced process termination"
       ],
       "phase": "crash"

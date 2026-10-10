@@ -14,6 +14,18 @@ const make = (id = "a") => ({ id, title: "中文作品", payload: { version: 2, 
   assert.equal(backup.partial, true);
   assert.equal(backup.text.includes("private-revision"), false);
   const inspection = await library.inspect(backup.text);
+  const capacity = library.preflight({ records: [record, trash, { id: "remote", title: "未下载" }], draft: make("draft").payload, pendingIds: ["a"] });
+  assert.equal(capacity.bytes, Buffer.byteLength(backup.text));
+  const batchRecords = Array.from({ length: 1001 }, (_, i) => make(`batch-${i}`));
+  const batch = library.chooseBatch(batchRecords);
+  assert.equal(batch.ids.length, 1000);
+  assert.equal(batch.skipped.length, 1);
+  assert.equal(batch.bytes, library.preflight({ records: batchRecords.slice(0, 1000) }).bytes);
+  const oversizedDraft = { ...record.payload, note: "x".repeat(library.MAX_BYTES) };
+  assert.throws(() => library.preflight({ records: [], draft: oversizedDraft }), /50 MiB/);
+  const unavailable = { id: "missing", title: "待下载" };
+  const mixed = [record, unavailable, trash];
+  assert.equal(library.chooseBatch(mixed).bytes, library.preflight({ records: mixed }).bytes);
   assert.equal(inspection.invalid.length, 0);
   assert.deepEqual(inspection.valid[0].payload, record.payload);
   const same = library.plan(inspection, [record], () => "draft-copy");

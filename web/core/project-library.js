@@ -43,7 +43,7 @@
     for (const entry of record.history || []) { if (!entry || !entry.id) throw new Error("历史引用无效"); validatePayload(entry.payload); }
     return record;
   }
-  async function create({ records, draft, omitted = [], pendingIds = [], source = "本机作品库" }) {
+  function prepare({ records, draft, omitted = [], pendingIds = [], source = "本机作品库" }) {
     if (records.length > MAX_RECORDS) throw new Error("单包最多 1000 个作品，请选择子集分批备份。");
     const items = [], missing = clone(omitted);
     let estimatedBytes = 0;
@@ -55,15 +55,44 @@
       estimatedBytes += bytes(record).length;
       if (estimatedBytes > MAX_BYTES) throw new Error("备份超过 50 MiB，请选择子集分批备份。");
       if ((record.historyCount || 0) > (record.history || []).length) missing.push({ id: record.id, reason: "部分历史尚未读取" });
-      items.push({ record, sourcePending: pendingIds.includes(record.id), checksum: await digest(record) });
+      items.push({ record, sourcePending: pendingIds.includes(record.id), checksum: "0".repeat(64) });
     }
     if (draft) validatePayload(draft);
     const library = { format: "qpxlib", version: 1, exportedAt: new Date().toISOString(), source,
-      items, draft: draft ? { payload: clone(draft), checksum: await digest(draft) } : null, omitted: missing };
-    library.checksum = await digest(library);
+      items, draft: draft ? { payload: clone(draft), checksum: "0".repeat(64) } : null, omitted: missing };
+    library.checksum = "0".repeat(64);
+    return library;
+  }
+  function capacityOf(library) {
+    const size = bytes(JSON.stringify(library)).length;
+    if (size > MAX_BYTES) throw new Error("备份超过 50 MiB，请减少勾选内容或分批备份；单作品可使用顶部“备份 .qpx”（不含完整历史）。");
+    return { bytes: size, count: library.items.length, omitted: library.omitted, partial: library.omitted.length > 0 };
+  }
+  function preflight(options) { return capacityOf(prepare(options)); }
+  function chooseBatch(records) {
+    const emptyBytes = preflight({ records: [] }).bytes;
+    let size = emptyBytes, count = 0, omittedCount = 0;
+    const ids = [], skipped = [];
+    for (const record of records) {
+      try {
+        const single = preflight({ records: [record] });
+        const nextSize = size + single.bytes - emptyBytes + (count && single.count ? 1 : 0) + (omittedCount && single.omitted.length ? 1 : 0);
+        if (ids.length >= MAX_RECORDS || nextSize > MAX_BYTES) { skipped.push(record.id); continue; }
+        ids.push(record.id); size = nextSize; count += single.count; omittedCount += single.omitted.length;
+      } catch (_) { skipped.push(record.id); }
+    }
+    return { ids, skipped, bytes: size };
+  }
+  async function create(options) {
+    const library = prepare(options);
+    capacityOf(library);
+    for (const item of library.items) item.checksum = await digest(item.record);
+    if (library.draft) library.draft.checksum = await digest(library.draft.payload);
+    const { checksum, ...body } = library;
+    library.checksum = await digest(body);
     const text = JSON.stringify(library);
     if (bytes(text).length > MAX_BYTES) throw new Error("备份超过 50 MiB，请选择子集分批备份。");
-    return { library, text, partial: missing.length > 0 };
+    return { library, text, partial: library.omitted.length > 0 };
   }
   async function inspect(text) {
     if (bytes(text).length > MAX_BYTES) throw new Error("文件超过 50 MiB，请使用分批备份文件。");
@@ -130,5 +159,5 @@
     if (new Set(records.map((r) => r.id)).size !== records.length || records.some((r) => existing.some((e) => e.id === r.id))) throw new Error("迁移副本 ID 冲突，请重新检查。");
     return { records, report };
   }
-  return Object.freeze({ MAX_BYTES, MAX_RECORDS, create, inspect, plan, digest, validatePayload, stable });
+  return Object.freeze({ MAX_BYTES, MAX_RECORDS, preflight, chooseBatch, create, inspect, plan, digest, validatePayload, stable });
 });

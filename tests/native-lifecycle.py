@@ -48,6 +48,23 @@ SCRIPT = r"""
     banner.querySelector('button').click(); await settle(); window.confirm=originalConfirm;
     check(t.makeProjectPayload().pattern.width===20 && banner.isConnected,'cancel recovery protects current unsaved design');
     check(await t.saveCurrentProject(),'save current design before termination');
+  } else if (phase==='library') {
+    document.getElementById('libraryBackupButton').click(); await settle();
+    const dialog=document.getElementById('projectLibraryDialog');
+    check(dialog.open && dialog.querySelector('[data-role="library-capacity"]').textContent.includes('MiB'),'native backup shows capacity before generation');
+    dialog.querySelector('[data-role="library-batch"]').click();
+    check(!dialog.querySelector('input[value="__draft__"]').checked,'batch explicitly excludes draft');
+    check(!dialog.querySelector('[data-role="library-submit"]').disabled,'selected batch can be generated');
+    dialog.close();
+    const backup=await t.buildLibraryBackupForTest();
+    const inspection=await QPixelProjectLibrary.inspect(backup.text);
+    check(inspection.packageValid && !inspection.invalid.length,'backup checksum validated');
+    const destination=QPixelOfflineProjects.createStore({indexedDB,dbName:'native-independent-restore',payloadFingerprint:QPixelProjectModel.payloadFingerprint});
+    const planned=QPixelProjectLibrary.plan(inspection,[],()=>crypto.randomUUID());
+    await destination.importBatch(planned.records,planned.report,JSON.stringify((await destination.snapshot()).projects));
+    const restored=await destination.get('native-qa');
+    const expected=inspection.valid.find(record=>record.id==='native-qa');
+    check(restored && JSON.stringify(restored.payload)===JSON.stringify(expected.payload),'independent database restores complete payload and progress');
   } else if (phase==='crash') {
     await t.loadProject('native-qa'); const p=t.makeProjectPayload();
     p.pattern.cells[0][0]='H7'; p.layers[0].cells[0][0]='H7';
@@ -111,7 +128,7 @@ JS_BODY
         subprocess.run(['codesign','--force','--sign','-',str(bundle)],check=True,capture_output=True)
         results=[]
         try:
-            for phase in ['seed','reopen','crash','recover']:
+            for phase in ['seed','reopen','library','crash','recover']:
                 result=temp/f'{phase}.json'
                 env=dict(os.environ,QPIXEL_QA_PHASE=phase,QPIXEL_QA_RESULT=str(result))
                 with (temp/f'{phase}.log').open('w') as log:

@@ -14965,11 +14965,39 @@
       await offlineReady;
       const snapshot = await offlineProjects.snapshot(), dialog = libraryPanel("备份本机作品库"), body = dialog.querySelector('[data-role="library-body"]');
       libraryLine(body, "包含勾选作品的正文、可读历史和回收站内容；不自动下载或同步。单包最多 1000 个作品、50 MiB，超出时请分批选择。");
+      libraryLine(body, "请选择另一磁盘或你控制的备份位置保存副本；同一设备上的备份不能防止设备损坏。单作品 .qpx 不含完整作品库历史。");
+      const preparedRecords = [];
+      for (const record of snapshot.projects.filter((item) => !item.purged)) {
+        const copy = JSON.parse(JSON.stringify(record));
+        if ((copy.historyCount || 0) > (copy.history || []).length) {
+          const history = await draftVault?.loadHistory(copy.id) || [];
+          if (history.length > (copy.history || []).length) copy.history = history;
+        }
+        preparedRecords.push(copy);
+      }
+      const estimateDraft = state.hasUnsavedChanges ? makeProjectPayload() : await draftVault?.load();
       snapshot.projects.filter((record) => !record.purged).forEach((record) => libraryChoice(body,
         `${record.title || record.id}${record.deleted ? "（回收站）" : ""}${!record.payload ? "（无本机正文，将列入遗漏清单）" : ""}`,
         record.id, true));
       libraryChoice(body, "包含恢复草稿／当前未保存画布", "__draft__", true);
       const submit = dialog.querySelector('[data-role="library-submit"]'); submit.textContent = "生成选中备份";
+      const capacity = libraryLine(body, "正在核对容量…"); capacity.dataset.role = "library-capacity"; capacity.setAttribute("role", "status");
+      const estimate = () => {
+        const ids = [...body.querySelectorAll('input:checked')].map((input) => input.value);
+        try {
+          const summary = window.QPixelProjectLibrary.preflight({ records: preparedRecords.filter((record) => ids.includes(record.id)), draft: ids.includes("__draft__") ? estimateDraft : null });
+          capacity.textContent = `预估 ${summary.count} 个作品，${(summary.bytes / 1024 / 1024).toFixed(2)} / 50 MiB${summary.partial ? `；${summary.omitted.length} 项遗漏，请检查备份清单` : ""}。生成时会再次核对。`;
+          submit.disabled = !summary.count && !(ids.includes("__draft__") && estimateDraft);
+        } catch (error) { capacity.textContent = error.message; submit.disabled = true; }
+      };
+      const batch = document.createElement("button"); batch.type = "button"; batch.textContent = "选择可容纳的一批"; batch.dataset.role = "library-batch";
+      batch.onclick = () => {
+        const result = window.QPixelProjectLibrary.chooseBatch(preparedRecords), ids = new Set(result.ids);
+        body.querySelectorAll('input').forEach((input) => { input.checked = ids.has(input.value); });
+        estimate();
+        capacity.textContent += ` 本批未选 ${result.skipped.length} 个作品，草稿未包含；后续请分批备份未选内容。`;
+      };
+      body.appendChild(batch); body.addEventListener("change", estimate); estimate();
       submit.onclick = async () => {
         submit.disabled = true;
         try {
