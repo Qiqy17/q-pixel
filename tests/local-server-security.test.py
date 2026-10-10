@@ -2,6 +2,7 @@ import http.client
 import base64
 import json
 import os
+import re
 import ssl
 import subprocess
 import sys
@@ -117,7 +118,11 @@ class LocalServerSecurityTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(headers["Cache-Control"], "no-store")
         revision = json.loads(body)["interfaceRevision"]
-        self.assertEqual(revision, "20261010-consumer-64")
+        status, _, html = self.request(False, self.local_port, "GET", "/index.html")
+        self.assertEqual(status, 200)
+        page_revision = re.search(r'<meta\s+name="qpixel-revision"\s+content="([^"]+)"', html.decode())
+        self.assertIsNotNone(page_revision)
+        self.assertEqual(revision, page_revision.group(1))
         status, _, _ = self.request(True, self.paired_port, "GET", "/api/release")
         self.assertEqual(status, 401)
         _, headers, _ = self.request(True, self.paired_port, "POST", "/pair", urlencode({"code": self.pairing_code}), {"Content-Type": "application/x-www-form-urlencoded"})

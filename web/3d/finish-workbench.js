@@ -81,6 +81,8 @@
       profiles.appendChild(group);
     });
     let viewer = null;
+    let openGeneration = 0;
+    let exportGeneration = 0;
     let refreshTimer = 0;
     let interactionMode = "view";
     let chosenToolIn3d = false;
@@ -410,11 +412,18 @@
     async function open(tab = "3d") {
       const pattern = options.getPattern();
       if (!pattern || !pattern.cells) return false;
+      close();
+      const generation = ++openGeneration;
       // 先加载标定清单：实测数据就绪时隐藏水印并提示，失败时静默回退通用模型。
       try {
         const response = await fetch("./3d/calibration-manifest.json", { cache: "no-cache" });
-        if (response.ok) root.__QPIXEL_CALIBRATION_MANIFEST__ = await response.json();
+        if (response.ok) {
+          const manifest = await response.json();
+          if (generation !== openGeneration) return true;
+          root.__QPIXEL_CALIBRATION_MANIFEST__ = manifest;
+        }
       } catch (_) {}
+      if (generation !== openGeneration) return true;
       const calibrated = core.isCalibrated();
       const watermark = dialog.querySelector('[data-role="watermark"]');
       if (watermark) watermark.hidden = calibrated;
@@ -455,7 +464,7 @@
       status.textContent = "正在加载 3D 引擎…";
       try {
         await options.loadViewer();
-        if (!dialog.open) return true;
+        if (!dialog.open || generation !== openGeneration) return true;
         viewer = root.QPixel3D.create({
           canvas,
           overlay,
@@ -476,7 +485,7 @@
             else if (viewer) viewer.draw();
             return result;
           },
-          onStatus: (text) => { status.textContent = text; }
+          onStatus: (text) => { if (generation === openGeneration && dialog.open) status.textContent = text; }
         });
         viewer.setInteractionMode("view");
         viewer.setEditCursor(options.getToolCursor?.());
@@ -487,6 +496,7 @@
         dialog.querySelector('[data-role="facts"]').textContent = `${analysis.count.toLocaleString()} 颗 · ${analysis.horizontal + analysis.vertical} 条邻接 · ${analysis.isolated} 个孤点`;
         if (capability.message) status.textContent = capability.message;
       } catch (error) {
+        if (generation !== openGeneration || !dialog.open) return true;
         status.textContent = `3D 加载失败：${error && error.message ? error.message : error}。图纸编辑与普通导出仍可使用。`;
         dialog.querySelector('[data-action="tab-3d"]').disabled = true;
         dialog.querySelector('[data-role="notice"]').hidden = false;
@@ -497,6 +507,10 @@
     }
 
     function close() {
+      openGeneration++;
+      exportGeneration++;
+      dialog.querySelector('[data-action="cancel-export"]').hidden = true;
+      dialog.querySelector('[data-action="export"]').disabled = false;
       if (viewer) viewer.setInteractionMode("view");
       clearTimeout(refreshTimer);
       clearTimeout(flatEditorView.pointer?.startTimer);
@@ -711,16 +725,27 @@
         pane.hidden = false;
       }
       if (action === "hide-compare") dialog.querySelector('[data-role="compare"]').hidden = true;
-      if (action === "cancel-export" && viewer) viewer.cancelExport();
+      if (action === "cancel-export" && viewer) {
+        exportGeneration++; viewer.cancelExport();
+        dialog.querySelector('[data-action="cancel-export"]').hidden = true;
+        dialog.querySelector('[data-action="export"]').disabled = false;
+        status.textContent = "已取消导出。";
+      }
       if (action === "export" && viewer) {
+        const generation = openGeneration, request = ++exportGeneration;
+        const current = () => generation === openGeneration && request === exportGeneration && dialog.open;
         const cancel = dialog.querySelector('[data-action="cancel-export"]');
+        const exportButton = dialog.querySelector('[data-action="export"]');
+        exportButton.disabled = true;
         cancel.hidden = false;
         try {
           const blob = await viewer.exportPng({
             size: 4096,
-            onProgress: (value) => { status.textContent = `正在导出 4K：${value}%`; }
+            onProgress: (value) => { if (current()) status.textContent = `正在导出 4K：${value}%`; }
           });
+          if (!current()) return;
           const bitmap = await createImageBitmap(blob);
+          if (!current()) { bitmap.close(); return; }
           const composed = doc.createElement("canvas");
           composed.width = bitmap.width;
           composed.height = bitmap.height;
@@ -728,12 +753,13 @@
           composed.getContext("2d").drawImage(bitmap, 0, 0);
           bitmap.close();
           const compositeBlob = await new Promise((resolve, reject) => composed.toBlob((result) => result ? resolve(result) : reject(new Error("PNG 合成失败")), "image/png"));
+          if (!current()) return;
           await options.onExport(compositeBlob);
-          status.textContent = "4K PNG 已导出。";
+          if (current()) status.textContent = "4K PNG 已导出。";
         } catch (error) {
-          status.textContent = error && error.message ? error.message : "导出失败";
+          if (current()) status.textContent = error && error.message ? error.message : "导出失败";
         } finally {
-          cancel.hidden = true;
+          if (current()) { cancel.hidden = true; exportButton.disabled = false; }
         }
       }
     });

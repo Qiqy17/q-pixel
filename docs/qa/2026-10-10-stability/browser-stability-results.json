@@ -7,28 +7,53 @@
     "quality panel uses selected physical board specification",
     "quality snapshot checks actual usage and print scale",
     "actual board PDF export contains four pages",
-    "120x120 two-layer save and reopen",
-    "500x500 two-layer save and reopen",
+    "late viewer load cannot replace reopened pattern",
+    "closed export suppresses late progress and file delivery",
+    "cancelled export cannot report success or deliver file",
+    "cancelled export allows retry",
+    "late loader failure cannot degrade current viewer",
+    "120x120 actual brush edit, undo, two-layer save and reopen",
+    "120x120 preview switches modes or exposes readable GPU fallback",
+    "500x500 actual brush edit, undo, two-layer save and reopen",
+    "500x500 preview switches modes or exposes readable GPU fallback",
     "no page JavaScript errors"
   ],
   "timings": [
     {
       "size": 120,
-      "openMs": 1192,
-      "editMs": 0.20000000018626451,
-      "undoMs": 14.400000000372529,
-      "saveMs": 34,
-      "reopenMs": 17.59999999962747,
-      "layers": 2
+      "openMs": 15.300000000745058,
+      "editMs": 0.39999999944120646,
+      "edited": true,
+      "undoMs": 13.599999999627471,
+      "undoRestored": true,
+      "saveMs": 27.700000000186265,
+      "reopenMs": 16.299999999813735,
+      "layers": 2,
+      "previewReadyMs": 185,
+      "preview": {
+        "supported": true,
+        "status": "正在生成无孔表面 53% · 参考模拟",
+        "flat": true,
+        "returned": true
+      }
     },
     {
       "size": 500,
-      "openMs": 11420.900000000373,
-      "editMs": 0.2999999998137355,
-      "undoMs": 146.5,
-      "saveMs": 274.20000000018626,
-      "reopenMs": 237.90000000037253,
-      "layers": 2
+      "openMs": 128.79999999981374,
+      "editMs": 0.30000000074505806,
+      "edited": true,
+      "undoMs": 168,
+      "undoRestored": true,
+      "saveMs": 246.69999999925494,
+      "reopenMs": 200.5,
+      "layers": 2,
+      "previewReadyMs": 423,
+      "preview": {
+        "supported": true,
+        "status": "250,000 颗 · low 精度 · 未实物标定参考模型",
+        "flat": true,
+        "returned": true
+      }
     }
   ],
   "errors": []

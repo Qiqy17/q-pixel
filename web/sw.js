@@ -29,7 +29,7 @@ const APP_SHELL = [
   "./make/smart-board-ui.js",
   "./make/build-navigation.js",
   "./studio/studio.css",
-  "./studio/studio.css?v=20261010-consumer-64",
+  "./studio/studio.css?v=20261010-stability-65",
   "./studio/background-engine.js",
   "./studio/background-tool.js",
   "./studio/surface-engine.js",
@@ -63,7 +63,7 @@ const APP_SHELL = [
   "./import-processing.js",
   "./import-worker.js",
   "./app.js",
-  "./app.js?v=20261010-consumer-64",
+  "./app.js?v=20261010-stability-65",
   "./manifest.webmanifest",
   "./icon.svg",
   "./offline.html"

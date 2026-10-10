@@ -6,13 +6,15 @@ const Response = globalThis.Response || class {
   clone() { return new Response(this.body); }
   static error() { const response = new Response(null); response.type = "error"; return response; }
 };
+const source = fs.readFileSync(require.resolve("../web/sw.js"), "utf8");
+const currentCache = source.match(/const CACHE_NAME = "([^"]+)"/)[1];
 const handlers = {}, deleted = [], requests = [];
 let offline = false;
 const cache = { addAll: async () => {}, put: async () => {}, match: async (request) => request === "./offline.html" ? new Response("offline page") : null };
 const self = { QPixelMaterialLibrary: { items: [] }, location: { origin: "https://qa.invalid" }, clients: { claim: async () => {} }, skipWaiting: async () => {}, addEventListener: (type, handler) => { handlers[type] = handler; } };
-vm.runInNewContext(fs.readFileSync(require.resolve("../web/sw.js"), "utf8"), {
+vm.runInNewContext(source, {
   self, importScripts() {}, URL, Response,
-  caches: { open: async () => cache, keys: async () => ["q-pixel-vold", "q-pixel-v20261010-stability-65", "other-app"], delete: async (key) => deleted.push(key) },
+  caches: { open: async () => cache, keys: async () => ["q-pixel-vold", currentCache, "other-app"], delete: async (key) => deleted.push(key) },
   fetch: async (request) => { requests.push(request); if (offline) throw Error("offline"); return new Response("network"); }
 });
 async function event(type, request) {

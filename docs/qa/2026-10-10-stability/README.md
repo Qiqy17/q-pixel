@@ -35,3 +35,23 @@
 - 样例 60×40 包含空格与角落标记，用量/分板坐标重建一致；异常用量、未知色号与碎色测试通过。实际 Chromium 快照选 15×15 底板后显示 4 块，不再沿用默认 29×29。
 - 实际按钮导出 4 页 PDF，pdfinfo 核对 A4（595.28×841.89 pt），最终四页均渲染并目视核对标题、非镜像/试印说明、坐标、图纸与用量表；保留现有格距与页内布局，不宣称已物理标定。导出样例完全为合成 QA 数据。
 - `npm test`（27 个 JS、14 个 Python）、构建、差异检查通过。物理打印格距、真实用豆/缺货和熨烫成品对比待用户实测；3D 仍未标定。
+
+## 第五项：更新回归与大型作品
+
+- 3D 工作台加载/关闭/重新打开与导出使用独立代次，旧成功、旧失败、旧进度和取消后的文件结果不能修改当前预览；取消后允许重试。
+- 新增 5 项浏览器异步回归，使用真实工作台与受控渲染器/迟到 Promise 注入，不宣称这些注入是物理 GPU 验收。
+- 真实 Chromium 另运行 120×120、500×500 双图层的实际画笔、撤销、保存、重开及实际 2D/3D 标签切换，16 项检查通过、无页面异常。性能记录仅为本机桌面 Chrome 基线；预览计时反映引擎与模式切换可用，不表示全部表面细节生成完毕或真实 iPad 的性能。
+- 不再把合成图生成/颜色处理计入工程打开计时；不把更换测试样例前后的数字当作性能提升证据。底板数量显示已避免全图分板遍历，碎色检查使用无临时坐标数组的四邻域扫描。
+- 新增 `scripts/verify_stability.sh`：单元/服务测试→构建→差异检查→隔离原生进程→隔离浏览器与 PDF 导出。浏览器需要 Node 20+、Playwright 和本机 Chrome；通过 `QPIXEL_QA_NODE`、`QPIXEL_QA_NODE_MODULES` 指向已安装运行时，不自动安装依赖。
+- 页面与离线缓存统一到 `20261010-stability-65`。服务版本测试比较实际页面和接口，不再把历史版本号硬编码为长期预期。
+- 完整回归：27 个 JS 测试文件、14 个 Python 用例、21 项原生检查、16 项浏览器检查通过。真实 iPad/实物/原生文件面板的待验收状态保留。
+
+## 可复跑命令
+
+```sh
+QPIXEL_QA_NODE=/Users/mac/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node \
+QPIXEL_QA_NODE_MODULES=/Users/mac/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules \
+bash scripts/verify_stability.sh docs/qa/2026-10-10-stability
+```
+
+该命令不安装 App、不修改生产库、不上传作品。公开上传的是任务分支代码与合成 QA 记录；所有验收状态应以上述边界为准。
