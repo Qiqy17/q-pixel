@@ -13599,7 +13599,11 @@
       const label = document.createElement("span");
       label.textContent = `找到未保存草稿“${payload.title || "未命名"}”`;
       const restore = document.createElement("button"); restore.type = "button"; restore.textContent = "恢复编辑";
-      restore.addEventListener("click", () => { if (applyProjectPayload(payload)) { showEditor(); markUnsavedChanges(); } banner.remove(); });
+      restore.addEventListener("click", async () => {
+        if (libraryBusy || pendingSaveAttempt) { setMessage("请等待当前保存或作品库操作完成后再恢复草稿。", true); return; }
+        if (!await confirmLeaveWithUnsavedChanges()) return;
+        if (applyProjectPayload(payload)) { showEditor(); markUnsavedChanges(); banner.remove(); }
+      });
       const dismiss = document.createElement("button"); dismiss.type = "button"; dismiss.textContent = "稍后";
       dismiss.addEventListener("click", () => banner.remove());
       banner.append(label, restore, dismiss);
@@ -16626,6 +16630,8 @@
       setMessage(event.status === "saved" ? message : event.status === "cancelled" ? "已取消文件保存；作品状态未改变。" : "文件写入失败，请重新导出。", event.status === "failed");
     };
     window.QPixelTest = {
+      persistRecoveryDraftForTest: persistRecoveryDraft,
+      offerDraftRecoveryForTest: offerDraftRecovery,
       buildLibraryBackupForTest: buildLibraryBackup,
       previewLibraryTextForTest: previewLibraryText,
       commitLibraryImportForTest: commitLibraryImport,

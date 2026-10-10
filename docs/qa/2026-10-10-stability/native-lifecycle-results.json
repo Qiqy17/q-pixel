@@ -1,0 +1,41 @@
+{
+  "scope": "real AppDelegate with isolated identity and static QA origin; file panels and physical devices not tested",
+  "results": [
+    {
+      "checks": [
+        "load editable native pattern",
+        "native exit hook sees dirty state",
+        "native local save succeeds",
+        "saved native app permits termination",
+        "save queues work without automatic upload"
+      ],
+      "phase": "seed"
+    },
+    {
+      "checks": [
+        "process reopen preserves cells and layers",
+        "process reopen preserves progress",
+        "recovery draft durably committed",
+        "recovery banner available",
+        "cancel recovery protects current unsaved design",
+        "save current design before termination"
+      ],
+      "phase": "reopen"
+    },
+    {
+      "checks": [
+        "unsaved draft committed before forced process termination"
+      ],
+      "phase": "crash"
+    },
+    {
+      "checks": [
+        "forced termination offers persisted draft",
+        "recover committed unsaved cells",
+        "recovery remains unsaved until explicit save",
+        "recovered design can be saved"
+      ],
+      "phase": "recover"
+    }
+  ]
+}
