@@ -1,0 +1,32 @@
+{
+  "scope": "isolated desktop Chromium; not physical iPad or calibrated 3D",
+  "results": [
+    "offline activation preserves unrelated cache",
+    "real browser offline reload reopens saved project",
+    "network recovery and local save never upload projects",
+    "120x120 two-layer save and reopen",
+    "500x500 two-layer save and reopen",
+    "no page JavaScript errors"
+  ],
+  "timings": [
+    {
+      "size": 120,
+      "openMs": 1469.2000000001863,
+      "editMs": 0.20000000018626451,
+      "undoMs": 13.5,
+      "saveMs": 44.69999999925494,
+      "reopenMs": 18.300000000745058,
+      "layers": 2
+    },
+    {
+      "size": 500,
+      "openMs": 11649.699999999255,
+      "editMs": 0.40000000037252903,
+      "undoMs": 146.79999999981374,
+      "saveMs": 273.29999999981374,
+      "reopenMs": 246.20000000018626,
+      "layers": 2
+    }
+  ],
+  "errors": []
+}
